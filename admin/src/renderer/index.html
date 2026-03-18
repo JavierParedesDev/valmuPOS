@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Valmu Admin</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/modals.css">
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <img src="assets/logo.jpeg" alt="Valmu Logo" class="brand-logo">
+                <h2 class="brand-name">Admin</h2>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-page="dashboard">
+                    <span class="icon">📊</span> Dashboard
+                </a>
+                <a href="#" class="nav-item" data-page="users">
+                    <span class="icon">👥</span> Usuarios
+                </a>
+                <a href="#" class="nav-item" data-page="customers">
+                    <span class="icon">🤝</span> Clientes
+                </a>
+                <a href="#" class="nav-item" data-page="products">
+                    <span class="icon">📦</span> Productos
+                </a>
+                <a href="#" class="nav-item" data-page="categories">
+                    <span class="icon">📑</span> Categorías
+                </a>
+                <a href="#" class="nav-item" data-page="suppliers">
+                    <span class="icon">🏢</span> Proveedores
+                </a>
+                <a href="#" class="nav-item" data-page="wastage">
+                    <span class="icon">♻️</span> Mermas
+                </a>
+                <a href="#" class="nav-item" data-page="finances">
+                    <span class="icon">💰</span> Finanzas
+                </a>
+                <a href="#" class="nav-item" data-page="invoicing">
+                    <span class="icon">🧾</span> Facturación
+                </a>
+                <a href="#" class="nav-item" data-page="logistics">
+                    <span class="icon">🚚</span> Logística
+                </a>
+                <a href="#" class="nav-item" data-page="branches">
+                    <span class="icon">📍</span> Sucursales
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <button class="btn-logout">Cerrar Sesión</button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="top-header">
+                <h1 id="page-title">Dashboard</h1>
+                <div class="user-profile">
+                    <span class="user-name">Administrador</span>
+                    <div class="user-avatar">AD</div>
+                </div>
+            </header>
+
+            <section id="content-area" class="content-area">
+                <!-- Content will be injected here -->
+                <div class="loader">Cargando...</div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="js/services/session.js"></script>
+    <script src="js/services/api.js"></script>
+    <script src="js/utils.js"></script>
+    <script src="js/views/dashboard.js"></script>
+    <script src="js/views/categories.js"></script>
+    <script src="js/views/suppliers.js"></script>
+    <script src="js/views/products.js"></script>
+    <script src="js/views/branches.js"></script>
+    <script src="js/views/wastage.js"></script>
+    <script src="js/views/users.js"></script>
+    <script src="js/views/customers.js"></script>
+    <script src="js/views/static-pages.js"></script>
+    <script src="js/renderer.js"></script>
+</body>
+
+</html>

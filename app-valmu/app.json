@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "Valmu App",
+    "slug": "app-valmu",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "scheme": "valmuapp",
+    "newArchEnabled": true,
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Valmu necesita acceso a la camara para escanear codigos de barras."
+        }
+      ]
+    ],
+    "android": {
+      "package": "com.valmu.app",
+      "versionCode": 1,
+      "permissions": [
+        "CAMERA",
+        "INTERNET",
+        "ACCESS_NETWORK_STATE",
+        "VIBRATE",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ],
+      "usesCleartextTraffic": true,
+      "softwareKeyboardLayoutMode": "pan",
+      "edgeToEdgeEnabled": true
+    },
+    "extra": {
+      "eas": {
+        "projectId": "7853b829-9bba-4cf1-b16b-22312a485521"
+      }
+    }
+  }
+}
