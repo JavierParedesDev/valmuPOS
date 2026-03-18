@@ -8,7 +8,8 @@
     "android": "expo run:android",
     "android:prebuild": "expo prebuild --platform android",
     "android:apk:debug": "expo run:android --variant debug",
-    "android:apk:eas": "eas build -p android --profile apk"
+    "android:apk:eas": "eas build -p android --profile apk",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@expo/metro-runtime": "~4.0.1",

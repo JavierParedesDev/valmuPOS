@@ -18,11 +18,22 @@ export async function apiRequest({ endpoint, method = 'GET', body, token }) {
         headers.Authorization = `Bearer ${token}`;
     }
 
-    const response = await fetch(buildUrl(endpoint), {
-        method,
-        headers,
-        body: body ? JSON.stringify(body) : undefined
-    });
+    const url = buildUrl(endpoint);
+    let response;
+
+    try {
+        response = await fetch(url, {
+            method,
+            headers,
+            body: body ? JSON.stringify(body) : undefined
+        });
+    } catch (error) {
+        return {
+            ok: false,
+            status: 0,
+            error: 'No se pudo conectar con el servidor'
+        };
+    }
 
     const text = await response.text();
     let data = null;

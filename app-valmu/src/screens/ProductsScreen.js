@@ -20,6 +20,37 @@ import { formatCurrency, toInteger, toNumber } from '../utils/format';
 
 const PRODUCT_PAGE_SIZE = 40;
 const PRODUCT_PICKER_LIMIT = 12;
+let mobileProductRequestId = 0;
+let mobileProductPickerRequestId = 0;
+
+function normalizeProductSearchValue(value) {
+    return String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+}
+
+function filterProductsLocally(term = '', source = []) {
+    const normalizedTerm = normalizeProductSearchValue(term);
+    if (!normalizedTerm) return source;
+
+    const tokens = normalizedTerm.split(/\s+/).filter(Boolean);
+
+    return source.filter((product) => {
+        const haystack = [
+            product.nombreProducto,
+            product.codigoBarras,
+            product.nombreCategoria,
+            product.nombreProveedor
+        ]
+            .filter(Boolean)
+            .map(normalizeProductSearchValue)
+            .join(' ');
+
+        return tokens.every((token) => haystack.includes(token));
+    });
+}
 
 function emptyProductForm() {
     return {
@@ -95,6 +126,7 @@ export default function ProductsScreen({ token }) {
 
     const loadProducts = async (term = '') => {
         setLoading(true);
+        const currentRequestId = ++mobileProductRequestId;
 
         try {
             const response = await apiRequest({
@@ -102,9 +134,16 @@ export default function ProductsScreen({ token }) {
                 token
             });
 
-            setProducts(response.ok && Array.isArray(response.data) ? response.data : []);
+            if (currentRequestId !== mobileProductRequestId) {
+                return;
+            }
+
+            const items = response.ok && Array.isArray(response.data) ? response.data : [];
+            setProducts(filterProductsLocally(term, items));
         } finally {
-            setLoading(false);
+            if (currentRequestId === mobileProductRequestId) {
+                setLoading(false);
+            }
         }
     };
 
@@ -122,6 +161,7 @@ export default function ProductsScreen({ token }) {
 
     const searchMovementProducts = async (term) => {
         setProductPickerQuery(term);
+        const currentRequestId = ++mobileProductPickerRequestId;
 
         if (!term.trim()) {
             setProductPickerResults([]);
@@ -133,7 +173,12 @@ export default function ProductsScreen({ token }) {
             token
         });
 
-        setProductPickerResults(response.ok && Array.isArray(response.data) ? response.data : []);
+        if (currentRequestId !== mobileProductPickerRequestId) {
+            return;
+        }
+
+        const items = response.ok && Array.isArray(response.data) ? response.data : [];
+        setProductPickerResults(filterProductsLocally(term, items));
     };
 
     useEffect(() => {

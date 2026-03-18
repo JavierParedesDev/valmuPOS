@@ -3,6 +3,7 @@ Thumbs.db
 
 admin/node_modules/
 admin/dist/
+admin/release/
 admin/coverage/
 admin/*.log
 

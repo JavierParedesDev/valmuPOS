@@ -1,21 +1,53 @@
 {
   "name": "admin",
   "version": "1.0.0",
-  "description": "",
+  "description": "Valmu Admin desktop app",
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
+  "author": "Valmu",
   "license": "ISC",
   "devDependencies": {
-    "electron": "^41.0.3"
+    "electron": "^41.0.3",
+    "electron-builder": "^25.1.8"
   },
   "dependencies": {
     "chart.js": "^4.5.1",
     "chartjs-adapter-luxon": "^1.3.1",
     "luxon": "^3.7.2"
+  },
+  "build": {
+    "appId": "com.valmu.admin",
+    "productName": "Valmu Admin",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "src/renderer/assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Valmu Admin"
+    }
   }
 }

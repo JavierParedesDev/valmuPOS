@@ -2,7 +2,8 @@
   "expo": {
     "name": "Valmu App",
     "slug": "app-valmu",
-    "version": "1.0.0",
+    "version": "1.0.2",
+    "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
     "scheme": "valmuapp",
@@ -17,7 +18,11 @@
     ],
     "android": {
       "package": "com.valmu.app",
-      "versionCode": 1,
+      "versionCode": 3,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#ffffff"
+      },
       "permissions": [
         "CAMERA",
         "INTERNET",
