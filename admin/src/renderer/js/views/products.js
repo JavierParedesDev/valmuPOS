@@ -37,6 +37,10 @@ function parseAdminIntegerInput(elementId, fallback = 0) {
     return Math.round(numericValue);
 }
 
+function parseAdminPositiveIntegerInput(elementId, fallback = 0) {
+    return Math.max(0, parseAdminIntegerInput(elementId, fallback));
+}
+
 async function fetchAdminProducts(term = '', limit = ADMIN_PRODUCT_LIMIT) {
     const token = getAuthToken();
     return apiRequest({
@@ -232,7 +236,7 @@ async function openProductForm(product = null) {
     const suppliers = supRes.ok ? supRes.data : [];
 
     const content = `
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div class="product-form-grid">
             <div class="form-group" style="grid-column: span 2">
                 <label>Nombre del Producto</label>
                 <input type="text" id="p-name" class="form-control" value="${product?.nombreProducto || ''}" placeholder="Ej: Aceite Maravilla 1L">
@@ -241,7 +245,7 @@ async function openProductForm(product = null) {
                 <label>Código de Barras</label>
                 <input type="text" id="p-code" class="form-control" value="${product?.codigoBarras || ''}" placeholder="780...">
             </div>
-            <div class="form-group" style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1.5rem;">
+            <div class="form-group product-form-toggle">
                 <input type="checkbox" id="p-pesable" ${product?.esPesable ? 'checked' : ''} style="width: 20px; height: 20px;">
                 <label for="p-pesable" style="margin: 0">¿Es Producto Pesable? (Kilos)</label>
             </div>
@@ -264,6 +268,14 @@ async function openProductForm(product = null) {
             <div class="form-group">
                 <label>Precio Oferta</label>
                 <input type="number" id="p-offer" class="form-control" value="${product?.precioOferta != null ? Math.round(product.precioOferta) : ''}" placeholder="Opcional" step="1" min="0" inputmode="numeric">
+            </div>
+            <div class="form-group">
+                <label>Cantidad Mayorista</label>
+                <input type="number" id="p-major-qty" class="form-control" value="${Math.max(0, Math.round(product?.cantidadMayor || 6))}" placeholder="Ej: 6" step="1" min="0" inputmode="numeric">
+            </div>
+            <div class="form-group">
+                <label>Cantidad por Pallet</label>
+                <input type="number" id="p-pallet-qty" class="form-control" value="${Math.max(0, Math.round(product?.cantidadPallet || 24))}" placeholder="Ej: 24" step="1" min="0" inputmode="numeric">
             </div>
             <div class="form-group">
                 <label>Categoría</label>
@@ -291,6 +303,8 @@ async function openProductForm(product = null) {
             precioMayor: parseAdminIntegerInput('p-wholesale'),
             precioPallet: parseAdminIntegerInput('p-pallet'),
             precioOferta: document.getElementById('p-offer').value === '' ? null : parseAdminIntegerInput('p-offer'),
+            cantidadMayor: parseAdminPositiveIntegerInput('p-major-qty', 6),
+            cantidadPallet: parseAdminPositiveIntegerInput('p-pallet-qty', 24),
             id_categoria: document.getElementById('p-category').value ? parseInt(document.getElementById('p-category').value, 10) : null,
             id_proveedor: document.getElementById('p-supplier').value ? parseInt(document.getElementById('p-supplier').value, 10) : null,
             esPesable: document.getElementById('p-pesable').checked

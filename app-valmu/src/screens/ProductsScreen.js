@@ -61,6 +61,8 @@ function emptyProductForm() {
         precioMayor: '0',
         precioPallet: '0',
         precioOferta: '',
+        cantidadMayor: '6',
+        cantidadPallet: '24',
         id_categoria: '',
         id_proveedor: '',
         esPesable: false
@@ -76,6 +78,8 @@ function mapProductToForm(product) {
         precioMayor: String(toInteger(product.precioMayor)),
         precioPallet: String(toInteger(product.precioPallet)),
         precioOferta: product.precioOferta != null ? String(toInteger(product.precioOferta)) : '',
+        cantidadMayor: String(toInteger(product.cantidadMayor || 6)),
+        cantidadPallet: String(toInteger(product.cantidadPallet || 24)),
         id_categoria: product.id_categoria ? String(product.id_categoria) : '',
         id_proveedor: product.id_proveedor ? String(product.id_proveedor) : '',
         esPesable: Boolean(product.esPesable)
@@ -214,6 +218,8 @@ export default function ProductsScreen({ token }) {
             precioMayor: toInteger(productForm.precioMayor),
             precioPallet: toInteger(productForm.precioPallet),
             precioOferta: productForm.precioOferta.trim() ? toInteger(productForm.precioOferta) : null,
+            cantidadMayor: toInteger(productForm.cantidadMayor || '6'),
+            cantidadPallet: toInteger(productForm.cantidadPallet || '24'),
             id_categoria: productForm.id_categoria ? Number(productForm.id_categoria) : null,
             id_proveedor: productForm.id_proveedor ? Number(productForm.id_proveedor) : null,
             esPesable: productForm.esPesable
@@ -415,6 +421,8 @@ export default function ProductsScreen({ token }) {
                 <Field label="Precio mayorista" value={productForm.precioMayor} onChangeText={(value) => setProductForm((prev) => ({ ...prev, precioMayor: value }))} keyboardType="numeric" />
                 <Field label="Precio pallet" value={productForm.precioPallet} onChangeText={(value) => setProductForm((prev) => ({ ...prev, precioPallet: value }))} keyboardType="numeric" />
                 <Field label="Precio oferta" value={productForm.precioOferta} onChangeText={(value) => setProductForm((prev) => ({ ...prev, precioOferta: value }))} keyboardType="numeric" />
+                <Field label="Cantidad mayorista" value={productForm.cantidadMayor} onChangeText={(value) => setProductForm((prev) => ({ ...prev, cantidadMayor: value }))} keyboardType="numeric" />
+                <Field label="Cantidad por pallet" value={productForm.cantidadPallet} onChangeText={(value) => setProductForm((prev) => ({ ...prev, cantidadPallet: value }))} keyboardType="numeric" />
                 <PickerField
                     label="Categoria"
                     value={productForm.id_categoria}
