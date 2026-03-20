@@ -1,5 +1,6 @@
 :root {
     --sidebar-width: 260px;
+    --sidebar-width-collapsed: 92px;
     --bg-color: #f4f7fa;
     --sidebar-bg: #1a1c23;
     --primary-color: #ff8a43;
@@ -42,6 +43,7 @@ body {
     padding: 1.5rem 0;
     transition: width var(--transition-speed) ease;
     z-index: 100;
+    overflow: hidden;
 }
 
 .sidebar-header {
@@ -107,6 +109,8 @@ body {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
+    overflow-y: auto;
+    padding-right: 0.35rem;
 }
 
 .nav-item {
@@ -123,21 +127,22 @@ body {
 }
 
 .nav-icon-badge {
-    min-width: 30px;
-    height: 30px;
+    min-width: 34px;
+    width: 34px;
+    height: 34px;
     border-radius: 10px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     background: rgba(255, 255, 255, 0.08);
     color: #e2e8f0;
-    font-size: 0.78rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
+    font-size: 1rem;
+    line-height: 1;
 }
 
 .nav-label {
     flex: 1;
+    white-space: nowrap;
 }
 
 .nav-item:hover {
@@ -362,6 +367,7 @@ body {
     cursor: pointer;
     font-weight: 500;
     transition: background var(--transition-speed);
+    white-space: nowrap;
 }
 
 .btn-logout:hover {
@@ -423,6 +429,7 @@ body {
     padding: 2rem;
     overflow-y: auto;
     flex-grow: 1;
+    min-width: 0;
 }
 
 /* Glassmorphism example for sections */
@@ -612,6 +619,58 @@ body {
     }
 }
 
+@media (max-width: 1180px) {
+    .sidebar {
+        width: var(--sidebar-width-collapsed);
+    }
+
+    .sidebar-header {
+        justify-content: center;
+        padding: 0 1rem 1.5rem;
+    }
+
+    .brand-name,
+    .nav-label,
+    .sidebar-version-label {
+        display: none;
+    }
+
+    .sidebar-nav {
+        padding-right: 0;
+    }
+
+    .nav-item,
+    .sidebar-settings-link {
+        justify-content: center;
+        padding: 0.7rem;
+        margin: 0 0.75rem;
+        border-left-color: transparent;
+        border-radius: 14px;
+    }
+
+    .sidebar-footer {
+        padding: 1rem 0.75rem;
+    }
+
+    .sidebar-version {
+        align-items: center;
+        padding: 0.75rem 0.5rem;
+    }
+
+    .btn-logout {
+        padding: 0.75rem 0.5rem;
+        font-size: 0.8rem;
+    }
+
+    .top-header {
+        padding: 0 1.25rem;
+    }
+
+    .content-area {
+        padding: 1.25rem;
+    }
+}
+
 @media (max-width: 960px) {
     .settings-header-card {
         flex-direction: column;
@@ -619,5 +678,18 @@ body {
 
     .settings-version-pill {
         min-width: 100%;
+    }
+
+    .top-header {
+        height: auto;
+        padding: 1rem 1.25rem;
+        gap: 1rem;
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .user-profile {
+        width: 100%;
+        justify-content: space-between;
     }
 }
