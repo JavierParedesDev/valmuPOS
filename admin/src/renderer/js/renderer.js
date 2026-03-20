@@ -9,14 +9,20 @@ const ROUTES = {
     finances: { title: 'Finanzas', render: renderFinances },
     invoicing: { title: 'Facturacion', render: renderInvoicing },
     logistics: { title: 'Logistica', render: renderLogistics },
-    branches: { title: 'Sucursales', render: renderBranches }
+    branches: { title: 'Sucursales', render: renderBranches },
+    settings: { title: 'Configuracion', render: renderSettings }
 };
 
-document.addEventListener('DOMContentLoaded', () => {
+let currentPage = null;
+let updateStateCleanup = null;
+
+document.addEventListener('DOMContentLoaded', async () => {
     enforceSession();
     hydrateUserProfile();
+    await hydrateSidebarVersion();
     bindNavigation();
     bindLogout();
+    bindUpdateStateListener();
 
     const initialPage = getInitialPage();
     setActiveNav(initialPage);
@@ -30,7 +36,7 @@ function getInitialPage() {
 }
 
 function bindNavigation() {
-    const navItems = document.querySelectorAll('.nav-item');
+    const navItems = document.querySelectorAll('.nav-item, .sidebar-settings-link');
 
     navItems.forEach((item) => {
         item.addEventListener('click', (event) => {
@@ -89,8 +95,30 @@ function hydrateUserProfile() {
     }
 }
 
+async function hydrateSidebarVersion() {
+    const versionLabel = document.getElementById('sidebar-app-version');
+    if (!versionLabel) return;
+
+    try {
+        versionLabel.textContent = await window.electronAPI.getAppVersion();
+    } catch (_error) {
+        versionLabel.textContent = 'No disponible';
+    }
+}
+
+function bindUpdateStateListener() {
+    if (typeof window.electronAPI.onUpdateStateChanged !== 'function') {
+        return;
+    }
+
+    updateStateCleanup?.();
+    updateStateCleanup = window.electronAPI.onUpdateStateChanged((state) => {
+        refreshSettingsView(state);
+    });
+}
+
 function setActiveNav(page) {
-    const navItems = document.querySelectorAll('.nav-item');
+    const navItems = document.querySelectorAll('.nav-item, .sidebar-settings-link');
 
     navItems.forEach((item) => {
         item.classList.toggle('active', item.dataset.page === page);
@@ -113,6 +141,7 @@ async function loadPage(page) {
         return;
     }
 
+    currentPage = page;
     contentArea.innerHTML = `<div class="loader">Cargando ${route.title.toLowerCase()}...</div>`;
 
     try {
@@ -139,4 +168,46 @@ function renderPlaceholderPage(page) {
             <p>Esta seccion aun no tiene una vista asociada.</p>
         </div>
     `;
+}
+
+function refreshSettingsView(state) {
+    if (currentPage !== 'settings') {
+        return;
+    }
+
+    const latestVersionLabel = document.getElementById('latest-version-label');
+    const lastCheckedLabel = document.getElementById('last-checked-label');
+    const statusPanel = document.getElementById('update-status-panel');
+    const notesBox = document.getElementById('update-notes-box');
+    const installButton = document.getElementById('install-update-button');
+    const statusBadge = document.getElementById('update-status-badge');
+    const badge = getUpdateStatusBadge(state);
+
+    if (latestVersionLabel) {
+        latestVersionLabel.textContent = state?.latestVersion || 'Sin registro';
+    }
+
+    if (lastCheckedLabel) {
+        lastCheckedLabel.textContent = formatUpdateCheckedAt(state?.checkedAt);
+    }
+
+    if (statusPanel) {
+        statusPanel.innerHTML = `
+            <strong>${escapeSettingsHtml(state?.statusMessage || 'Aun no se ha comprobado si hay actualizaciones.')}</strong>
+            <p>${escapeSettingsHtml(state?.errorMessage || 'Cuando publiques una nueva release, aqui veras si hay una version nueva disponible.')}</p>
+        `;
+    }
+
+    if (notesBox) {
+        notesBox.innerHTML = renderReleaseNotes(state?.releaseNotes);
+    }
+
+    if (installButton) {
+        installButton.disabled = !state?.downloadReady;
+    }
+
+    if (statusBadge) {
+        statusBadge.className = `badge ${badge.className}`;
+        statusBadge.textContent = badge.label;
+    }
 }

@@ -7,7 +7,6 @@
     <title>Valmu Admin</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/modals.css">
-    <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -15,53 +14,72 @@
 
 <body>
     <div class="app-container">
-        <!-- Sidebar -->
         <aside class="sidebar">
             <div class="sidebar-header">
                 <img src="assets/logo.jpeg" alt="Valmu Logo" class="brand-logo">
                 <h2 class="brand-name">Admin</h2>
             </div>
+
             <nav class="sidebar-nav">
                 <a href="#" class="nav-item active" data-page="dashboard">
-                    <span class="icon">📊</span> Dashboard
+                    <span class="nav-icon-badge">DB</span>
+                    <span class="nav-label">Dashboard</span>
                 </a>
                 <a href="#" class="nav-item" data-page="users">
-                    <span class="icon">👥</span> Usuarios
+                    <span class="nav-icon-badge">US</span>
+                    <span class="nav-label">Usuarios</span>
                 </a>
                 <a href="#" class="nav-item" data-page="customers">
-                    <span class="icon">🤝</span> Clientes
+                    <span class="nav-icon-badge">CL</span>
+                    <span class="nav-label">Clientes</span>
                 </a>
                 <a href="#" class="nav-item" data-page="products">
-                    <span class="icon">📦</span> Productos
+                    <span class="nav-icon-badge">PR</span>
+                    <span class="nav-label">Productos</span>
                 </a>
                 <a href="#" class="nav-item" data-page="categories">
-                    <span class="icon">📑</span> Categorías
+                    <span class="nav-icon-badge">CA</span>
+                    <span class="nav-label">Categorias</span>
                 </a>
                 <a href="#" class="nav-item" data-page="suppliers">
-                    <span class="icon">🏢</span> Proveedores
+                    <span class="nav-icon-badge">PV</span>
+                    <span class="nav-label">Proveedores</span>
                 </a>
                 <a href="#" class="nav-item" data-page="wastage">
-                    <span class="icon">♻️</span> Mermas
+                    <span class="nav-icon-badge">ME</span>
+                    <span class="nav-label">Mermas</span>
                 </a>
                 <a href="#" class="nav-item" data-page="finances">
-                    <span class="icon">💰</span> Finanzas
+                    <span class="nav-icon-badge">FI</span>
+                    <span class="nav-label">Finanzas</span>
                 </a>
                 <a href="#" class="nav-item" data-page="invoicing">
-                    <span class="icon">🧾</span> Facturación
+                    <span class="nav-icon-badge">FC</span>
+                    <span class="nav-label">Facturacion</span>
                 </a>
                 <a href="#" class="nav-item" data-page="logistics">
-                    <span class="icon">🚚</span> Logística
+                    <span class="nav-icon-badge">LG</span>
+                    <span class="nav-label">Logistica</span>
                 </a>
                 <a href="#" class="nav-item" data-page="branches">
-                    <span class="icon">📍</span> Sucursales
+                    <span class="nav-icon-badge">SC</span>
+                    <span class="nav-label">Sucursales</span>
                 </a>
             </nav>
+
             <div class="sidebar-footer">
-                <button class="btn-logout">Cerrar Sesión</button>
+                <a href="#" class="sidebar-settings-link" data-page="settings">
+                    <span class="nav-icon-badge">CF</span>
+                    <span class="nav-label">Configuracion</span>
+                </a>
+                <div class="sidebar-version">
+                    <span class="sidebar-version-label">Version instalada</span>
+                    <strong id="sidebar-app-version">-</strong>
+                </div>
+                <button class="btn-logout">Cerrar sesion</button>
             </div>
         </aside>
 
-        <!-- Main Content -->
         <main class="main-content">
             <header class="top-header">
                 <h1 id="page-title">Dashboard</h1>
@@ -72,13 +90,11 @@
             </header>
 
             <section id="content-area" class="content-area">
-                <!-- Content will be injected here -->
                 <div class="loader">Cargando...</div>
             </section>
         </main>
     </div>
 
-    <!-- Scripts -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="js/services/session.js"></script>
@@ -93,6 +109,7 @@
     <script src="js/views/users.js"></script>
     <script src="js/views/customers.js"></script>
     <script src="js/views/static-pages.js"></script>
+    <script src="js/views/settings.js"></script>
     <script src="js/renderer.js"></script>
 </body>
 
