@@ -1,60 +1,24 @@
-const ROUTES = {
-    dashboard: { title: 'Dashboard', render: renderDashboard },
-    users: { title: 'Usuarios', render: renderUsers },
-    customers: { title: 'Clientes', render: renderCustomers },
-    products: { title: 'Productos', render: renderProducts },
-    categories: { title: 'Categorias', render: renderCategories },
-    suppliers: { title: 'Proveedores', render: renderSuppliers },
-    wastage: { title: 'Mermas', render: renderMermas },
-    finances: { title: 'Finanzas', render: renderFinances },
-    invoicing: { title: 'Facturacion', render: renderInvoicing },
-    logistics: { title: 'Logistica', render: renderLogistics },
-    branches: { title: 'Sucursales', render: renderBranches },
-    settings: { title: 'Configuracion', render: renderSettings }
-};
+const ROUTES = window.AdminRoutes;
+const navigation = window.AdminNavigation;
 
 let currentPage = null;
 let updateStateCleanup = null;
+let lastUpdateStatus = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
     enforceSession();
     hydrateUserProfile();
     await hydrateSidebarVersion();
-    bindNavigation();
+    navigation.bindNavigation(ROUTES, loadPage);
     bindLogout();
+    await bindWindowActions();
     bindUpdateStateListener();
 
-    const initialPage = getInitialPage();
-    setActiveNav(initialPage);
-    updatePageTitle(initialPage);
+    const initialPage = navigation.getInitialPage(ROUTES);
+    navigation.setActiveNav(initialPage);
+    navigation.updatePageTitle(initialPage, ROUTES);
     loadPage(initialPage);
 });
-
-function getInitialPage() {
-    const requestedPage = window.location.hash.replace('#', '');
-    return ROUTES[requestedPage] ? requestedPage : 'dashboard';
-}
-
-function bindNavigation() {
-    const navItems = document.querySelectorAll('.nav-item, .sidebar-settings-link');
-
-    navItems.forEach((item) => {
-        item.addEventListener('click', (event) => {
-            event.preventDefault();
-
-            const page = item.dataset.page;
-            if (!ROUTES[page]) {
-                renderPlaceholderPage(page);
-                return;
-            }
-
-            setActiveNav(page);
-            updatePageTitle(page);
-            loadPage(page);
-            window.location.hash = page;
-        });
-    });
-}
 
 function bindLogout() {
     const logoutButton = document.querySelector('.btn-logout');
@@ -100,10 +64,36 @@ async function hydrateSidebarVersion() {
     if (!versionLabel) return;
 
     try {
-        versionLabel.textContent = await window.electronAPI.getAppVersion();
+        versionLabel.textContent = `Valmu Admin v${await window.electronAPI.getAppVersion()}`;
     } catch (_error) {
-        versionLabel.textContent = 'No disponible';
+        versionLabel.textContent = 'Valmu Admin';
     }
+}
+
+async function bindWindowActions() {
+    const fullscreenButton = document.getElementById('toggle-fullscreen-btn');
+    if (!fullscreenButton || typeof window.electronAPI.toggleFullscreen !== 'function') {
+        return;
+    }
+
+    const applyWindowState = (state) => {
+        fullscreenButton.textContent = state?.isFullScreen ? 'Salir de pantalla completa' : 'Pantalla completa';
+    };
+
+    try {
+        applyWindowState(await window.electronAPI.getWindowState());
+    } catch (_error) {
+        applyWindowState({ isFullScreen: false });
+    }
+
+    fullscreenButton.addEventListener('click', async () => {
+        try {
+            const state = await window.electronAPI.toggleFullscreen();
+            applyWindowState(state);
+        } catch (_error) {
+            applyWindowState({ isFullScreen: false });
+        }
+    });
 }
 
 function bindUpdateStateListener() {
@@ -113,23 +103,9 @@ function bindUpdateStateListener() {
 
     updateStateCleanup?.();
     updateStateCleanup = window.electronAPI.onUpdateStateChanged((state) => {
+        refreshGlobalUpdateBanner(state);
         refreshSettingsView(state);
     });
-}
-
-function setActiveNav(page) {
-    const navItems = document.querySelectorAll('.nav-item, .sidebar-settings-link');
-
-    navItems.forEach((item) => {
-        item.classList.toggle('active', item.dataset.page === page);
-    });
-}
-
-function updatePageTitle(page) {
-    const pageTitle = document.getElementById('page-title');
-    if (pageTitle) {
-        pageTitle.textContent = ROUTES[page]?.title || 'Valmu Admin';
-    }
 }
 
 async function loadPage(page) {
@@ -210,4 +186,64 @@ function refreshSettingsView(state) {
         statusBadge.className = `badge ${badge.className}`;
         statusBadge.textContent = badge.label;
     }
+}
+
+function refreshGlobalUpdateBanner(state) {
+    const banner = document.getElementById('app-update-banner');
+    if (!banner) return;
+
+    const status = state?.status || 'idle';
+    const latestVersion = state?.latestVersion || 'nueva version';
+    const isDownloaded = status === 'downloaded';
+    const isAvailable = status === 'available' || status === 'downloading';
+    const shouldShow = isAvailable || isDownloaded;
+
+    if (!shouldShow) {
+        banner.className = 'app-update-banner hidden';
+        banner.innerHTML = '';
+        lastUpdateStatus = status;
+        return;
+    }
+
+    const title = isDownloaded
+        ? `La version ${latestVersion} ya esta lista para instalar`
+        : `Hay una nueva version disponible: ${latestVersion}`;
+
+    const message = isDownloaded
+        ? 'Puedes instalarla ahora con un clic o cerrar la app y dejar que se actualice automaticamente.'
+        : (state?.statusMessage || 'La app ya esta descargando la actualizacion en segundo plano.');
+
+    banner.className = `app-update-banner ${isDownloaded ? 'ready' : 'progress'}`;
+    banner.innerHTML = `
+        <div class="app-update-banner-copy">
+            <span class="app-update-badge">${isDownloaded ? 'Lista para instalar' : 'Actualizacion disponible'}</span>
+            <strong>${escapeSettingsHtml(title)}</strong>
+            <p>${escapeSettingsHtml(message)}</p>
+        </div>
+        <div class="app-update-banner-actions">
+            <button class="btn btn-ghost btn-sm" type="button" id="app-update-open-settings">Ver detalles</button>
+            ${isDownloaded ? '<button class="btn btn-primary btn-sm" type="button" id="app-update-install-now">Instalar ahora</button>' : ''}
+        </div>
+    `;
+
+    document.getElementById('app-update-open-settings')?.addEventListener('click', () => {
+        navigation.setActiveNav('settings');
+        navigation.updatePageTitle('settings', ROUTES);
+        loadPage('settings');
+        window.location.hash = 'settings';
+    });
+
+    document.getElementById('app-update-install-now')?.addEventListener('click', () => {
+        window.electronAPI.installUpdate();
+    });
+
+    if (lastUpdateStatus !== status) {
+        if (isDownloaded) {
+            Toast.fire({ icon: 'success', title: `Actualizacion ${latestVersion} lista para instalar` });
+        } else if (status === 'available') {
+            Toast.fire({ icon: 'info', title: `Nueva version ${latestVersion} detectada` });
+        }
+    }
+
+    lastUpdateStatus = status;
 }

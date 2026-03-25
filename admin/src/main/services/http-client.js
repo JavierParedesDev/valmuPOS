@@ -15,19 +15,21 @@ function buildApiUrl(endpointOrUrl) {
 
 async function parseResponse(response) {
     const text = await response.text();
+    const headers = Object.fromEntries(response.headers.entries());
 
     if (!text) {
-        return { ok: response.ok, status: response.status, data: null };
+        return { ok: response.ok, status: response.status, data: null, headers };
     }
 
     try {
-        return { ok: response.ok, status: response.status, data: JSON.parse(text) };
+        return { ok: response.ok, status: response.status, data: JSON.parse(text), headers };
     } catch (error) {
         console.error('Non-JSON response from server:', text.slice(0, 500));
         return {
             ok: false,
             status: response.status,
-            error: 'Respuesta no valida del servidor (no es JSON)'
+            error: 'Respuesta no valida del servidor (no es JSON)',
+            headers
         };
     }
 }

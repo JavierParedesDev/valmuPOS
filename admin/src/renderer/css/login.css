@@ -1,79 +1,258 @@
-.login-container {
-    height: 100vh;
+.login-shell {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: minmax(320px, 1.15fr) minmax(380px, 0.95fr);
+    gap: 1.5rem;
+    padding: 2rem;
+    align-items: stretch;
+}
+
+.login-hero,
+.login-panel {
+    position: relative;
+    overflow: hidden;
+}
+
+.login-hero {
     display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    min-height: calc(100vh - 4rem);
+    padding: 2.25rem;
+    border-radius: 34px;
+    background:
+        radial-gradient(circle at top right, rgba(255, 186, 130, 0.48), transparent 26%),
+        radial-gradient(circle at bottom left, rgba(255, 214, 189, 0.65), transparent 24%),
+        linear-gradient(145deg, #271710 0%, #46281a 38%, #70371b 100%);
+    color: #fff7ef;
+    box-shadow: 0 30px 70px -36px rgba(68, 31, 8, 0.72);
+}
+
+.login-hero::before,
+.login-hero::after {
+    content: '';
+    position: absolute;
+    border-radius: 999px;
+    pointer-events: none;
+}
+
+.login-hero::before {
+    width: 320px;
+    height: 320px;
+    top: -80px;
+    right: -70px;
+    background: radial-gradient(circle, rgba(255, 182, 130, 0.34), transparent 68%);
+}
+
+.login-hero::after {
+    width: 260px;
+    height: 260px;
+    bottom: -110px;
+    left: -90px;
+    background: radial-gradient(circle, rgba(255, 227, 205, 0.18), transparent 72%);
+}
+
+.login-hero-badge,
+.login-logo-mark,
+.login-hero h1,
+.login-hero p,
+.login-hero-points {
+    position: relative;
+    z-index: 1;
+}
+
+.login-hero-badge {
+    display: inline-flex;
     align-items: center;
+    width: fit-content;
+    padding: 0.5rem 0.85rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #ffd7b6;
+}
+
+.login-logo-mark {
+    width: 110px;
+    height: 110px;
+    margin: 2rem 0 1.2rem;
+    object-fit: cover;
+    border-radius: 28px;
+    box-shadow: 0 20px 50px -30px rgba(0, 0, 0, 0.75);
+}
+
+.login-hero h1 {
+    max-width: 640px;
+    font-size: clamp(2.6rem, 5vw, 4.4rem);
+    line-height: 0.96;
+    letter-spacing: -0.08em;
+    margin-bottom: 1rem;
+}
+
+.login-hero p {
+    max-width: 580px;
+    font-size: 1.16rem;
+    line-height: 1.7;
+    color: rgba(255, 243, 233, 0.86);
+}
+
+.login-hero-points {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+    margin-top: 2rem;
+}
+
+.login-hero-points span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 42px;
+    padding: 0.75rem 1rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #ffe1c7;
+    font-size: 0.92rem;
+    font-weight: 600;
+}
+
+
+.login-panel {
+    display: flex;
+    flex-direction: column;
     justify-content: center;
-    background-color: var(--bg-color);
+    min-height: calc(100vh - 4rem);
+    padding: 2.2rem;
 }
 
-.login-card {
-    width: 100%;
-    max-width: 400px;
-    padding: 2.5rem;
-    text-align: center;
-}
-
-.login-header {
+.login-panel-head {
     margin-bottom: 2rem;
 }
 
-.login-logo {
-    width: 100px;
-    height: 100px;
-    margin-bottom: 1rem;
-    object-fit: contain;
-}
-
-.login-header h2 {
-    font-size: 1.5rem;
-    color: var(--text-main);
+.login-kicker {
     margin-bottom: 0.5rem;
+    color: var(--primary-600);
+    font-size: 0.8rem;
+    font-weight: 800;
+    letter-spacing: 0.11em;
+    text-transform: uppercase;
 }
 
-.login-header p {
-    font-size: 0.9rem;
+.login-panel h2 {
+    margin-bottom: 0.6rem;
+    font-size: 2.3rem;
+    font-weight: 800;
+    letter-spacing: -0.06em;
+    color: #3f2819;
+}
+
+.login-copy {
     color: var(--text-muted);
+    line-height: 1.7;
+}
+
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
 }
 
 .form-group {
     text-align: left;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1.1rem;
 }
 
 .form-group label {
     display: block;
-    font-size: 0.85rem;
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-    color: var(--text-main);
+    margin-bottom: 0.55rem;
+    color: var(--text-soft);
+    font-size: 0.86rem;
+    font-weight: 700;
 }
 
 .form-group input {
     width: 100%;
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
-    border: 1px solid #e2e8f0;
+    min-height: 54px;
+    padding: 0.9rem 1rem;
+    border-radius: 16px;
+    border: 1px solid rgba(214, 145, 98, 0.24);
+    background: rgba(255, 255, 255, 0.82);
+    color: var(--text-main);
     font-family: inherit;
-    font-size: 0.95rem;
-    transition: border-color 0.2s;
+    font-size: 0.98rem;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+
+.form-group input::placeholder {
+    color: #b18a73;
 }
 
 .form-group input:focus {
     outline: none;
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(255, 138, 67, 0.1);
+    border-color: rgba(249, 115, 22, 0.52);
+    background: rgba(255, 255, 255, 0.96);
+    box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.12);
 }
 
 .btn-block {
     width: 100%;
-    padding: 0.85rem;
+    min-height: 54px;
+    margin-top: 0.75rem;
     font-size: 1rem;
-    margin-top: 1rem;
 }
 
 .error-message {
-    color: #ef4444;
-    font-size: 0.85rem;
-    margin-bottom: 1rem;
-    min-height: 1.2rem;
+    min-height: 1.3rem;
+    margin-top: -0.2rem;
+    margin-bottom: 0.4rem;
+    color: #dc2626;
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+
+@media (max-width: 1120px) {
+    .login-shell {
+        grid-template-columns: 1fr;
+    }
+
+    .login-hero,
+    .login-panel {
+        min-height: 0;
+    }
+
+    .login-hero {
+        padding-bottom: 2rem;
+    }
+}
+
+@media (max-width: 720px) {
+    .login-shell {
+        padding: 1rem;
+        gap: 1rem;
+    }
+
+    .login-hero,
+    .login-panel {
+        padding: 1.4rem;
+        border-radius: 24px;
+    }
+
+    .login-logo-mark {
+        width: 88px;
+        height: 88px;
+        border-radius: 24px;
+        margin: 1.2rem 0 1rem;
+    }
+
+    .login-panel h2 {
+        font-size: 1.9rem;
+    }
+
+    .login-hero p {
+        font-size: 1rem;
+    }
 }

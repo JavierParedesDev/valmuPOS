@@ -55,10 +55,32 @@ function renderReleaseNotes(notes) {
         `;
     }
 
-    const escaped = escapeSettingsHtml(notes);
+    const sanitized = String(notes)
+        .replace(/<\/p>\s*<p>/gi, '\n\n')
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/li>\s*<li>/gi, '\n')
+        .replace(/<li>/gi, '- ')
+        .replace(/<\/?(ul|ol)>/gi, '')
+        .replace(/<\/?p>/gi, '')
+        .replace(/<[^>]+>/g, '')
+        .trim();
+
+    const escaped = escapeSettingsHtml(sanitized);
     const paragraphs = escaped
         .split(/\n{2,}/)
-        .map((block) => `<p>${block.replace(/\n/g, '<br>')}</p>`)
+        .map((block) => {
+            if (block.includes('\n- ')) {
+                const lines = block.split('\n').filter(Boolean);
+                const intro = lines[0].startsWith('- ') ? '' : `<p>${lines[0]}</p>`;
+                const items = lines
+                    .filter((line) => line.startsWith('- '))
+                    .map((line) => `<li>${line.slice(2)}</li>`)
+                    .join('');
+                return `${intro}${items ? `<ul>${items}</ul>` : ''}`;
+            }
+
+            return `<p>${block.replace(/\n/g, '<br>')}</p>`;
+        })
         .join('');
 
     return `<div class="update-notes-content">${paragraphs}</div>`;

@@ -7,6 +7,7 @@
     <title>Valmu Admin</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/modals.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -15,79 +16,90 @@
 <body>
     <div class="app-container">
         <aside class="sidebar">
-            <div class="sidebar-header">
-                <img src="assets/logo.jpeg" alt="Valmu Logo" class="brand-logo">
-                <h2 class="brand-name">Admin</h2>
+            <div class="sidebar-brand-card">
+                <div class="sidebar-header">
+                    <img src="assets/logo.png" alt="Valmu Logo" class="brand-logo">
+                    <div class="brand-copy">
+                        <span class="brand-overline">Valmu Ecosystem</span>
+                        <h2 class="brand-name">Admin</h2>
+                    </div>
+                </div>
+                <p class="sidebar-brand-text">Operacion diaria, inventario y control comercial en un solo lugar.</p>
             </div>
 
             <nav class="sidebar-nav">
+                <span class="sidebar-section-label">General</span>
                 <a href="#" class="nav-item active" data-page="dashboard">
-                    <span class="nav-icon-badge" aria-hidden="true">&#128202;</span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-grid-1x2-fill"></i></span>
                     <span class="nav-label">Dashboard</span>
                 </a>
                 <a href="#" class="nav-item" data-page="users">
-                    <span class="nav-icon-badge" aria-hidden="true">&#128101;</span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-people-fill"></i></span>
                     <span class="nav-label">Usuarios</span>
                 </a>
                 <a href="#" class="nav-item" data-page="customers">
-                    <span class="nav-icon-badge" aria-hidden="true">&#129309;</span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-person-heart"></i></span>
                     <span class="nav-label">Clientes</span>
                 </a>
+                <span class="sidebar-section-label">Catalogo</span>
                 <a href="#" class="nav-item" data-page="products">
-                    <span class="nav-icon-badge" aria-hidden="true">&#128230;</span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-box-seam-fill"></i></span>
                     <span class="nav-label">Productos</span>
                 </a>
                 <a href="#" class="nav-item" data-page="categories">
-                    <span class="nav-icon-badge" aria-hidden="true">&#128193;</span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-folder-fill"></i></span>
                     <span class="nav-label">Categorias</span>
                 </a>
                 <a href="#" class="nav-item" data-page="suppliers">
-                    <span class="nav-icon-badge" aria-hidden="true">&#127970;</span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-building"></i></span>
                     <span class="nav-label">Proveedores</span>
                 </a>
+                <span class="sidebar-section-label">Operacion</span>
                 <a href="#" class="nav-item" data-page="wastage">
-                    <span class="nav-icon-badge" aria-hidden="true">&#9851;</span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-recycle"></i></span>
                     <span class="nav-label">Mermas</span>
                 </a>
                 <a href="#" class="nav-item" data-page="finances">
-                    <span class="nav-icon-badge" aria-hidden="true">&#128176;</span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-coin"></i></span>
                     <span class="nav-label">Finanzas</span>
                 </a>
                 <a href="#" class="nav-item" data-page="invoicing">
-                    <span class="nav-icon-badge" aria-hidden="true">&#129534;</span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-receipt"></i></span>
                     <span class="nav-label">Facturacion</span>
                 </a>
                 <a href="#" class="nav-item" data-page="logistics">
-                    <span class="nav-icon-badge" aria-hidden="true">&#128666;</span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-truck"></i></span>
                     <span class="nav-label">Logistica</span>
                 </a>
                 <a href="#" class="nav-item" data-page="branches">
-                    <span class="nav-icon-badge" aria-hidden="true">&#128205;</span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-geo-alt-fill"></i></span>
                     <span class="nav-label">Sucursales</span>
                 </a>
             </nav>
 
             <div class="sidebar-footer">
                 <a href="#" class="sidebar-settings-link" data-page="settings">
-                    <span class="nav-icon-badge" aria-hidden="true">&#9881;</span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-gear-fill"></i></span>
                     <span class="nav-label">Configuracion</span>
                 </a>
-                <div class="sidebar-version">
-                    <span class="sidebar-version-label">Version instalada</span>
-                    <strong id="sidebar-app-version">-</strong>
-                </div>
                 <button class="btn-logout">Cerrar sesion</button>
+                <div class="sidebar-meta-text" id="sidebar-app-version">v-</div>
             </div>
         </aside>
 
         <main class="main-content">
             <header class="top-header">
                 <h1 id="page-title">Dashboard</h1>
-                <div class="user-profile">
-                    <span class="user-name">Administrador</span>
-                    <div class="user-avatar">AD</div>
+                <div class="top-header-actions">
+                    <button class="window-action-btn" id="toggle-fullscreen-btn" type="button">Pantalla completa</button>
+                    <div class="user-profile">
+                        <span class="user-name">Administrador</span>
+                        <div class="user-avatar">AD</div>
+                    </div>
                 </div>
             </header>
+
+            <section id="app-update-banner" class="app-update-banner hidden" aria-live="polite"></section>
 
             <section id="content-area" class="content-area">
                 <div class="loader">Cargando...</div>
@@ -110,6 +122,8 @@
     <script src="js/views/customers.js"></script>
     <script src="js/views/static-pages.js"></script>
     <script src="js/views/settings.js"></script>
+    <script src="js/app/routes.js"></script>
+    <script src="js/app/navigation.js"></script>
     <script src="js/renderer.js"></script>
 </body>
 

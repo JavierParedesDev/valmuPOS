@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { apiRequest } from '../services/api';
 import {
     Card,
@@ -13,6 +13,8 @@ import {
     SectionHeader
 } from '../components/UI';
 import { toNumber } from '../utils/format';
+import { brandColors } from '../theme';
+import { Ionicons } from '@expo/vector-icons';
 
 export default function BranchesScreen({ token }) {
     const [branches, setBranches] = useState([]);
@@ -80,84 +82,117 @@ export default function BranchesScreen({ token }) {
     return (
         <Screen>
             <SectionHeader
-                title={selectedBranch ? `Inventario: ${selectedBranch.nombreSucursal}` : 'Sucursales'}
-                subtitle={selectedBranch ? 'Stock actual por producto' : 'Consulta de sucursales e inventario'}
-                actions={selectedBranch ? <SecondaryButton title="Volver" onPress={() => setSelectedBranch(null)} /> : null}
+                title={selectedBranch ? `Stock: ${selectedBranch.nombreSucursal}` : 'Sucursales'}
+                subtitle={selectedBranch ? 'Gestión de inventario local' : 'Red de distribución y bodegas'}
+                actions={selectedBranch ? (
+                    <TouchableOpacity style={styles.backCircle} onPress={() => setSelectedBranch(null)}>
+                        <Ionicons name="arrow-back" size={24} color={brandColors.accent} />
+                    </TouchableOpacity>
+                ) : null}
             />
 
             {loading ? (
-                <ActivityIndicator size="large" color="#f58233" style={{ marginTop: 32 }} />
+                <View style={styles.loaderContainer}>
+                    <ActivityIndicator size="large" color={brandColors.accent} />
+                    <Text style={styles.loaderText}>Sincronizando datos...</Text>
+                </View>
             ) : selectedBranch ? (
                 <FlatList
                     data={inventory}
                     keyExtractor={(item) => `${selectedBranch.id_sucursal}-${item.id_producto}`}
-                    contentContainerStyle={{ paddingBottom: 24 }}
+                    contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 4 }}
+                    showsVerticalScrollIndicator={false}
                     renderItem={({ item }) => (
-                        <Card>
-                            <Text style={styles.title}>{item.nombreProducto}</Text>
-                            <Text style={styles.meta}>Codigo: {item.codigoBarras}</Text>
-                            <Text style={styles.meta}>
-                                Stock: {item.esPesable ? `${Number(item.cantidad).toFixed(3)} Kg` : `${Math.floor(Number(item.cantidad))} unidades`}
-                            </Text>
-
-                            <View style={styles.actions}>
-                                <SecondaryButton
-                                    title="Ajustar stock"
-                                    onPress={() => {
-                                        setCurrentItem(item);
-                                        setAdjustForm({
-                                            nuevaCantidad: String(item.esPesable ? item.cantidad : Math.floor(Number(item.cantidad))),
-                                            motivoAjuste: 'INVENTARIO_MANUAL'
-                                        });
-                                        setAdjustVisible(true);
-                                    }}
-                                />
+                        <Card style={styles.inventoryCard}>
+                            <View style={styles.inventoryTop}>
+                                <View style={styles.inventoryInfo}>
+                                    <Text style={styles.inventoryTitle} numberOfLines={1}>{item.nombreProducto}</Text>
+                                    <View style={styles.codeRow}>
+                                        <Ionicons name="barcode-outline" size={14} color={brandColors.textMuted} />
+                                        <Text style={styles.inventoryCode}>{item.codigoBarras}</Text>
+                                    </View>
+                                </View>
+                                <View style={styles.stockColumn}>
+                                    <Text style={styles.stockLabel}>DISPONIBLE</Text>
+                                    <Text style={[styles.stockValue, Number(item.cantidad) <= 5 && styles.lowStock]}>
+                                        {item.esPesable ? `${Number(item.cantidad).toFixed(3)} Kg` : Math.floor(Number(item.cantidad))}
+                                    </Text>
+                                </View>
                             </View>
+
+                            <TouchableOpacity
+                                style={styles.adjustButton}
+                                onPress={() => {
+                                    setCurrentItem(item);
+                                    setAdjustForm({
+                                        nuevaCantidad: String(item.esPesable ? item.cantidad : Math.floor(Number(item.cantidad))),
+                                        motivoAjuste: 'INVENTARIO_MANUAL'
+                                    });
+                                    setAdjustVisible(true);
+                                }}
+                            >
+                                <Ionicons name="options-outline" size={18} color={brandColors.accentStrong} />
+                                <Text style={styles.adjustText}>Ajustar Stock</Text>
+                            </TouchableOpacity>
                         </Card>
                     )}
-                    ListEmptyComponent={<EmptyState text="No hay productos con stock en esta sucursal." />}
+                    ListEmptyComponent={<EmptyState text="No hay productos registrados en esta sucursal." />}
                 />
             ) : (
                 <FlatList
                     data={branches}
                     keyExtractor={(item) => String(item.id_sucursal)}
-                    contentContainerStyle={{ paddingBottom: 24 }}
+                    contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 4 }}
+                    showsVerticalScrollIndicator={false}
                     renderItem={({ item }) => (
-                        <Card>
-                            <Text style={styles.title}>{item.nombreSucursal}</Text>
-                            <Text style={styles.meta}>{item.direccion || 'Sin direccion'}</Text>
-                            <Text style={styles.meta}>ID: {item.id_sucursal}</Text>
-
-                            <View style={styles.actions}>
-                                <PrimaryButton title="Ver inventario" onPress={() => loadInventory(item)} />
+                        <Card style={styles.branchCard}>
+                            <View style={styles.branchContent}>
+                                <View style={styles.branchIcon}>
+                                    <Ionicons name="storefront-outline" size={24} color={brandColors.accent} />
+                                </View>
+                                <View style={styles.branchInfo}>
+                                    <Text style={styles.branchTitle}>{item.nombreSucursal}</Text>
+                                    <View style={styles.locationRow}>
+                                        <Ionicons name="location-outline" size={14} color={brandColors.textMuted} />
+                                        <Text style={styles.branchAddress} numberOfLines={1}>{item.direccion || 'Sin dirección'}</Text>
+                                    </View>
+                                </View>
+                                <TouchableOpacity style={styles.viewButton} onPress={() => loadInventory(item)}>
+                                    <Ionicons name="chevron-forward" size={20} color={brandColors.accent} />
+                                </TouchableOpacity>
                             </View>
                         </Card>
                     )}
-                    ListEmptyComponent={<EmptyState text="No hay sucursales disponibles." />}
+                    ListEmptyComponent={<EmptyState text="No se encontraron sucursales." />}
                 />
             )}
 
             <FormModal
                 visible={adjustVisible}
-                title="Ajuste manual de stock"
+                title="Ajuste de Stock"
                 onClose={() => setAdjustVisible(false)}
                 onSubmit={submitAdjustment}
                 submitLabel="Guardar ajuste"
             >
-                <Text style={styles.meta}>{currentItem?.nombreProducto || ''}</Text>
+                <View style={styles.adjustHeader}>
+                    <Text style={styles.adjustProductTitle}>{currentItem?.nombreProducto}</Text>
+                    <Text style={styles.adjustProductMeta}>Código {currentItem?.codigoBarras}</Text>
+                </View>
+
                 <Field
-                    label="Nueva cantidad"
+                    label="Nueva cantidad total"
                     value={adjustForm.nuevaCantidad}
                     onChangeText={(value) => setAdjustForm((prev) => ({ ...prev, nuevaCantidad: value }))}
                     keyboardType="numeric"
+                    placeholder="Ingrese el stock real..."
                 />
                 <PickerField
-                    label="Motivo"
+                    label="Motivo del ajuste"
                     value={adjustForm.motivoAjuste}
                     onChange={(value) => setAdjustForm((prev) => ({ ...prev, motivoAjuste: value }))}
                     options={[
-                        { label: 'Correccion de inventario', value: 'INVENTARIO_MANUAL' },
-                        { label: 'Merma por dano', value: 'MERMA_DANO' },
+                        { label: 'Corrección manual', value: 'INVENTARIO_MANUAL' },
+                        { label: 'Merma por daño', value: 'MERMA_DANO' },
                         { label: 'Merma por vencimiento', value: 'MERMA_VENCIMIENTO' },
                         { label: 'Sobrante encontrado', value: 'SOBRANTE' }
                     ]}
@@ -167,20 +202,149 @@ export default function BranchesScreen({ token }) {
     );
 }
 
-const styles = {
-    title: {
-        fontSize: 17,
-        fontWeight: '700',
-        color: '#1e293b',
-        marginBottom: 6
+const styles = StyleSheet.create({
+    loaderContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 40
     },
-    meta: {
-        color: '#475569',
+    loaderText: {
+        marginTop: 12,
+        color: brandColors.textMuted,
+        fontWeight: '600'
+    },
+    backCircle: {
+        width: 44,
+        height: 44,
+        borderRadius: 14,
+        backgroundColor: brandColors.backgroundAlt,
+        alignItems: 'center',
+        justifyContent: 'center'
+    },
+    branchCard: {
+        marginBottom: 12,
+        padding: 16,
+        borderRadius: 24
+    },
+    branchContent: {
+        flexDirection: 'row',
+        alignItems: 'center'
+    },
+    branchIcon: {
+        width: 48,
+        height: 48,
+        borderRadius: 14,
+        backgroundColor: brandColors.accentSoft,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12
+    },
+    branchInfo: {
+        flex: 1
+    },
+    branchTitle: {
+        fontSize: 18,
+        fontWeight: '900',
+        color: brandColors.text,
         marginBottom: 4
     },
-    actions: {
+    locationRow: {
         flexDirection: 'row',
-        gap: 10,
-        marginTop: 14
+        alignItems: 'center',
+        gap: 4
+    },
+    branchAddress: {
+        fontSize: 13,
+        color: brandColors.textMuted,
+        fontWeight: '500'
+    },
+    viewButton: {
+        width: 38,
+        height: 38,
+        borderRadius: 12,
+        backgroundColor: brandColors.backgroundAlt,
+        alignItems: 'center',
+        justifyContent: 'center'
+    },
+    inventoryCard: {
+        marginBottom: 12,
+        padding: 16,
+        borderRadius: 24
+    },
+    inventoryTop: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 16
+    },
+    inventoryInfo: {
+        flex: 1,
+        marginRight: 12
+    },
+    inventoryTitle: {
+        fontSize: 16,
+        fontWeight: '900',
+        color: brandColors.text,
+        lineHeight: 20
+    },
+    codeRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 4,
+        gap: 4
+    },
+    inventoryCode: {
+        color: brandColors.textMuted,
+        fontSize: 12,
+        fontWeight: '600'
+    },
+    stockColumn: {
+        alignItems: 'flex-end'
+    },
+    stockLabel: {
+        fontSize: 9,
+        fontWeight: '800',
+        color: brandColors.textMuted,
+        marginBottom: 2
+    },
+    stockValue: {
+        fontSize: 18,
+        fontWeight: '900',
+        color: brandColors.accentStrong
+    },
+    lowStock: {
+        color: brandColors.danger
+    },
+    adjustButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: brandColors.accentSoft,
+        height: 48,
+        borderRadius: 14,
+        gap: 8
+    },
+    adjustText: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: brandColors.accentStrong
+    },
+    adjustHeader: {
+        backgroundColor: brandColors.backgroundAlt,
+        padding: 16,
+        borderRadius: 18,
+        marginBottom: 20
+    },
+    adjustProductTitle: {
+        fontSize: 16,
+        fontWeight: '900',
+        color: brandColors.text
+    },
+    adjustProductMeta: {
+        fontSize: 12,
+        color: brandColors.textMuted,
+        fontWeight: '600',
+        marginTop: 4
     }
-};
+});
+

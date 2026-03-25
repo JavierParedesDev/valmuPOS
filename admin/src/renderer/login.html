@@ -7,33 +7,52 @@
     <title>Login - Valmu Admin</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/login.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 
 <body>
-    <div class="login-container">
-        <div class="login-card glass-panel">
-            <div class="login-header">
-                <img src="assets/logo.jpeg" alt="Valmu Logo" class="login-logo">
-                <h2>Valmu Admin</h2>
-                <p>Ingresa tus credenciales para continuar</p>
+    <div class="login-shell">
+        <section class="login-hero">
+            <div class="login-hero-badge">Valmu Ecosystem</div>
+            <img src="assets/logo.png" alt="Valmu Logo" class="login-logo-mark">
+            <h1>Control comercial con identidad propia.</h1>
+            <p>
+                Un panel de administracion mas calido, claro y preparado para crecer contigo entre productos,
+                sucursales y operaciones.
+            </p>
+            <div class="login-hero-points">
+                <span>Inventario centralizado</span>
+                <span>Acceso seguro</span>
+                <span>Actualizaciones listas</span>
             </div>
-            <form id="login-form">
+        </section>
+
+        <section class="login-panel glass-panel">
+            <div class="login-panel-head">
+                <p class="login-kicker">Acceso al sistema</p>
+                <h2>Iniciar sesion</h2>
+                <p class="login-copy">Ingresa tus credenciales para continuar en Valmu Admin.</p>
+            </div>
+
+            <form id="login-form" class="login-form">
                 <div class="form-group">
                     <label for="username">Usuario</label>
                     <input type="text" id="username" required placeholder="Tu usuario">
                 </div>
                 <div class="form-group">
-                    <label for="password">Contraseña</label>
+                    <label for="password">Contrasena</label>
                     <input type="password" id="password" required placeholder="••••••••">
                 </div>
+
                 <div id="login-error" class="error-message"></div>
+
                 <button type="submit" class="btn btn-primary btn-block" id="btn-login">
-                    Iniciar Sesión
+                    Iniciar sesion
                 </button>
             </form>
-        </div>
+        </section>
     </div>
+
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="js/services/session.js"></script>
     <script src="js/login.js"></script>

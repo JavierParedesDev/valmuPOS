@@ -1,6 +1,6 @@
 {
   "name": "admin",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "description": "Valmu Admin desktop app",
   "main": "src/main/main.js",
   "scripts": {
@@ -54,8 +54,8 @@
       "releaseType": "release"
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Valmu Admin"

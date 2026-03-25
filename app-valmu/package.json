@@ -16,9 +16,12 @@
     "expo": "^52.0.0",
     "expo-asset": "~11.0.5",
     "expo-camera": "~16.0.7",
+    "expo-font": "^55.0.4",
+    "expo-linear-gradient": "^55.0.9",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-native": "0.76.0",
+    "react-native-paper": "^5.15.0",
     "react-native-web": "~0.19.13"
   }
 }
