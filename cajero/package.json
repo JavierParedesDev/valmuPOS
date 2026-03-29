@@ -1,0 +1,45 @@
+{
+  "name": "cajero",
+  "version": "0.1.0",
+  "description": "Valmu Cajero desktop app",
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder --win nsis"
+  },
+  "author": "Valmu",
+  "license": "ISC",
+  "devDependencies": {
+    "electron": "^41.0.3",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.valmu.cajero",
+    "productName": "Valmu Cajero",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Valmu Cajero"
+    }
+  }
+}

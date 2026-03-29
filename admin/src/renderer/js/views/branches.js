@@ -2,11 +2,13 @@ const ADMIN_BRANCH_INVENTORY_LIMIT = 25;
 const adminBranchInventoryPagination = {
     page: 1,
     branchId: null,
-    branchName: ''
+    branchName: '',
+    inventorySearch: '',
+    branchSearch: ''
 };
 
 function formatBranchStock(item) {
-    const quantity = Number(item?.cantidad || 0);
+    const quantity = Number(item?.stockActual ?? item?.cantidad ?? 0);
     return item?.esPesable
         ? `${quantity.toFixed(3)} Kg`
         : `${Math.round(quantity).toLocaleString('es-CL')} unidades`;
@@ -30,6 +32,12 @@ async function renderBranches() {
                 <span class="settings-overline">Resumen</span>
                 <strong id="branches-total">--</strong>
                 <p class="text-muted">Sucursales activas disponibles para operacion.</p>
+            </div>
+        </div>
+        <div class="glass-panel mt-4">
+            <div class="form-group">
+                <label for="branches-search-input">Buscar sucursal</label>
+                <input type="text" id="branches-search-input" class="form-control" placeholder="Nombre, direccion o ID">
             </div>
         </div>
         <div id="branches-container" class="branch-card-grid mt-4">
@@ -56,13 +64,42 @@ async function renderBranches() {
 
         const branches = Array.isArray(response.data) ? response.data : [];
         if (totalElement) totalElement.textContent = branches.length.toLocaleString('es-CL');
+        window.allBranches = branches;
 
         if (!branches.length) {
             container.innerHTML = `<div class="glass-panel branch-empty-state">No hay sucursales registradas.</div>`;
             return;
         }
 
-        container.innerHTML = branches.map((branch) => `
+        renderBranchCards();
+        document.getElementById('branches-search-input')?.addEventListener('input', (event) => {
+            adminBranchInventoryPagination.branchSearch = String(event.target.value || '').trim().toLowerCase();
+            renderBranchCards();
+        });
+    } catch (error) {
+        console.error(error);
+    }
+}
+
+function renderBranchCards() {
+    const container = document.getElementById('branches-container');
+    if (!container) return;
+
+    const branches = Array.isArray(window.allBranches) ? window.allBranches : [];
+    const searchTerm = adminBranchInventoryPagination.branchSearch;
+    const filteredBranches = searchTerm
+        ? branches.filter((branch) => {
+            const haystack = `${branch.nombreSucursal || ''} ${branch.direccion || ''} ${branch.id_sucursal || ''}`.toLowerCase();
+            return haystack.includes(searchTerm);
+        })
+        : branches;
+
+    if (!filteredBranches.length) {
+        container.innerHTML = `<div class="glass-panel branch-empty-state">No se encontraron sucursales para esa busqueda.</div>`;
+        return;
+    }
+
+    container.innerHTML = filteredBranches.map((branch) => `
             <article class="glass-panel branch-card-v2">
                 <div class="branch-card-top">
                     <div>
@@ -80,9 +117,6 @@ async function renderBranches() {
                 </div>
             </article>
         `).join('');
-    } catch (error) {
-        console.error(error);
-    }
 }
 
 async function renderBranchInventory(branchId, branchName, page = 1) {
@@ -91,6 +125,7 @@ async function renderBranchInventory(branchId, branchName, page = 1) {
     adminBranchInventoryPagination.page = Math.max(1, page);
     adminBranchInventoryPagination.branchId = branchId;
     adminBranchInventoryPagination.branchName = branchName;
+    adminBranchInventoryPagination.inventorySearch = '';
 
     contentArea.innerHTML = `
         <div class="action-bar">
@@ -103,6 +138,12 @@ async function renderBranchInventory(branchId, branchName, page = 1) {
             </div>
             <div class="btn-group">
                 <button class="btn btn-ghost" onclick="renderBranchInventory(${branchId}, '${String(branchName).replace(/'/g, "\\'")}')">Actualizar</button>
+            </div>
+        </div>
+        <div class="glass-panel mt-4">
+            <div class="form-group">
+                <label for="branch-stock-search-input">Buscar producto</label>
+                <input type="text" id="branch-stock-search-input" class="form-control" placeholder="Nombre o codigo">
             </div>
         </div>
         <div class="glass-panel mt-4">
@@ -138,9 +179,14 @@ async function renderBranchInventory(branchId, branchName, page = 1) {
     });
 
     document.getElementById('branch-next-page')?.addEventListener('click', () => {
-        const totalPages = Math.max(1, Math.ceil((window.currentBranchStock?.length || 0) / ADMIN_BRANCH_INVENTORY_LIMIT));
+        const totalPages = Math.max(1, Math.ceil(getFilteredBranchStock().length / ADMIN_BRANCH_INVENTORY_LIMIT));
         if (adminBranchInventoryPagination.page >= totalPages) return;
         adminBranchInventoryPagination.page += 1;
+        renderBranchInventoryRows();
+    });
+    document.getElementById('branch-stock-search-input')?.addEventListener('input', (event) => {
+        adminBranchInventoryPagination.inventorySearch = String(event.target.value || '').trim().toLowerCase();
+        adminBranchInventoryPagination.page = 1;
         renderBranchInventoryRows();
     });
 
@@ -171,7 +217,7 @@ function renderBranchInventoryRows() {
     const list = document.getElementById('branch-stock-list');
     if (!list) return;
 
-    const stock = Array.isArray(window.currentBranchStock) ? window.currentBranchStock : [];
+    const stock = getFilteredBranchStock();
     if (!stock.length) {
         list.innerHTML = `<tr><td colspan="4" style="text-align: center">No hay productos con stock en esta sucursal</td></tr>`;
         updateBranchInventoryPaginationUi(0);
@@ -202,6 +248,20 @@ function renderBranchInventoryRows() {
     `).join('');
 
     updateBranchInventoryPaginationUi(stock.length);
+}
+
+function getFilteredBranchStock() {
+    const stock = Array.isArray(window.currentBranchStock) ? window.currentBranchStock : [];
+    const searchTerm = adminBranchInventoryPagination.inventorySearch;
+
+    if (!searchTerm) {
+        return stock;
+    }
+
+    return stock.filter((item) => {
+        const haystack = `${item.nombreProducto || ''} ${item.codigoBarras || ''}`.toLowerCase();
+        return haystack.includes(searchTerm);
+    });
 }
 
 function updateBranchInventoryPaginationUi(totalItems) {
@@ -252,7 +312,7 @@ function openAdjustmentForm(item, branchId, branchName) {
                 </div>
                 <div class="form-group">
                     <label>Nueva Cantidad Fisica</label>
-                    <input type="number" id="adj-qty" class="form-control" value="${item.esPesable ? item.cantidad : Math.round(item.cantidad)}" step="${item.esPesable ? '0.001' : '1'}">
+                    <input type="number" id="adj-qty" class="form-control" value="${item.esPesable ? Number(item.stockActual ?? item.cantidad ?? 0) : Math.round(Number(item.stockActual ?? item.cantidad ?? 0))}" step="${item.esPesable ? '0.001' : '1'}">
                 </div>
                 <div class="form-group">
                     <label>Motivo del Ajuste</label>
