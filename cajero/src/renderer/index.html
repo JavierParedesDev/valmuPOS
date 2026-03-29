@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Valmu Cajero</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./styles.css">
+</head>
+
+<body>
+    <section class="login-screen" id="login-screen">
+        <div class="login-card">
+            <div class="login-brand">
+                <span class="brand-kicker">Valmu Ecosystem</span>
+                <h1>Valmu Cajero</h1>
+                <p>Ingreso rapido para empezar a vender.</p>
+            </div>
+
+            <form class="login-form" id="login-form">
+                <label class="input-label" for="api-base-url-input">API Base URL</label>
+                <input class="input-control" id="api-base-url-input" type="text" placeholder="http://servidor:3000/api">
+
+                <label class="input-label" for="login-username-input">Usuario</label>
+                <input class="input-control" id="login-username-input" type="text" placeholder="Tu usuario" autocomplete="username">
+
+                <label class="input-label" for="login-password-input">Contrasena</label>
+                <input class="input-control" id="login-password-input" type="password" placeholder="••••••••" autocomplete="current-password">
+
+                <button class="primary-btn login-submit" id="login-submit-btn" type="submit">Ingresar</button>
+                <div class="login-status" id="login-status">Completa tus credenciales para entrar.</div>
+            </form>
+        </div>
+    </section>
+
+    <section class="cashier-app hidden" id="cashier-app">
+        <aside class="app-sidebar">
+            <div class="sidebar-brand">
+                <span class="brand-kicker">Valmu</span>
+                <strong>Cajero</strong>
+            </div>
+
+            <nav class="app-nav">
+                <button class="nav-btn active" id="nav-sale-btn" type="button">
+                    <span class="nav-icon" aria-hidden="true"><i class="bi bi-upc-scan"></i></span>
+                    <span class="nav-text">Vender</span>
+                </button>
+                <button class="nav-btn" id="nav-cash-btn" type="button">
+                    <span class="nav-icon" aria-hidden="true"><i class="bi bi-cash-coin"></i></span>
+                    <span class="nav-text">Caja</span>
+                </button>
+                <button class="nav-btn" id="nav-settings-btn" type="button">
+                    <span class="nav-icon" aria-hidden="true"><i class="bi bi-gear-fill"></i></span>
+                    <span class="nav-text">Ajustes</span>
+                </button>
+            </nav>
+
+            <button class="logout-btn" id="logout-btn" type="button">
+                <span class="nav-icon logout-icon" aria-hidden="true"><i class="bi bi-box-arrow-right"></i></span>
+                <span class="nav-text">Salir</span>
+            </button>
+        </aside>
+
+        <main class="app-main">
+            <header class="app-header">
+                <div>
+                    <span class="header-kicker" id="app-header-kicker">Caja</span>
+                    <h2 id="app-header-title">Vender</h2>
+                </div>
+                <div class="header-meta">
+                    <span class="meta-chip" id="cash-session-badge">Caja cerrada</span>
+                    <span class="meta-chip" id="branch-name-badge">Sucursal</span>
+                    <span class="meta-chip" id="catalog-source-badge">Catalogo demo</span>
+                    <span class="meta-user" id="cashier-user-label">Cajero</span>
+                    <span class="meta-version" id="app-version-label">v0.1.0</span>
+                </div>
+            </header>
+
+            <section class="pos-grid" id="sale-view">
+                <div class="sale-panel">
+                    <div class="cash-session-strip">
+                        <div>
+                            <span class="cash-session-label">Turno</span>
+                            <strong id="cash-session-title">Caja cerrada</strong>
+                            <p id="cash-session-copy">Debes abrir caja para empezar a vender.</p>
+                        </div>
+                        <div class="cash-session-actions">
+                            <button class="primary-btn cash-session-btn" id="open-cash-session-btn" type="button">Abrir caja</button>
+                        </div>
+                    </div>
+
+                    <div class="sale-input-row search-box-shell">
+                        <input
+                            type="text"
+                            class="scan-input"
+                            id="product-search-input"
+                            placeholder="Escanea codigo o busca producto"
+                        >
+
+                        <div class="search-results-overlay hidden" id="product-search-overlay">
+                            <div class="search-results" id="product-search-results"></div>
+                        </div>
+                    </div>
+
+                    <div class="cart-list" id="cart-list">
+                        <div class="cart-empty">
+                            <strong>Sin productos</strong>
+                            <p>Escanea o busca para agregar al carrito.</p>
+                        </div>
+                    </div>
+
+                    <div class="sale-lock-overlay hidden" id="sale-lock-overlay">
+                        <div class="sale-lock-card">
+                            <strong>Caja cerrada</strong>
+                            <p>Abre caja para habilitar la venta.</p>
+                            <button class="primary-btn" id="open-cash-session-overlay-btn" type="button">Abrir caja</button>
+                        </div>
+                    </div>
+                </div>
+
+                <aside class="summary-panel">
+                    <div class="summary-top">
+                        <span class="summary-label">Total</span>
+                        <strong id="sale-total">$0</strong>
+                    </div>
+
+                    <div class="summary-stats">
+                        <div class="summary-row">
+                            <span>Items</span>
+                            <strong id="summary-items">0</strong>
+                        </div>
+                        <div class="summary-row">
+                            <span>Cliente</span>
+                            <strong id="summary-customer-label">General</strong>
+                        </div>
+                        <div class="summary-row">
+                            <span>Documento</span>
+                            <strong id="summary-document-label">Boleta</strong>
+                        </div>
+                        <div class="summary-row">
+                            <span>Subtotal</span>
+                            <strong id="summary-subtotal">$0</strong>
+                        </div>
+                    </div>
+
+                    <div class="summary-actions">
+                        <button class="primary-btn" id="charge-sale-btn" type="button">Cobrar boleta</button>
+                        <button class="secondary-btn" id="charge-invoice-btn" type="button">Factura</button>
+                        <button class="secondary-btn" id="charge-internal-btn" type="button">Vale interno</button>
+                        <button class="secondary-btn" id="clear-sale-btn" type="button">Vaciar venta</button>
+                    </div>
+                </aside>
+            </section>
+
+            <section class="cash-view hidden" id="cash-view">
+                <article class="settings-card">
+                    <span class="header-kicker">Turno</span>
+                    <h3>Estado de caja</h3>
+                    <label class="input-label" for="branch-select">Sucursal de venta</label>
+                    <select class="input-control" id="branch-select">
+                        <option value="">Cargando sucursales...</option>
+                    </select>
+                    <div class="settings-info-row">
+                        <span>Estado</span>
+                        <strong id="cash-view-status-label">Caja cerrada</strong>
+                    </div>
+                    <div class="settings-info-row">
+                        <span>Fondo inicial</span>
+                        <strong id="cash-view-opening-label">$0</strong>
+                    </div>
+                    <div class="settings-info-row">
+                        <span>Inicio</span>
+                        <strong id="cash-view-opened-at-label">Sin turno</strong>
+                    </div>
+                    <div class="connection-status" id="backend-status">Modo demo activo</div>
+                    <button class="secondary-btn hidden" id="close-cash-session-btn" type="button">Cerrar caja</button>
+                </article>
+
+                <article class="settings-card">
+                    <div class="turn-history-head">
+                        <span class="summary-label">Arqueo en vivo</span>
+                        <strong id="turn-sales-count">0</strong>
+                    </div>
+                    <div class="summary-stats compact-summary">
+                        <div class="summary-row">
+                            <span>Efectivo</span>
+                            <strong id="turn-total-cash">$0</strong>
+                        </div>
+                        <div class="summary-row">
+                            <span>Tarjeta</span>
+                            <strong id="turn-total-card">$0</strong>
+                        </div>
+                        <div class="summary-row">
+                            <span>Transferencia</span>
+                            <strong id="turn-total-transfer">$0</strong>
+                        </div>
+                        <div class="summary-row">
+                            <span>Vale interno no fiscal</span>
+                            <strong id="turn-total-internal">$0</strong>
+                        </div>
+                        <div class="summary-row">
+                            <span>Caja esperada</span>
+                            <strong id="turn-expected-cash">$0</strong>
+                        </div>
+                    </div>
+                </article>
+
+                <article class="settings-card cash-view-span">
+                    <div class="turn-history-head">
+                        <span class="summary-label">Historial del turno</span>
+                        <strong id="turn-history-count">0</strong>
+                    </div>
+                    <div class="turn-history-list" id="turn-history-list">
+                        <div class="turn-history-empty">Sin movimientos aun.</div>
+                    </div>
+                </article>
+
+                <article class="settings-card cash-view-span">
+                    <div class="turn-history-head">
+                        <span class="summary-label">Ventas recientes</span>
+                        <strong id="sales-history-count">0</strong>
+                    </div>
+                    <div class="sales-history-tabs">
+                        <button class="sales-history-tab active" id="sales-tab-active-btn" type="button">Activas</button>
+                        <button class="sales-history-tab" id="sales-tab-cancelled-btn" type="button">Anuladas</button>
+                    </div>
+                    <div class="turn-history-list" id="sales-history-list">
+                        <div class="turn-history-empty">Sin ventas registradas aun.</div>
+                    </div>
+                </article>
+            </section>
+
+            <section class="settings-view hidden" id="settings-view">
+                <article class="settings-card">
+                    <span class="header-kicker">Hardware</span>
+                    <h3>Impresora</h3>
+                    <label class="input-label" for="printer-select">Seleccionar impresora</label>
+                    <select class="input-control" id="printer-select">
+                        <option>Impresora termica 80mm</option>
+                        <option>Predeterminada del sistema</option>
+                        <option>Configurar despues</option>
+                    </select>
+                    <label class="input-label" for="printer-paper-select">Formato de papel</label>
+                    <select class="input-control" id="printer-paper-select">
+                        <option value="80mm">Ticket 80mm</option>
+                        <option value="58mm">Ticket 58mm</option>
+                    </select>
+                    <button class="secondary-btn" id="save-printer-settings-btn" type="button">Guardar impresora</button>
+                </article>
+
+                <article class="settings-card">
+                    <span class="header-kicker">Software</span>
+                    <h3>Actualizaciones</h3>
+                    <div class="settings-info-row">
+                        <span>Canal</span>
+                        <strong>GitHub Releases</strong>
+                    </div>
+                    <div class="settings-info-row">
+                        <span>Version actual</span>
+                        <strong id="settings-version-label">v0.1.0</strong>
+                    </div>
+                    <div class="settings-info-row">
+                        <span>Estado</span>
+                        <strong id="settings-update-status">Preparando autoactualizacion</strong>
+                    </div>
+                    <label class="input-label" for="release-repo-input">Repositorio release</label>
+                    <input class="input-control" id="release-repo-input" type="text" placeholder="usuario/repositorio">
+                    <button class="secondary-btn" id="save-update-settings-btn" type="button">Guardar actualizaciones</button>
+                    <button class="secondary-btn" id="check-updates-btn" type="button">Buscar actualizaciones</button>
+                </article>
+            </section>
+        </main>
+    </section>
+
+    <div class="modal-backdrop hidden" id="weighted-modal-backdrop">
+        <div class="weighted-modal">
+            <h3>Producto pesable</h3>
+            <p id="weighted-product-name">Ingresa el peso del producto.</p>
+
+            <label class="input-label" for="weighted-quantity-input">Cantidad en kg</label>
+            <input class="input-control weighted-input" id="weighted-quantity-input" type="number" min="0.001" step="0.001" placeholder="1.000">
+
+            <div class="weighted-actions">
+                <button class="secondary-btn" id="weighted-cancel-btn" type="button">Cancelar</button>
+                <button class="primary-btn" id="weighted-confirm-btn" type="button">Agregar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop hidden" id="cash-session-modal-backdrop">
+        <div class="weighted-modal">
+            <h3>Apertura de caja</h3>
+            <p>Ingresa el fondo inicial para comenzar el turno.</p>
+
+            <label class="input-label" for="cash-opening-amount-input">Fondo inicial</label>
+            <input class="input-control weighted-input" id="cash-opening-amount-input" type="number" min="0" step="1" placeholder="0">
+
+            <div class="weighted-actions">
+                <button class="secondary-btn" id="cash-session-cancel-btn" type="button">Cancelar</button>
+                <button class="primary-btn" id="cash-session-confirm-btn" type="button">Iniciar turno</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop hidden" id="payment-modal-backdrop">
+        <div class="weighted-modal">
+            <h3>Cobrar venta</h3>
+            <p id="payment-modal-copy">Confirma documento y medio de pago.</p>
+
+            <div class="settings-info-row">
+                <span>Total</span>
+                <strong id="payment-total-label">$0</strong>
+            </div>
+            <div class="settings-info-row">
+                <span>Documento</span>
+                <strong id="payment-document-label">Boleta</strong>
+            </div>
+
+            <div class="connection-status hidden" id="payment-document-note"></div>
+
+            <label class="input-label" for="payment-method-select">Medio de pago</label>
+            <select class="input-control" id="payment-method-select">
+                <option value="efectivo">Efectivo</option>
+                <option value="tarjeta">Tarjeta</option>
+                <option value="transferencia">Transferencia</option>
+            </select>
+
+            <div id="payment-received-group">
+                <label class="input-label" for="payment-received-input">Monto recibido</label>
+                <input class="input-control weighted-input" id="payment-received-input" type="number" min="0" step="1" placeholder="0">
+            </div>
+
+            <div class="settings-info-row hidden" id="payment-change-row">
+                <span>Vuelto</span>
+                <strong id="payment-change-label">$0</strong>
+            </div>
+
+            <div class="weighted-actions">
+                <button class="secondary-btn" id="payment-cancel-btn" type="button">Cancelar</button>
+                <button class="primary-btn" id="payment-confirm-btn" type="button">Confirmar cobro</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop hidden" id="close-cash-modal-backdrop">
+        <div class="weighted-modal">
+            <h3>Cierre de caja</h3>
+            <p>Revisa el resumen esperado antes de cerrar el turno.</p>
+
+            <div class="summary-stats compact-summary">
+                <div class="summary-row">
+                    <span>Fondo inicial</span>
+                    <strong id="close-opening-amount">$0</strong>
+                </div>
+                <div class="summary-row">
+                    <span>Efectivo</span>
+                    <strong id="close-total-cash">$0</strong>
+                </div>
+                <div class="summary-row">
+                    <span>Tarjeta</span>
+                    <strong id="close-total-card">$0</strong>
+                </div>
+                <div class="summary-row">
+                    <span>Transferencia</span>
+                    <strong id="close-total-transfer">$0</strong>
+                </div>
+                <div class="summary-row">
+                    <span>Total ventas</span>
+                    <strong id="close-total-sales">$0</strong>
+                </div>
+                <div class="summary-row">
+                    <span>Caja esperada</span>
+                    <strong id="close-expected-cash">$0</strong>
+                </div>
+            </div>
+
+            <label class="input-label" for="close-counted-cash-input">Dinero contado en caja</label>
+            <input class="input-control weighted-input" id="close-counted-cash-input" type="number" min="0" step="1" placeholder="0">
+
+            <div class="settings-info-row">
+                <span>Diferencia efectivo</span>
+                <strong id="close-cash-difference">$0</strong>
+            </div>
+
+            <label class="input-label" for="close-counted-card-input">Comprobantes de tarjeta</label>
+            <input class="input-control weighted-input" id="close-counted-card-input" type="number" min="0" step="1" placeholder="0">
+
+            <div class="settings-info-row">
+                <span>Diferencia tarjeta</span>
+                <strong id="close-card-difference">$0</strong>
+            </div>
+
+            <label class="input-label" for="close-counted-transfer-input">Transferencias confirmadas</label>
+            <input class="input-control weighted-input" id="close-counted-transfer-input" type="number" min="0" step="1" placeholder="0">
+
+            <div class="settings-info-row">
+                <span>Diferencia transferencia</span>
+                <strong id="close-transfer-difference">$0</strong>
+            </div>
+
+            <div class="settings-info-row">
+                <span>Diferencia total</span>
+                <strong id="close-total-difference">$0</strong>
+            </div>
+
+            <div class="weighted-actions">
+                <button class="secondary-btn" id="close-cash-cancel-btn" type="button">Cancelar</button>
+                <button class="primary-btn" id="close-cash-confirm-btn" type="button">Cerrar turno</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop hidden" id="invoice-client-modal-backdrop">
+        <div class="weighted-modal">
+            <h3>Cliente para factura</h3>
+            <p>Busca un cliente existente o registra uno rapido para emitir la factura.</p>
+
+            <label class="input-label" for="invoice-client-search-input">Buscar cliente</label>
+            <input class="input-control" id="invoice-client-search-input" type="text" placeholder="RUT o nombre">
+
+            <label class="input-label" for="invoice-client-select">Clientes registrados</label>
+            <select class="input-control" id="invoice-client-select">
+                <option value="">Cargando clientes...</option>
+            </select>
+
+            <button class="secondary-btn" id="invoice-client-use-existing-btn" type="button">Usar cliente seleccionado</button>
+
+            <label class="input-label" for="invoice-rut-input">RUT</label>
+            <input class="input-control" id="invoice-rut-input" type="text" placeholder="11.111.111-1">
+
+            <label class="input-label" for="invoice-name-input">Nombre o razon social</label>
+            <input class="input-control" id="invoice-name-input" type="text" placeholder="Comercializadora SPA">
+
+            <label class="input-label" for="invoice-business-input">Giro</label>
+            <input class="input-control" id="invoice-business-input" type="text" placeholder="Abarrotes">
+
+            <div class="connection-status hidden" id="invoice-client-status"></div>
+
+            <div class="weighted-actions">
+                <button class="secondary-btn" id="invoice-client-cancel-btn" type="button">Cancelar</button>
+                <button class="primary-btn" id="invoice-client-confirm-btn" type="button">Guardar cliente</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop hidden" id="info-modal-backdrop">
+        <div class="weighted-modal">
+            <h3 id="info-modal-title">Aviso</h3>
+            <p id="info-modal-message">Informacion del sistema.</p>
+
+            <div class="weighted-actions">
+                <button class="primary-btn" id="info-modal-confirm-btn" type="button">Entendido</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop hidden" id="sale-action-modal-backdrop">
+        <div class="weighted-modal">
+            <h3 id="sale-action-modal-title">Anular venta</h3>
+            <p id="sale-action-modal-message">Confirma la accion.</p>
+
+            <label class="input-label" for="sale-action-reason-input">Motivo de anulacion</label>
+            <textarea class="input-control sale-reason-input" id="sale-action-reason-input" rows="3" placeholder="Ej: cliente se arrepintio, error de cobro, producto equivocado"></textarea>
+            <div class="connection-status hidden" id="sale-action-status"></div>
+
+            <div class="weighted-actions">
+                <button class="secondary-btn" id="sale-action-cancel-btn" type="button">Cancelar</button>
+                <button class="primary-btn" id="sale-action-confirm-btn" type="button">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="./renderer.js"></script>
+</body>
+
+</html>
