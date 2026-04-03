@@ -1,6 +1,6 @@
 {
   "name": "admin",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Valmu Admin desktop app",
   "main": "src/main/main.js",
   "scripts": {

@@ -55,12 +55,24 @@ export function closeCashSessionModalView() {
     document.getElementById('cash-session-modal-backdrop')?.classList.add('hidden');
 }
 
-export function openInvoiceClientModalView() {
+export function openInvoiceClientModalView(customer = null) {
     document.getElementById('invoice-client-search-input').value = '';
     document.getElementById('invoice-client-select').innerHTML = '<option value="">Cargando clientes...</option>';
     document.getElementById('invoice-rut-input').value = '';
     document.getElementById('invoice-name-input').value = '';
     document.getElementById('invoice-business-input').value = '';
+    const currentCard = document.getElementById('invoice-client-current-card');
+    if (currentCard) {
+        if (customer?.id) {
+            currentCard.textContent = `Cliente actual: ${customer.name}${customer.rut ? ` · ${customer.rut}` : ''}`;
+            currentCard.classList.remove('hidden');
+            currentCard.classList.add('invoice-current-card');
+        } else {
+            currentCard.textContent = '';
+            currentCard.classList.add('hidden');
+            currentCard.classList.remove('invoice-current-card');
+        }
+    }
     document.getElementById('invoice-client-modal-backdrop')?.classList.remove('hidden');
     document.getElementById('invoice-rut-input')?.focus();
 }
@@ -105,6 +117,7 @@ export function openCloseCashModalView({
     totalCash,
     totalCard,
     totalTransfer,
+    totalInternal,
     totalSales,
     expectedCash
 }) {
@@ -112,6 +125,7 @@ export function openCloseCashModalView({
     document.getElementById('close-total-cash').textContent = `$${formatCurrency(totalCash)}`;
     document.getElementById('close-total-card').textContent = `$${formatCurrency(totalCard)}`;
     document.getElementById('close-total-transfer').textContent = `$${formatCurrency(totalTransfer)}`;
+    document.getElementById('close-total-internal').textContent = `$${formatCurrency(totalInternal)}`;
     document.getElementById('close-total-sales').textContent = `$${formatCurrency(totalSales)}`;
     document.getElementById('close-expected-cash').textContent = `$${formatCurrency(expectedCash)}`;
     document.getElementById('close-counted-cash-input').value = String(Math.round(expectedCash));

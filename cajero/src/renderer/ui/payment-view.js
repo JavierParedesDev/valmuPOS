@@ -1,8 +1,10 @@
 import { formatCurrency } from '../utils/formatters.js';
 
-export function openPaymentModalView({ documentType, total }) {
+export function openPaymentModalView({ documentType, total, customer }) {
     const totalLabel = document.getElementById('payment-total-label');
     const documentLabel = document.getElementById('payment-document-label');
+    const customerLabel = document.getElementById('payment-customer-label');
+    const taxLabel = document.getElementById('payment-tax-label');
     const copyLabel = document.getElementById('payment-modal-copy');
     const documentNote = document.getElementById('payment-document-note');
     const methodSelect = document.getElementById('payment-method-select');
@@ -16,19 +18,36 @@ export function openPaymentModalView({ documentType, total }) {
         documentLabel.textContent = documentType;
     }
 
+    if (customerLabel) {
+        customerLabel.textContent = customer?.rut
+            ? `${customer.name} · ${customer.rut}`
+            : 'General';
+    }
+
+    if (taxLabel) {
+        taxLabel.textContent = documentType === 'Vale interno' ? 'No fiscal' : 'Fiscal';
+    }
+
     if (copyLabel) {
         copyLabel.textContent = documentType === 'Vale interno'
             ? `Confirma vale interno por $${formatCurrency(total)}.`
-            : `Confirma ${documentType.toLowerCase()} por $${formatCurrency(total)}.`;
+            : documentType === 'Factura'
+                ? `Confirma factura para ${customer?.name || 'cliente'} por $${formatCurrency(total)}.`
+                : `Confirma ${documentType.toLowerCase()} por $${formatCurrency(total)}.`;
     }
 
     if (documentNote) {
         if (documentType === 'Vale interno') {
             documentNote.textContent = 'Vale interno: no se envia al SII, pero igual debes cobrarlo en efectivo, tarjeta o transferencia.';
             documentNote.classList.remove('hidden');
+        } else if (documentType === 'Factura') {
+            documentNote.textContent = customer?.rut
+                ? `Factura preparada para ${customer.name} (${customer.rut}). La integracion con SII se conectara en la fase final.`
+                : 'La factura requiere un cliente valido.';
+            documentNote.classList.remove('hidden');
         } else {
-            documentNote.textContent = '';
-            documentNote.classList.add('hidden');
+            documentNote.textContent = 'Boleta fiscal lista para cobro. La emision SII se integrara en la fase final.';
+            documentNote.classList.remove('hidden');
         }
     }
 

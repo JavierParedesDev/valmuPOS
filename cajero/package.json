@@ -22,7 +22,18 @@
     },
     "files": [
       "src/**/*",
+      "scripts/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "scripts",
+        "to": "scripts"
+      },
+      {
+        "from": "src/renderer/assets/logo.png",
+        "to": "assets/logo.png"
+      }
     ],
     "win": {
       "target": [

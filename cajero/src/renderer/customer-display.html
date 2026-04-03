@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Valmu Cliente</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./customer-display.css">
+</head>
+
+<body>
+    <main class="customer-display">
+        <header class="customer-header">
+            <div>
+                <span class="customer-kicker">Valmu</span>
+                <h1>Tu compra</h1>
+            </div>
+            <div class="customer-meta">
+                <span class="customer-chip" id="customer-branch-label">Sucursal</span>
+                <span class="customer-chip" id="customer-document-label">Boleta</span>
+            </div>
+        </header>
+
+        <section class="customer-body">
+            <article class="customer-items-card">
+                <div class="customer-items-head">
+                    <span>Detalle</span>
+                    <strong id="customer-items-count">0 items</strong>
+                </div>
+                <div class="customer-items-list" id="customer-items-list">
+                    <div class="customer-idle-ad hidden" id="customer-idle-ad">
+                        <img id="customer-idle-ad-image" alt="Publicidad activa">
+                    </div>
+                    <div class="customer-empty">
+                        <strong>Bienvenido</strong>
+                        <p>Escanea tus productos para ver el detalle aqui.</p>
+                    </div>
+                </div>
+            </article>
+
+            <aside class="customer-summary-card">
+                <div class="customer-inline-ad hidden" id="customer-inline-ad">
+                    <img id="customer-inline-ad-image" alt="Publicidad activa">
+                </div>
+                <div class="customer-status" id="customer-status-label">Pantalla cliente lista</div>
+                <div class="customer-summary-row">
+                    <span>Cliente</span>
+                    <strong id="customer-name-label">Cliente general</strong>
+                </div>
+                <div class="customer-summary-row customer-total-row">
+                    <span>Total</span>
+                    <strong id="customer-total-label">$0</strong>
+                </div>
+            </aside>
+        </section>
+    </main>
+
+    <script type="module" src="./customer-display.js"></script>
+</body>
+
+</html>

@@ -5,9 +5,14 @@ export const SESSION_KEYS = {
     selectedBranch: 'valmu_cajero_selected_branch',
     printerName: 'valmu_cajero_printer_name',
     printerPaper: 'valmu_cajero_printer_paper',
+    customerDisplayEnabled: 'valmu_cajero_customer_display_enabled',
     releaseRepo: 'valmu_cajero_release_repo',
     cashHistory: 'valmu_cajero_cash_history',
-    turnSummary: 'valmu_cajero_turn_summary'
+    auditLog: 'valmu_cajero_audit_log',
+    turnSummary: 'valmu_cajero_turn_summary',
+    saleReceipts: 'valmu_cajero_sale_receipts',
+    dispatchReceipts: 'valmu_cajero_dispatch_receipts',
+    saleDraft: 'valmu_cajero_sale_draft'
 };
 
 export const fallbackProducts = [
@@ -81,6 +86,30 @@ export const fallbackProducts = [
     }
 ];
 
+export const fallbackDispatchCarriers = [
+    {
+        id: 1,
+        name: 'Luis Herrera',
+        rut: '12.345.678-9',
+        plate: 'KJTR-41',
+        routeName: 'Ruta Norte'
+    },
+    {
+        id: 2,
+        name: 'Transportes La Vega',
+        rut: '76.543.210-5',
+        plate: 'PPXY-92',
+        routeName: 'Ruta Centro'
+    },
+    {
+        id: 3,
+        name: 'Marcelo Soto',
+        rut: '16.222.333-4',
+        plate: 'LBRT-18',
+        routeName: 'Ruta Sur'
+    }
+];
+
 export const catalogState = {
     products: fallbackProducts.slice(),
     source: 'demo',
@@ -97,6 +126,7 @@ export const saleState = {
 
 export const cashSessionState = {
     isOpen: false,
+    turnId: null,
     openingAmount: 0,
     openedAt: null
 };
@@ -107,6 +137,10 @@ export const weightedProductState = {
 };
 
 export const turnHistoryState = {
+    entries: []
+};
+
+export const auditLogState = {
     entries: []
 };
 
@@ -124,6 +158,16 @@ export const salesHistoryState = {
     currentTab: 'active'
 };
 
+export const saleReceiptState = {
+    records: {},
+    saleId: null
+};
+
+export const dispatchReceiptState = {
+    records: {},
+    dispatchId: null
+};
+
 export const invoiceClientState = {
     pendingDocumentType: null,
     customers: []
@@ -131,6 +175,14 @@ export const invoiceClientState = {
 
 export const saleActionState = {
     saleId: null
+};
+
+export const dispatchState = {
+    carriers: fallbackDispatchCarriers.slice(),
+    selectedCarrierId: null,
+    searchQuery: '',
+    cart: [],
+    records: []
 };
 
 export const DOCUMENT_TYPE_IDS = {

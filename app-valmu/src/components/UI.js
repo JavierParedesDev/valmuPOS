@@ -2,18 +2,20 @@ import React, { useMemo, useState } from 'react';
 import {
     Modal,
     ScrollView,
+    SafeAreaView,
     StyleSheet,
     Switch,
     Text,
     TextInput,
     TouchableOpacity,
     View,
-    Platform
+    Platform,
+    StatusBar
 } from 'react-native';
 import { brandColors } from '../theme';
 
 export function Screen({ children }) {
-    return <View style={styles.screen}>{children}</View>;
+    return <SafeAreaView style={styles.screen}>{children}</SafeAreaView>;
 }
 
 export function SectionHeader({ title, subtitle, actions }) {
@@ -32,12 +34,12 @@ export function Card({ children, style }) {
     return <View style={[styles.card, style]}>{children}</View>;
 }
 
-export function Field({ label, multiline = false, ...props }) {
+export function Field({ label, multiline = false, labelStyle, inputStyle, containerStyle, ...props }) {
     return (
-        <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>{label}</Text>
+        <View style={[styles.fieldGroup, containerStyle]}>
+            <Text style={[styles.fieldLabel, labelStyle]}>{label}</Text>
             <TextInput
-                style={[styles.input, multiline && styles.inputMultiline]}
+                style={[styles.input, multiline && styles.inputMultiline, inputStyle]}
                 placeholderTextColor={brandColors.textMuted}
                 multiline={multiline}
                 numberOfLines={multiline ? 4 : 1}
@@ -198,7 +200,8 @@ export function Badge({ label, type = 'default' }) {
 const styles = StyleSheet.create({
     screen: {
         flex: 1,
-        backgroundColor: brandColors.background
+        backgroundColor: brandColors.background,
+        paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 0) + 10 : 16
     },
     sectionHeader: {
         marginBottom: 24,

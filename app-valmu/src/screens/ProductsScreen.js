@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, Modal, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Animated, FlatList, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { apiRequest } from '../services/api';
 import {
@@ -44,7 +44,8 @@ function filterProductsLocally(term = '', source = []) {
             product.nombreProducto,
             product.codigoBarras,
             product.nombreCategoria,
-            product.nombreProveedor
+            product.nombreProveedor,
+            product.familiaPromo
         ]
             .filter(Boolean)
             .map(normalizeProductSearchValue)
@@ -65,6 +66,7 @@ function emptyProductForm() {
         precioOferta: '',
         cantidadMayor: '6',
         cantidadPallet: '24',
+        familiaPromo: '',
         id_categoria: '',
         id_proveedor: '',
         esPesable: false
@@ -82,6 +84,7 @@ function mapProductToForm(product) {
         precioOferta: product.precioOferta != null ? String(toInteger(product.precioOferta)) : '',
         cantidadMayor: String(toInteger(product.cantidadMayor || 6)),
         cantidadPallet: String(toInteger(product.cantidadPallet || 24)),
+        familiaPromo: product.familiaPromo || '',
         id_categoria: product.id_categoria ? String(product.id_categoria) : '',
         id_proveedor: product.id_proveedor ? String(product.id_proveedor) : '',
         esPesable: Boolean(product.esPesable)
@@ -132,6 +135,50 @@ export default function ProductsScreen({ token, onSummaryChange }) {
 
     const [detailsVisible, setDetailsVisible] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState(null);
+    const [visibleCount, setVisibleCount] = useState(PRODUCT_PAGE_SIZE);
+    const detailSheetTranslateY = useRef(new Animated.Value(0)).current;
+
+    const closeDetailsModal = (dismissToBottom = false) => {
+        Animated.timing(detailSheetTranslateY, {
+            toValue: dismissToBottom ? 520 : 0,
+            duration: dismissToBottom ? 160 : 180,
+            useNativeDriver: true
+        }).start(() => {
+            detailSheetTranslateY.setValue(0);
+            setDetailsVisible(false);
+        });
+    };
+
+    const detailsPanResponder = useRef(
+        PanResponder.create({
+            onMoveShouldSetPanResponder: (_event, gestureState) =>
+                Math.abs(gestureState.dy) > 8 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
+            onPanResponderMove: (_event, gestureState) => {
+                if (gestureState.dy > 0) {
+                    detailSheetTranslateY.setValue(gestureState.dy);
+                }
+            },
+            onPanResponderRelease: (_event, gestureState) => {
+                if (gestureState.dy > 110 || gestureState.vy > 1.1) {
+                    closeDetailsModal(true);
+                    return;
+                }
+
+                Animated.spring(detailSheetTranslateY, {
+                    toValue: 0,
+                    useNativeDriver: true,
+                    bounciness: 4
+                }).start();
+            },
+            onPanResponderTerminate: () => {
+                Animated.spring(detailSheetTranslateY, {
+                    toValue: 0,
+                    useNativeDriver: true,
+                    bounciness: 4
+                }).start();
+            }
+        })
+    ).current;
 
     const loadProducts = async (term = '') => {
         setLoading(true);
@@ -150,6 +197,7 @@ export default function ProductsScreen({ token, onSummaryChange }) {
             const items = response.ok && Array.isArray(response.data) ? response.data : [];
             const filtered = filterProductsLocally(term, items);
             setProducts(filtered);
+            setVisibleCount(PRODUCT_PAGE_SIZE);
 
             if (onSummaryChange) {
                 onSummaryChange({
@@ -219,6 +267,7 @@ export default function ProductsScreen({ token, onSummaryChange }) {
     };
 
     const openDetailsModal = (product) => {
+        detailSheetTranslateY.setValue(0);
         setSelectedProduct(product);
         setDetailsVisible(true);
     };
@@ -239,6 +288,7 @@ export default function ProductsScreen({ token, onSummaryChange }) {
             precioOferta: productForm.precioOferta.trim() ? toInteger(productForm.precioOferta) : null,
             cantidadMayor: toInteger(productForm.cantidadMayor || '6'),
             cantidadPallet: toInteger(productForm.cantidadPallet || '24'),
+            familiaPromo: productForm.familiaPromo.trim() || null,
             id_categoria: productForm.id_categoria ? Number(productForm.id_categoria) : null,
             id_proveedor: productForm.id_proveedor ? Number(productForm.id_proveedor) : null,
             esPesable: productForm.esPesable
@@ -358,6 +408,14 @@ export default function ProductsScreen({ token, onSummaryChange }) {
         setScannerVisible(false);
     };
 
+    const visibleProducts = products.slice(0, visibleCount);
+    const canLoadMoreProducts = visibleCount < products.length;
+
+    const loadMoreProducts = () => {
+        if (loading || !canLoadMoreProducts) return;
+        setVisibleCount((prev) => Math.min(prev + PRODUCT_PAGE_SIZE, products.length));
+    };
+
     return (
         <Screen>
             <SectionHeader
@@ -379,12 +437,13 @@ export default function ProductsScreen({ token, onSummaryChange }) {
             <View style={styles.searchShell}>
                 <View style={styles.searchContainer}>
                     <Ionicons name="search-outline" size={20} color={brandColors.textMuted} style={styles.searchIcon} />
-                    <Field
+                    <TextInput
                         value={searchText}
                         onChangeText={setSearchText}
                         placeholder="Nombre o código de barras..."
-                        style={styles.searchField}
-                        containerStyle={styles.searchFieldContainer}
+                        placeholderTextColor={brandColors.textMuted}
+                        selectionColor={brandColors.accent}
+                        style={styles.searchInput}
                     />
                     <TouchableOpacity style={styles.scanButton} onPress={() => openScanner('search')}>
                         <Ionicons name="barcode-outline" size={22} color={brandColors.accent} />
@@ -399,10 +458,12 @@ export default function ProductsScreen({ token, onSummaryChange }) {
                 </View>
             ) : (
                 <FlatList
-                    data={products}
+                    data={visibleProducts}
                     keyExtractor={(item) => String(item.id_producto)}
                     contentContainerStyle={{ paddingBottom: 120 }}
                     showsVerticalScrollIndicator={false}
+                    onEndReached={loadMoreProducts}
+                    onEndReachedThreshold={0.35}
                     renderItem={({ item }) => (
                         <TouchableOpacity activeOpacity={0.7} onPress={() => openDetailsModal(item)}>
                             <Card style={styles.productCard}>
@@ -414,11 +475,16 @@ export default function ProductsScreen({ token, onSummaryChange }) {
                                             <Ionicons name="barcode-outline" size={14} color={brandColors.textMuted} />
                                             <Text style={styles.productCode}>{item.codigoBarras}</Text>
                                         </View>
+                                        {item.familiaPromo ? (
+                                            <View style={styles.familyBadge}>
+                                                <Text style={styles.familyBadgeText}>Familia {item.familiaPromo}</Text>
+                                            </View>
+                                        ) : null}
                                     </View>
                                     <View style={styles.priceColumn}>
                                         <Text style={styles.priceHeading}>DETALLE</Text>
                                         <Text style={styles.priceValue}>{formatCurrency(item.precioDetalle)}</Text>
-                                        {item.esPesable && (
+                                        {Boolean(item.esPesable) && (
                                             <View style={styles.pesableBadge}>
                                                 <Text style={styles.pesableText}>PESABLE</Text>
                                             </View>
@@ -495,6 +561,12 @@ export default function ProductsScreen({ token, onSummaryChange }) {
                 </View>
 
                 <Field label="Precio oferta (opcional)" value={productForm.precioOferta} onChangeText={(value) => setProductForm((prev) => ({ ...prev, precioOferta: value }))} keyboardType="numeric" />
+                <Field
+                    label="Familia promocional"
+                    value={productForm.familiaPromo}
+                    onChangeText={(value) => setProductForm((prev) => ({ ...prev, familiaPromo: value }))}
+                    placeholder="Ej: bebidas-3l, yogur-batido"
+                />
 
                 <PickerField
                     label="Categoría"
@@ -596,10 +668,11 @@ export default function ProductsScreen({ token, onSummaryChange }) {
             </FormModal>
 
             {/* Modal de Detalles del Producto */}
-            <Modal visible={detailsVisible} transparent animationType="slide" onRequestClose={() => setDetailsVisible(false)}>
+            <Modal visible={detailsVisible} transparent animationType="slide" onRequestClose={closeDetailsModal}>
                 <View style={styles.modalBackdrop}>
-                    <View style={styles.modalCard}>
-                        <View style={styles.modalHeader}>
+                    <Pressable style={StyleSheet.absoluteFill} onPress={closeDetailsModal} />
+                    <Animated.View style={[styles.modalCard, { transform: [{ translateY: detailSheetTranslateY }] }]}>
+                        <View style={styles.modalHeader} {...detailsPanResponder.panHandlers}>
                             <View style={styles.sheetHandle} />
                             <Text style={styles.modalTitle}>Detalles del Producto</Text>
                         </View>
@@ -631,11 +704,16 @@ export default function ProductsScreen({ token, onSummaryChange }) {
                                 </View>
 
                                 <View style={styles.infoSection}>
+                                    <Text style={styles.infoLabel}>Familia promocional</Text>
+                                    <Text style={styles.infoValue}>{selectedProduct.familiaPromo || 'Sin familia'}</Text>
+                                </View>
+
+                                <View style={styles.infoSection}>
                                     <Text style={styles.infoLabel}>Proveedor</Text>
                                     <Text style={styles.infoValue}>{selectedProduct.nombreProveedor || 'No especificado'}</Text>
                                 </View>
 
-                                {selectedProduct.esPesable && (
+                                {Boolean(selectedProduct.esPesable) && (
                                     <View style={styles.pesableInfo}>
                                         <Ionicons name="scale-outline" size={20} color={brandColors.danger} />
                                         <Text style={styles.pesableTextLarge}>Producto sujeto a pesaje (Kg)</Text>
@@ -648,10 +726,10 @@ export default function ProductsScreen({ token, onSummaryChange }) {
                             <SecondaryButton title="Editar" onPress={() => openProductModal(selectedProduct)} style={styles.flexOne} />
                             <DangerButton title="Eliminar" onPress={() => removeProduct(selectedProduct)} style={styles.flexOne} />
                         </View>
-                        <TouchableOpacity style={styles.closeFullButton} onPress={() => setDetailsVisible(false)}>
+                        <TouchableOpacity style={styles.closeFullButton} onPress={closeDetailsModal}>
                             <Text style={styles.closeFullButtonText}>Cerrar</Text>
                         </TouchableOpacity>
-                    </View>
+                    </Animated.View>
                 </View>
             </Modal>
 
@@ -728,14 +806,14 @@ const styles = StyleSheet.create({
     searchIcon: {
         marginRight: 8
     },
-    searchFieldContainer: {
+    searchInput: {
         flex: 1,
-        marginBottom: 0
-    },
-    searchField: {
-        backgroundColor: 'transparent',
-        borderWidth: 0,
-        height: 48
+        height: 48,
+        color: brandColors.text,
+        fontSize: 14,
+        fontWeight: '600',
+        paddingVertical: 0,
+        textAlignVertical: 'center'
     },
     scanButton: {
         width: 40,
@@ -808,6 +886,19 @@ const styles = StyleSheet.create({
         color: brandColors.accentStrong,
         fontSize: 20,
         fontWeight: '900'
+    },
+    familyBadge: {
+        alignSelf: 'flex-start',
+        marginTop: 8,
+        backgroundColor: '#FFF1E7',
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 999
+    },
+    familyBadgeText: {
+        color: brandColors.accentStrong,
+        fontSize: 11,
+        fontWeight: '800'
     },
     pesableBadge: {
         marginTop: 6,

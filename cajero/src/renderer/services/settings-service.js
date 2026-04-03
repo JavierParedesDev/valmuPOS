@@ -2,6 +2,7 @@ export function getSettingsSnapshot({ getSessionValue, sessionKeys }) {
     return {
         printerName: getSessionValue(sessionKeys.printerName) || 'Impresora termica 80mm',
         printerPaper: getSessionValue(sessionKeys.printerPaper) || '80mm',
+        customerDisplayEnabled: getSessionValue(sessionKeys.customerDisplayEnabled) === 'true',
         releaseRepo: getSessionValue(sessionKeys.releaseRepo) || 'JavierParedesDev/valmuPOS'
     };
 }
@@ -21,6 +22,18 @@ export function savePrinterSettingsSnapshot({
     return {
         printerName: normalizedPrinterName,
         printerPaper: normalizedPrinterPaper
+    };
+}
+
+export function saveCustomerDisplaySettingsSnapshot({
+    customerDisplayEnabled,
+    setSessionValue,
+    sessionKeys
+}) {
+    const isEnabled = Boolean(customerDisplayEnabled);
+    setSessionValue(sessionKeys.customerDisplayEnabled, String(isEnabled));
+    return {
+        customerDisplayEnabled: isEnabled
     };
 }
 
