@@ -4,6 +4,8 @@ export function normalizeSalesHistory(payload, formatDateTime) {
         total: Number(sale.total || 0),
         document: String(sale.tipoDoc || 'Venta'),
         paymentMethod: String(sale.metodoPago || 'Sin pago'),
+        isFiscal: Boolean(sale.esFiscal),
+        rawDate: sale.fechaVenta,
         dateLabel: formatDateTime(sale.fechaVenta)
     })).filter((sale) => sale.id > 0);
 }

@@ -16,6 +16,12 @@ import { toNumber } from '../utils/format';
 import { brandColors } from '../theme';
 import { Ionicons } from '@expo/vector-icons';
 
+function resolveBranchItemQuantity(item) {
+    const rawValue = item?.stockActual ?? item?.cantidad ?? 0;
+    const numericValue = Number(rawValue);
+    return Number.isFinite(numericValue) ? numericValue : 0;
+}
+
 export default function BranchesScreen({ token }) {
     const [branches, setBranches] = useState([]);
     const [inventory, setInventory] = useState([]);
@@ -76,6 +82,7 @@ export default function BranchesScreen({ token }) {
         }
 
         setAdjustVisible(false);
+        Alert.alert('Stock actualizado', 'El stock se actualizo correctamente.');
         loadInventory(selectedBranch);
     };
 
@@ -104,7 +111,10 @@ export default function BranchesScreen({ token }) {
                     showsVerticalScrollIndicator={false}
                     renderItem={({ item }) => (
                         <Card style={styles.inventoryCard}>
-                            <View style={styles.inventoryTop}>
+                            {(() => {
+                                const quantity = resolveBranchItemQuantity(item);
+                                return (
+                                    <View style={styles.inventoryTop}>
                                 <View style={styles.inventoryInfo}>
                                     <Text style={styles.inventoryTitle} numberOfLines={1}>{item.nombreProducto}</Text>
                                     <View style={styles.codeRow}>
@@ -114,18 +124,21 @@ export default function BranchesScreen({ token }) {
                                 </View>
                                 <View style={styles.stockColumn}>
                                     <Text style={styles.stockLabel}>DISPONIBLE</Text>
-                                    <Text style={[styles.stockValue, Number(item.cantidad) <= 5 && styles.lowStock]}>
-                                        {item.esPesable ? `${Number(item.cantidad).toFixed(3)} Kg` : Math.floor(Number(item.cantidad))}
+                                    <Text style={[styles.stockValue, quantity <= 5 && styles.lowStock]}>
+                                        {item.esPesable ? `${quantity.toFixed(3)} Kg` : Math.floor(quantity)}
                                     </Text>
                                 </View>
                             </View>
+                                );
+                            })()}
 
                             <TouchableOpacity
                                 style={styles.adjustButton}
                                 onPress={() => {
+                                    const quantity = resolveBranchItemQuantity(item);
                                     setCurrentItem(item);
                                     setAdjustForm({
-                                        nuevaCantidad: String(item.esPesable ? item.cantidad : Math.floor(Number(item.cantidad))),
+                                        nuevaCantidad: String(item.esPesable ? quantity : Math.floor(quantity)),
                                         motivoAjuste: 'INVENTARIO_MANUAL'
                                     });
                                     setAdjustVisible(true);
@@ -347,4 +360,3 @@ const styles = StyleSheet.create({
         marginTop: 4
     }
 });
-

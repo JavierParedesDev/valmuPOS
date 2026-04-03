@@ -21,11 +21,8 @@ import {
     TouchableRipple
 } from 'react-native-paper';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import * as Font from 'expo-font';
 import LoginScreen from './screens/LoginScreen';
-import ProductsScreen from './screens/ProductsScreen';
-import CategoriesScreen from './screens/CategoriesScreen';
-import SuppliersScreen from './screens/SuppliersScreen';
-import BranchesScreen from './screens/BranchesScreen';
 import { checkForAppUpdate, downloadAndInstallUpdate } from './services/updates';
 import { appTheme, brandColors } from './theme';
 
@@ -46,7 +43,23 @@ function ModuleIcon({ icon, color = '#ffffff', size = 20 }) {
     return <Ionicons name={icon?.name || 'ellipse'} size={size} color={color} />;
 }
 
+function resolveModuleComponent(moduleKey) {
+    switch (moduleKey) {
+        case 'products':
+            return require('./screens/ProductsScreen').default;
+        case 'categories':
+            return require('./screens/CategoriesScreen').default;
+        case 'suppliers':
+            return require('./screens/SuppliersScreen').default;
+        case 'branches':
+            return require('./screens/BranchesScreen').default;
+        default:
+            return null;
+    }
+}
+
 export default function MobileApp() {
+    const [iconsReady, setIconsReady] = useState(false);
     const [session, setSession] = useState({ token: '', user: null });
     const [moduleKey, setModuleKey] = useState('products');
     const [showIntro, setShowIntro] = useState(true);
@@ -62,6 +75,7 @@ export default function MobileApp() {
         downloading: false,
         error: ''
     });
+    const [moduleLoadError, setModuleLoadError] = useState('');
 
     const currentModule = useMemo(
         () => MODULES.find((item) => item.key === moduleKey) || MODULES[0],
@@ -85,6 +99,33 @@ export default function MobileApp() {
         }
 
         reviewUpdates();
+        return () => {
+            mounted = false;
+        };
+    }, []);
+
+    useEffect(() => {
+        let mounted = true;
+
+        async function warmIconFonts() {
+            try {
+                await Promise.race([
+                    Font.loadAsync({
+                        ...Ionicons.font,
+                        ...MaterialCommunityIcons.font
+                    }),
+                    new Promise((resolve) => setTimeout(resolve, 2500))
+                ]);
+            } catch (error) {
+                console.warn('No se pudieron precargar los iconos:', error);
+            } finally {
+                if (mounted) {
+                    setIconsReady(true);
+                }
+            }
+        }
+
+        warmIconFonts();
         return () => {
             mounted = false;
         };
@@ -117,19 +158,48 @@ export default function MobileApp() {
         }
     }, [moduleKey]);
 
+    useEffect(() => {
+        setModuleLoadError('');
+    }, [moduleKey, session.token]);
+
     function handleLogout() {
         setDrawerVisible(false);
         setSession({ token: '', user: null });
         setShowIntro(false);
+        setModuleLoadError('');
     }
 
     function renderCurrentModule() {
-        if (currentModule.key === 'products') {
-            return <ProductsScreen token={session.token} onSummaryChange={setModuleSummary} />;
+        try {
+            const ModuleScreen = resolveModuleComponent(currentModule.key);
+
+            if (!ModuleScreen) {
+                return (
+                    <View style={styles.fallbackCard}>
+                        <Text style={styles.fallbackTitle}>Módulo no disponible</Text>
+                        <Text style={styles.fallbackText}>No se pudo abrir esta sección.</Text>
+                    </View>
+                );
+            }
+
+            if (currentModule.key === 'products') {
+                return <ModuleScreen token={session.token} onSummaryChange={setModuleSummary} />;
+            }
+
+            return <ModuleScreen token={session.token} />;
+        } catch (error) {
+            const message = error?.message || 'No se pudo cargar este módulo.';
+            if (moduleLoadError !== message) {
+                setModuleLoadError(message);
+            }
+
+            return (
+                <View style={styles.fallbackCard}>
+                    <Text style={styles.fallbackTitle}>Error al abrir {currentModule.label}</Text>
+                    <Text style={styles.fallbackText}>{message}</Text>
+                </View>
+            );
         }
-        if (currentModule.key === 'categories') return <CategoriesScreen token={session.token} />;
-        if (currentModule.key === 'suppliers') return <SuppliersScreen token={session.token} />;
-        return <BranchesScreen token={session.token} />;
     }
 
     const initials = (session.user?.nombreCompleto || 'Valmu')
@@ -138,6 +208,17 @@ export default function MobileApp() {
         .join('')
         .slice(0, 2)
         .toUpperCase();
+
+    if (!iconsReady) {
+        return (
+            <PaperProvider theme={appTheme}>
+                <View style={styles.bootSplash}>
+                    <ActivityIndicator size="large" color={brandColors.accent} />
+                    <Text style={styles.bootText}>Cargando recursos...</Text>
+                </View>
+            </PaperProvider>
+        );
+    }
 
     return (
         <PaperProvider theme={appTheme}>
@@ -168,7 +249,7 @@ export default function MobileApp() {
 
                                     <View style={styles.headerBrand}>
                                         <Text style={styles.headerTitle}>{currentModule.label}</Text>
-                                        <Text style={styles.headerCaption}>Panel de Control · Valmu</Text>
+                                        <Text style={styles.headerCaption}>Panel de control · Valmu</Text>
                                     </View>
 
                                     <Avatar.Text size={44} label={initials} style={styles.avatar} labelStyle={styles.avatarLabel} />
@@ -196,6 +277,12 @@ export default function MobileApp() {
                             ) : null}
 
                             <View style={styles.contentContainer}>
+                                {moduleLoadError ? (
+                                    <View style={styles.moduleWarning}>
+                                        <Ionicons name="warning-outline" size={18} color={brandColors.danger} />
+                                        <Text style={styles.moduleWarningText} numberOfLines={2}>{moduleLoadError}</Text>
+                                    </View>
+                                ) : null}
                                 {renderCurrentModule()}
                             </View>
                         </View>
@@ -249,13 +336,13 @@ function LaunchScreen({ onContinue }) {
                         <Image source={brandIcon} style={styles.launchLogo} />
                     </View>
                     <Text style={styles.launchBrand}>Valmu</Text>
-                    <Text style={styles.launchTagline}>Sistema de Gestión Inteligente</Text>
+                    <Text style={styles.launchTagline}>Software de administración</Text>
                 </View>
 
                 <View style={styles.launchFooter}>
-                    <Text style={styles.launchTitle}>Control total de tu negocio en la palma de tu mano.</Text>
+                    <Text style={styles.launchTitle}>Software Valmu de administración.</Text>
                     <Text style={styles.launchText}>
-                        Gestiona inventario, sucursales y proveedores con una experiencia premium diseñada para la eficiencia.
+                        Gestión de productos, inventario, sucursales y proveedores.
                     </Text>
 
                     <Button
@@ -269,7 +356,7 @@ function LaunchScreen({ onContinue }) {
                     >
                         Comenzar Ahora
                     </Button>
-                    <Text style={styles.versionTag}>v1.0.0 · © 2024 Valmu Corp.</Text>
+                    <Text style={styles.versionTag}>v1.0.6 · © 2026 Valmu</Text>
                 </View>
             </View>
         </View>
@@ -391,9 +478,22 @@ function DrawerMenu({ visible, onClose, onLogout }) {
 }
 
 const styles = StyleSheet.create({
+    bootSplash: {
+        flex: 1,
+        backgroundColor: brandColors.shell,
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 16
+    },
+    bootText: {
+        color: '#ffffff',
+        fontSize: 14,
+        fontWeight: '700'
+    },
     safeArea: {
         flex: 1,
-        backgroundColor: brandColors.surface
+        backgroundColor: brandColors.surface,
+        paddingTop: Platform.OS === 'android' ? 10 : 8
     },
     shell: {
         flex: 1,
@@ -401,11 +501,11 @@ const styles = StyleSheet.create({
     },
     topRibbon: {
         paddingHorizontal: 20,
-        paddingTop: 12,
-        paddingBottom: 60,
+        paddingTop: 14,
+        paddingBottom: 18,
         backgroundColor: brandColors.surface,
-        borderBottomLeftRadius: 32,
-        borderBottomRightRadius: 32
+        borderBottomLeftRadius: 28,
+        borderBottomRightRadius: 28
     },
     headerRow: {
         flexDirection: 'row',
@@ -414,9 +514,9 @@ const styles = StyleSheet.create({
         gap: 12
     },
     headerIconButton: {
-        width: 48,
-        height: 48,
-        borderRadius: 16,
+        width: 44,
+        height: 44,
+        borderRadius: 14,
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: brandColors.backgroundAlt
@@ -427,14 +527,14 @@ const styles = StyleSheet.create({
     },
     headerTitle: {
         color: brandColors.text,
-        fontSize: 24,
+        fontSize: 22,
         fontWeight: '900',
         letterSpacing: -0.5
     },
     headerCaption: {
-        marginTop: 2,
+        marginTop: 1,
         color: brandColors.textMuted,
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: '600',
         textTransform: 'uppercase',
         letterSpacing: 0.5
@@ -548,10 +648,47 @@ const styles = StyleSheet.create({
         color: brandColors.textMuted,
         fontSize: 12
     },
+    moduleWarning: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        marginHorizontal: 4,
+        marginBottom: 10,
+        backgroundColor: '#FEE2E2',
+        borderRadius: 14,
+        paddingHorizontal: 12,
+        paddingVertical: 10
+    },
+    moduleWarningText: {
+        flex: 1,
+        color: brandColors.danger,
+        fontSize: 12,
+        fontWeight: '700'
+    },
     contentContainer: {
         flex: 1,
-        paddingTop: 16,
+        paddingTop: 6,
         paddingHorizontal: 16
+    },
+    fallbackCard: {
+        backgroundColor: brandColors.surface,
+        borderRadius: 24,
+        padding: 24,
+        marginTop: 8,
+        alignItems: 'center'
+    },
+    fallbackTitle: {
+        color: brandColors.text,
+        fontSize: 20,
+        fontWeight: '900',
+        textAlign: 'center'
+    },
+    fallbackText: {
+        color: brandColors.textMuted,
+        fontSize: 14,
+        lineHeight: 21,
+        textAlign: 'center',
+        marginTop: 8
     },
     bottomDock: {
         position: 'absolute',
@@ -861,4 +998,3 @@ const styles = StyleSheet.create({
         justifyContent: 'center'
     }
 });
-

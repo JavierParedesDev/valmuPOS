@@ -53,9 +53,9 @@ export default function LoginScreen({ onLogin }) {
                         <View style={styles.logoPill}>
                             <Text style={styles.logoText}>VALMU</Text>
                         </View>
-                        <Text style={styles.title}>Gestión de nivel empresarial.</Text>
+                        <Text style={styles.title}>Software de administración.</Text>
                         <Text style={styles.subtitle}>
-                            Administra productos, inventario y sucursales con una interfaz de alto rendimiento.
+                            Sistema personalizado para gestión de productos, inventario y sucursales.
                         </Text>
                     </View>
 
@@ -71,6 +71,7 @@ export default function LoginScreen({ onLogin }) {
                             onChangeText={setUsername}
                             placeholder="Tu nombre de usuario"
                             autoCapitalize="none"
+                            labelStyle={styles.loginFieldLabel}
                         />
                         <Field
                             label="Contraseña"
@@ -78,6 +79,7 @@ export default function LoginScreen({ onLogin }) {
                             onChangeText={setPassword}
                             secureTextEntry
                             placeholder="••••••••"
+                            labelStyle={styles.loginFieldLabel}
                         />
 
                         {error ? (
@@ -94,7 +96,7 @@ export default function LoginScreen({ onLogin }) {
                         />
 
                         <Text style={styles.footerNote}>
-                            Protección de datos y cifrado activo por Valmu Security.
+                            Valmu App de administración.
                         </Text>
                     </View>
                 </View>
@@ -133,6 +135,7 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         paddingHorizontal: 28,
+        paddingTop: 20,
         maxWidth: 500,
         alignSelf: 'center',
         width: '100%'
@@ -202,6 +205,9 @@ const styles = StyleSheet.create({
         color: 'rgba(255,255,255,0.4)',
         fontSize: 14,
         fontWeight: '500'
+    },
+    loginFieldLabel: {
+        color: '#FFFFFF'
     },
     errorBox: {
         backgroundColor: 'rgba(239, 68, 68, 0.1)',

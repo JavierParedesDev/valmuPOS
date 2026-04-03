@@ -121,7 +121,7 @@ export function renderTurnHistoryView(entries) {
     `).join('');
 }
 
-export function renderSalesHistoryView({ salesHistoryState, openSaleCancellationModal }) {
+export function renderSalesHistoryView({ salesHistoryState, openSaleCancellationModal, openSaleReceiptModal }) {
     const list = document.getElementById('sales-history-list');
     const count = document.getElementById('sales-history-count');
     const activeTabButton = document.getElementById('sales-tab-active-btn');
@@ -143,12 +143,19 @@ export function renderSalesHistoryView({ salesHistoryState, openSaleCancellation
     }
 
     window.openSaleCancellationModal = openSaleCancellationModal;
+    window.openSaleReceiptModal = openSaleReceiptModal;
 
     list.innerHTML = selectedItems.map((sale) => {
-        const detail = `${sale.document} · ${sale.paymentMethod} · $${formatCurrency(sale.total)}`;
+        const documentBadge = `<span class="sale-history-badge ${sale.isFiscal ? 'is-fiscal' : 'is-internal'}">${escapeHtml(sale.document)}</span>`;
+        const fiscalBadge = `<span class="sale-history-badge ${sale.isFiscal ? 'is-fiscal' : 'is-internal'}">${sale.isFiscal ? 'Fiscal' : 'No fiscal'}</span>`;
+        const paymentBadge = `<span class="sale-history-badge is-payment">${escapeHtml(sale.paymentMethod)}</span>`;
         const actionBlock = isCancelledTab
-            ? `<div class="turn-history-detail">Motivo: ${escapeHtml(sale.cancellationReason || 'Sin motivo registrado')}</div>`
+            ? `<div class="turn-history-detail">Motivo: ${escapeHtml(sale.cancellationReason || 'Sin motivo registrado')}</div>
+               <div class="product-actions-cell" style="justify-content:flex-start; margin-top:0.35rem;">
+                   <button class="btn btn-ghost btn-sm product-action-btn" type="button" onclick="openSaleReceiptModal(${sale.id})">Comprobante</button>
+               </div>`
             : `<div class="product-actions-cell" style="justify-content:flex-start; margin-top:0.35rem;">
+                <button class="btn btn-ghost btn-sm product-action-btn" type="button" onclick="openSaleReceiptModal(${sale.id})">Comprobante</button>
                 <button class="btn btn-ghost btn-sm product-action-btn" type="button" onclick="openSaleCancellationModal(${sale.id}, '${escapeHtml(sale.document)}', ${sale.total})">Anular</button>
             </div>`;
 
@@ -158,7 +165,12 @@ export function renderSalesHistoryView({ salesHistoryState, openSaleCancellation
                     <strong>Venta #${escapeHtml(sale.id)}</strong>
                     <span>${escapeHtml(sale.dateLabel)}</span>
                 </div>
-                <div class="turn-history-detail">${escapeHtml(detail)}</div>
+                <div class="sale-history-badges">
+                    ${documentBadge}
+                    ${fiscalBadge}
+                    ${paymentBadge}
+                </div>
+                <div class="turn-history-detail">Total: $${formatCurrency(sale.total)}</div>
                 ${actionBlock}
             </article>
         `;

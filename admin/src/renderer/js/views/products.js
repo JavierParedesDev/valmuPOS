@@ -242,7 +242,8 @@ function filterAdminProductsLocally(term = '', source = adminProductsCache) {
             product.nombreProducto,
             product.codigoBarras,
             product.nombreCategoria,
-            product.nombreProveedor
+            product.nombreProveedor,
+            product.familiaPromo
         ]
             .filter(Boolean)
             .map(normalizeAdminSearchValue)
@@ -308,6 +309,7 @@ function renderAdminProductRows(products) {
                     <span class="product-row-hint">${isExpanded ? 'Ocultar opciones' : 'Toca para ver opciones'}</span>
                 </div>
                 ${product.esPesable ? '<span class="badge badge-warning product-inline-badge">Pesable</span>' : ''}
+                ${product.familiaPromo ? `<span class="badge badge-info product-inline-badge">Familia ${product.familiaPromo}</span>` : ''}
             </td>
             <td data-label="Categoria"><span class="badge badge-info product-category-badge">${product.nombreCategoria || 'Sin Cat.'}</span></td>
             <td class="product-prices-cell" data-label="Precios">
@@ -393,6 +395,10 @@ function previewProductByIndex(index, event) {
                 <div class="preview-info-card">
                     <span class="preview-label">Proveedor</span>
                     <strong class="preview-value">${product.nombreProveedor || 'Ninguno'}</strong>
+                </div>
+                <div class="preview-info-card">
+                    <span class="preview-label">Familia</span>
+                    <strong class="preview-value">${product.familiaPromo || 'Sin familia'}</strong>
                 </div>
                 <div class="preview-info-card">
                     <span class="preview-label">Precio Detalle</span>
@@ -486,6 +492,10 @@ async function openProductForm(product = null) {
                 <label>Cantidad por Pallet</label>
                 <input type="number" id="p-pallet-qty" class="form-control" value="${product?.precioPallet > 0 && product?.cantidadPallet != null ? Math.max(0, Math.round(product.cantidadPallet)) : ''}" placeholder="Solo si defines precio pallet" step="1" min="0" inputmode="numeric">
             </div>
+            <div class="form-group" style="grid-column: span 2">
+                <label>Familia promocional</label>
+                <input type="text" id="p-family" class="form-control" value="${product?.familiaPromo || ''}" placeholder="Ej: bebidas-3l, yogur-batido, sabor-mix">
+            </div>
             <div class="form-group">
                 <label>Categoria</label>
                 <select id="p-category" class="form-control">
@@ -514,6 +524,7 @@ async function openProductForm(product = null) {
             precioOferta: document.getElementById('p-offer').value === '' ? null : parseAdminIntegerInput('p-offer'),
             cantidadMayor: parseAdminIntegerInput('p-wholesale') > 0 ? parseAdminOptionalPositiveIntegerInput('p-major-qty') : null,
             cantidadPallet: parseAdminIntegerInput('p-pallet') > 0 ? parseAdminOptionalPositiveIntegerInput('p-pallet-qty') : null,
+            familiaPromo: document.getElementById('p-family').value.trim() || null,
             id_categoria: document.getElementById('p-category').value ? parseInt(document.getElementById('p-category').value, 10) : null,
             id_proveedor: document.getElementById('p-supplier').value ? parseInt(document.getElementById('p-supplier').value, 10) : null,
             esPesable: document.getElementById('p-pesable').checked
