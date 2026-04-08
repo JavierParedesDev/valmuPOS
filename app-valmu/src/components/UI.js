@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
     Modal,
+    Pressable,
     ScrollView,
     SafeAreaView,
     StyleSheet,
@@ -67,14 +68,26 @@ export function PickerField({ label, value, onChange, options, emptyLabel = 'Sel
                 <Text style={styles.selectChevron}>▼</Text>
             </TouchableOpacity>
 
-            <Modal visible={open} transparent animationType="fade" onRequestClose={() => setOpen(false)}>
-                <TouchableOpacity style={styles.selectBackdrop} activeOpacity={1} onPress={() => setOpen(false)}>
+            <Modal
+                visible={open}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setOpen(false)}
+                statusBarTranslucent
+            >
+                <View style={styles.selectBackdrop}>
+                    <Pressable style={StyleSheet.absoluteFill} onPress={() => setOpen(false)} />
                     <View style={styles.selectSheet}>
                         <View style={styles.sheetHeader}>
                             <View style={styles.sheetHandle} />
                             <Text style={styles.selectTitle}>{label}</Text>
                         </View>
-                        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.selectOptions}>
+                        <ScrollView
+                            showsVerticalScrollIndicator={false}
+                            contentContainerStyle={styles.selectOptions}
+                            style={styles.selectOptionsScroll}
+                            keyboardShouldPersistTaps="handled"
+                        >
                             <TouchableOpacity
                                 style={[styles.selectOption, !value && styles.selectOptionActive]}
                                 onPress={() => {
@@ -102,7 +115,7 @@ export function PickerField({ label, value, onChange, options, emptyLabel = 'Sel
                             ))}
                         </ScrollView>
                     </View>
-                </TouchableOpacity>
+                </View>
             </Modal>
         </View>
     );
@@ -310,15 +323,17 @@ const styles = StyleSheet.create({
     },
     selectSheet: {
         backgroundColor: brandColors.surface,
-        borderTopLeftRadius: 32,
-        borderTopRightRadius: 32,
+        borderTopLeftRadius: 28,
+        borderTopRightRadius: 28,
         paddingHorizontal: 20,
-        paddingBottom: 40,
-        maxHeight: '80%'
+        paddingBottom: Platform.OS === 'ios' ? 30 : 22,
+        paddingTop: 2,
+        minHeight: 320,
+        maxHeight: '84%'
     },
     sheetHeader: {
         alignItems: 'center',
-        paddingVertical: 16
+        paddingVertical: 14
     },
     sheetHandle: {
         width: 40,
@@ -335,7 +350,11 @@ const styles = StyleSheet.create({
     },
     selectOptions: {
         gap: 10,
-        paddingTop: 10
+        paddingTop: 10,
+        paddingBottom: 12
+    },
+    selectOptionsScroll: {
+        flexGrow: 0
     },
     selectOption: {
         backgroundColor: brandColors.backgroundAlt,

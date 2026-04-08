@@ -52,10 +52,6 @@
                     <span class="nav-icon" aria-hidden="true"><i class="bi bi-truck"></i></span>
                     <span class="nav-text">Despachos</span>
                 </button>
-                <button class="nav-btn" id="nav-cash-btn" type="button">
-                    <span class="nav-icon" aria-hidden="true"><i class="bi bi-cash-coin"></i></span>
-                    <span class="nav-text">Caja</span>
-                </button>
                 <button class="nav-btn" id="nav-settings-btn" type="button">
                     <span class="nav-icon" aria-hidden="true"><i class="bi bi-gear-fill"></i></span>
                     <span class="nav-text">Ajustes</span>
@@ -89,11 +85,18 @@
                         <span class="retail-meta-label">Sucursal</span>
                         <strong class="meta-chip" id="branch-name-badge">Sucursal</strong>
                     </div>
-                    <button class="header-utility-btn" id="header-cash-btn" type="button">Caja</button>
-                    <span class="meta-chip" id="cash-session-badge">Caja cerrada</span>
-                    <span class="meta-version" id="app-version-label">v0.1.0</span>
-                    <button class="header-utility-btn" id="header-settings-btn" type="button">Ajustes</button>
-                    <button class="header-close-cash-btn" id="header-close-cash-btn" type="button">Cerrar caja</button>
+                    <div class="summary-context-card retail-customer-card retail-header-customer-card"
+                        id="sale-customer-card">
+                        <span class="summary-context-label">Cliente</span>
+                        <strong id="summary-customer-detail">Cliente general</strong>
+                    </div>
+                    <div class="retail-header-actions">
+                        <button class="header-utility-btn" id="header-fullscreen-btn" type="button"
+                            title="Pantalla Completa"><i class="bi bi-arrows-fullscreen"></i></button>
+                        <button class="header-utility-btn" id="header-settings-btn" type="button">Ajustes</button>
+                        <button class="header-close-cash-btn" id="header-close-cash-btn" type="button">Cerrar
+                            caja</button>
+                    </div>
                 </div>
             </header>
 
@@ -101,26 +104,19 @@
                 <div class="sale-panel retail-sale-panel">
                     <div class="retail-sale-toolbar">
                         <div class="sale-input-row search-box-shell retail-search-shell">
-                        <i class="bi bi-search search-icon-left"></i>
-                        <input type="text" class="scan-input with-icons" id="product-search-input"
-                            placeholder="Buscar producto por codigo o descripcion">
-                        <i class="bi bi-upc-scan barcode-icon-right"></i>
+                            <i class="bi bi-search search-icon-left"></i>
+                            <input type="text" class="scan-input with-icons" id="product-search-input"
+                                placeholder="Buscar producto por codigo o descripcion">
+                            <i class="bi bi-upc-scan barcode-icon-right"></i>
 
-                        <div class="search-results-overlay hidden" id="product-search-overlay">
-                            <div class="search-results" id="product-search-results"></div>
-                        </div>
+                            <div class="search-results-overlay hidden" id="product-search-overlay">
+                                <div class="search-results" id="product-search-results"></div>
+                            </div>
                         </div>
 
                         <div class="retail-sale-toolbar-actions">
-                            <button class="primary-btn retail-action-btn" id="sale-add-item-btn" type="button">
-                                <i class="bi bi-plus-circle-fill"></i>
-                                <span>Agregar item</span>
-                            </button>
-                            <button class="secondary-btn retail-action-btn retail-remove-btn" id="sale-remove-item-btn"
-                                type="button">
-                                <i class="bi bi-trash3"></i>
-                                <span>Eliminar item</span>
-                            </button>
+                            <button class="secondary-btn retail-clear-toolbar-btn" id="clear-sale-btn"
+                                type="button">Vaciar venta</button>
                         </div>
                     </div>
 
@@ -167,29 +163,27 @@
                             <i class="bi bi-clock-history"></i>
                             <span>Historial de ventas</span>
                         </button>
+                        <button class="footer-action-btn" id="manage-invoice-customer-btn" type="button">
+                            <i class="bi bi-person-plus-fill"></i>
+                            <span>Añadir Cliente</span>
+                        </button>
+                        <button class="footer-action-btn hidden" id="clear-invoice-customer-btn" type="button">
+                            <i class="bi bi-person-x-fill"></i>
+                            <span>Quitar Cliente</span>
+                        </button>
                     </div>
                 </div>
 
                 <aside class="summary-panel retail-payment-panel">
                     <div class="retail-panel-top">
-                        <div class="summary-context-card retail-customer-card" id="sale-customer-card">
-                            <span class="summary-context-label">Cliente actual</span>
-                            <strong id="summary-customer-detail">Cliente general</strong>
-                            <div class="summary-context-actions">
-                                <button class="summary-link-btn" id="manage-invoice-customer-btn"
-                                    type="button">Seleccionar cliente</button>
-                                <button class="summary-link-btn hidden" id="clear-invoice-customer-btn"
-                                    type="button">Quitar cliente</button>
-                            </div>
-                        </div>
                         <div class="summary-context-card retail-customer-card hidden" id="dispatch-inline-panel">
                             <span class="summary-context-label">Transportista</span>
                             <strong id="dispatch-inline-carrier-summary">Sin transportista seleccionado</strong>
                             <div class="summary-context-actions">
                                 <button class="summary-link-btn" id="dispatch-inline-add-carrier-btn"
                                     type="button">Registrar transportista</button>
-                                <button class="summary-link-btn" id="dispatch-inline-history-btn"
-                                    type="button">Ver historial</button>
+                                <button class="summary-link-btn" id="dispatch-inline-history-btn" type="button">Ver
+                                    historial</button>
                             </div>
                         </div>
                         <div class="hidden">
@@ -243,7 +237,8 @@
                     </div>
 
                     <div class="dispatch-inline-shell hidden" id="dispatch-inline-shell">
-                        <label class="input-label" for="dispatch-inline-carrier-select">Seleccionar transportista</label>
+                        <label class="input-label" for="dispatch-inline-carrier-select">Seleccionar
+                            transportista</label>
                         <select class="input-control" id="dispatch-inline-carrier-select">
                             <option value="">Seleccionar transportista</option>
                         </select>
@@ -253,97 +248,18 @@
                                 <strong id="dispatch-inline-items-label">0</strong>
                             </div>
                         </div>
-                        <div class="connection-status" id="dispatch-inline-status">
-                            El cajero prepara la carga y descuenta stock para ruta. La rendicion la revisa el jefe con el
+                        <div class="connection-status hidden" id="dispatch-inline-status">
+                            El cajero prepara la carga y descuenta stock para ruta. La rendicion la revisa el jefe con
+                            el
                             transportista.
                         </div>
                     </div>
 
                     <div class="summary-actions retail-summary-actions">
-                        <button class="btn-cobrar-massive retail-charge-btn" id="charge-main-btn" type="button">Cobrar</button>
-                        <button class="secondary-btn btn-vaciar retail-clear-btn" id="clear-sale-btn" type="button">Vaciar
-                            venta</button>
+                        <button class="btn-cobrar-massive retail-charge-btn" id="charge-main-btn"
+                            type="button">Cobrar</button>
                     </div>
                 </aside>
-            </section>
-
-            <section class="cash-view hidden" id="cash-view">
-                <article class="settings-card">
-                    <span class="header-kicker">Turno</span>
-                    <h3>Estado de caja</h3>
-                    <label class="input-label" for="branch-select">Sucursal de venta</label>
-                    <select class="input-control" id="branch-select">
-                        <option value="">Cargando sucursales...</option>
-                    </select>
-                    <div class="settings-info-row">
-                        <span>Estado</span>
-                        <strong id="cash-view-status-label">Caja cerrada</strong>
-                    </div>
-                    <div class="settings-info-row">
-                        <span>Fondo inicial</span>
-                        <strong id="cash-view-opening-label">$0</strong>
-                    </div>
-                    <div class="settings-info-row">
-                        <span>Inicio</span>
-                        <strong id="cash-view-opened-at-label">Sin turno</strong>
-                    </div>
-                    <div class="connection-status" id="backend-status">Modo demo activo</div>
-                    <button class="secondary-btn hidden" id="close-cash-session-btn" type="button">Cerrar caja</button>
-                </article>
-
-                <article class="settings-card">
-                    <div class="turn-history-head">
-                        <span class="summary-label">Arqueo en vivo</span>
-                        <strong id="turn-sales-count">0</strong>
-                    </div>
-                    <div class="summary-stats compact-summary">
-                        <div class="summary-row">
-                            <span>Efectivo</span>
-                            <strong id="turn-total-cash">$0</strong>
-                        </div>
-                        <div class="summary-row">
-                            <span>Tarjeta</span>
-                            <strong id="turn-total-card">$0</strong>
-                        </div>
-                        <div class="summary-row">
-                            <span>Transferencia</span>
-                            <strong id="turn-total-transfer">$0</strong>
-                        </div>
-                        <div class="summary-row">
-                            <span>Vale interno no fiscal</span>
-                            <strong id="turn-total-internal">$0</strong>
-                        </div>
-                        <div class="summary-row">
-                            <span>Caja esperada</span>
-                            <strong id="turn-expected-cash">$0</strong>
-                        </div>
-                    </div>
-                </article>
-
-                <article class="settings-card cash-view-span">
-                    <div class="turn-history-head">
-                        <span class="summary-label">Historial del turno</span>
-                        <strong id="turn-history-count">0</strong>
-                    </div>
-                    <div class="turn-history-list" id="turn-history-list">
-                        <div class="turn-history-empty">Sin movimientos aun.</div>
-                    </div>
-                </article>
-
-                <article class="settings-card cash-view-span">
-                    <div class="turn-history-head">
-                        <span class="summary-label">Ventas recientes</span>
-                        <strong id="sales-history-count">0</strong>
-                    </div>
-                    <div class="sales-history-tabs">
-                        <button class="sales-history-tab active" id="sales-tab-active-btn"
-                            type="button">Activas</button>
-                        <button class="sales-history-tab" id="sales-tab-cancelled-btn" type="button">Anuladas</button>
-                    </div>
-                    <div class="turn-history-list" id="sales-history-list">
-                        <div class="turn-history-empty">Sin ventas registradas aun.</div>
-                    </div>
-                </article>
             </section>
 
             <section class="pos-grid dispatch-view hidden" id="dispatch-view">
@@ -383,10 +299,6 @@
                             <i class="bi bi-upc-scan"></i>
                             <span>Vender</span>
                         </button>
-                        <button class="footer-action-btn" id="dispatch-footer-cash-btn" type="button">
-                            <i class="bi bi-cash-coin"></i>
-                            <span>Caja</span>
-                        </button>
                         <button class="footer-action-btn active" id="dispatch-footer-dispatch-btn" type="button">
                             <i class="bi bi-truck"></i>
                             <span>Despacho</span>
@@ -404,8 +316,8 @@
                             <span class="summary-context-label">Transportista</span>
                             <strong id="dispatch-carrier-summary">Sin transportista seleccionado</strong>
                             <div class="summary-context-actions">
-                                <button class="summary-link-btn" id="dispatch-add-carrier-btn"
-                                    type="button">Registrar transportista</button>
+                                <button class="summary-link-btn" id="dispatch-add-carrier-btn" type="button">Registrar
+                                    transportista</button>
                                 <button class="summary-link-btn" id="dispatch-open-history-btn" type="button">Ver
                                     historial</button>
                             </div>
@@ -430,15 +342,16 @@
                             </div>
                         </div>
 
-                        <div class="connection-status" id="dispatch-status">
-                            El cajero prepara la carga y descuenta stock para ruta. La rendicion la revisa el jefe con el
+                        <div class="connection-status hidden" id="dispatch-status">
+                            El cajero prepara la carga y descuenta stock para ruta. La rendicion la revisa el jefe con
+                            el
                             transportista.
                         </div>
                     </div>
 
                     <div class="summary-actions retail-summary-actions dispatch-summary-actions">
                         <button class="btn-cobrar-massive retail-charge-btn" id="dispatch-generate-btn"
-                            type="button">Emitir vale de despacho</button>
+                            type="button">Emitir despacho</button>
                         <button class="secondary-btn retail-clear-btn" id="dispatch-clear-btn" type="button">Vaciar
                             carga</button>
                     </div>
@@ -455,12 +368,29 @@
                     </div>
                     <div class="weighted-actions">
                         <button class="secondary-btn" id="dispatch-history-close-btn" type="button">Cerrar</button>
-                        <button class="primary-btn" id="dispatch-history-go-cash-btn" type="button">Ir a caja</button>
+                        <button class="primary-btn" id="dispatch-history-go-cash-btn" type="button">Volver a
+                            Vender</button>
                     </div>
                 </div>
             </div>
 
             <section class="settings-view hidden" id="settings-view">
+                <article class="settings-card cash-view-span"
+                    style="display: flex; align-items: center; padding: 0.8rem 1.2rem;">
+                    <button class="secondary-btn" id="settings-back-btn" type="button"
+                        style="width: auto; padding: 0.6rem 1.2rem; font-size: 0.95rem; font-weight: 700; display: flex; gap: 0.5rem; justify-content: center; align-items: center;"><i
+                            class="bi bi-arrow-left"></i> Volver a Vender</button>
+                </article>
+
+                <article class="settings-card">
+                    <span class="header-kicker">Caja</span>
+                    <h3>Sucursal</h3>
+                    <label class="input-label" for="branch-select">Sucursal de venta</label>
+                    <select class="input-control" id="branch-select">
+                        <option value="">Cargando sucursales...</option>
+                    </select>
+                </article>
+
                 <article class="settings-card">
                     <span class="header-kicker">Hardware</span>
                     <h3>Impresora</h3>
@@ -819,7 +749,8 @@
             </div>
 
             <label class="input-label" for="dispatch-receipt-preview-output">Vista previa</label>
-            <textarea class="input-control receipt-preview" id="dispatch-receipt-preview-output" rows="10" readonly></textarea>
+            <textarea class="input-control receipt-preview" id="dispatch-receipt-preview-output" rows="10"
+                readonly></textarea>
             <div class="connection-status hidden" id="dispatch-receipt-status"></div>
 
             <div class="weighted-actions">
@@ -835,7 +766,8 @@
             <p>Agrega un transportista nuevo para asignarlo a rutas de despacho.</p>
 
             <label class="input-label" for="dispatch-carrier-name-input">Nombre</label>
-            <input class="input-control" id="dispatch-carrier-name-input" type="text" placeholder="Transportes Valmu o nombre del chofer">
+            <input class="input-control" id="dispatch-carrier-name-input" type="text"
+                placeholder="Transportes Valmu o nombre del chofer">
 
             <label class="input-label" for="dispatch-carrier-plate-input">Patente</label>
             <input class="input-control" id="dispatch-carrier-plate-input" type="text" placeholder="ABCD-12">
@@ -844,7 +776,8 @@
 
             <div class="weighted-actions">
                 <button class="secondary-btn" id="dispatch-carrier-cancel-btn" type="button">Cancelar</button>
-                <button class="primary-btn" id="dispatch-carrier-confirm-btn" type="button">Guardar transportista</button>
+                <button class="primary-btn" id="dispatch-carrier-confirm-btn" type="button">Guardar
+                    transportista</button>
             </div>
         </div>
     </div>

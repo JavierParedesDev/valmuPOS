@@ -356,7 +356,7 @@ function LaunchScreen({ onContinue }) {
                     >
                         Comenzar Ahora
                     </Button>
-                    <Text style={styles.versionTag}>v1.0.6 · © 2026 Valmu</Text>
+                    <Text style={styles.versionTag}>v1.0.8 · © 2026 Valmu</Text>
                 </View>
             </View>
         </View>
