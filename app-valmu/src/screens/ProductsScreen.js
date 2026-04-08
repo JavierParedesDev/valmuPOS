@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Animated, FlatList, Modal, PanResponder, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Alert, FlatList, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { apiRequest } from '../services/api';
 import {
@@ -22,6 +22,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 const PRODUCT_PAGE_SIZE = 40;
 const PRODUCT_PICKER_LIMIT = 12;
+const PRODUCT_REFERENCE_LIMIT = 500;
 let mobileProductRequestId = 0;
 let mobileProductPickerRequestId = 0;
 
@@ -112,6 +113,29 @@ function buildProductEndpoint(term = '', limit = PRODUCT_PAGE_SIZE) {
     return `/productos?${params.toString()}`;
 }
 
+function buildReferenceEndpoint(basePath, limit = PRODUCT_REFERENCE_LIMIT) {
+    const params = new URLSearchParams();
+    params.set('limit', String(limit));
+    params.set('offset', '0');
+    params.set('page', '1');
+    return `${basePath}?${params.toString()}`;
+}
+
+function normalizeReferenceOptions(items = [], idKey, nameKey) {
+    const uniqueItems = new Map();
+
+    items.forEach((item) => {
+        const id = item?.[idKey];
+        const name = String(item?.[nameKey] || '').trim();
+        if (!id || !name || uniqueItems.has(id)) return;
+        uniqueItems.set(id, item);
+    });
+
+    return Array.from(uniqueItems.values()).sort((left, right) =>
+        String(left?.[nameKey] || '').localeCompare(String(right?.[nameKey] || ''), 'es', { sensitivity: 'base' })
+    );
+}
+
 export default function ProductsScreen({ token, onSummaryChange }) {
     const [products, setProducts] = useState([]);
     const [categories, setCategories] = useState([]);
@@ -136,49 +160,12 @@ export default function ProductsScreen({ token, onSummaryChange }) {
     const [detailsVisible, setDetailsVisible] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState(null);
     const [visibleCount, setVisibleCount] = useState(PRODUCT_PAGE_SIZE);
-    const detailSheetTranslateY = useRef(new Animated.Value(0)).current;
+    const [supplierPickerOpen, setSupplierPickerOpen] = useState(false);
+    const [supplierFilter, setSupplierFilter] = useState('');
 
-    const closeDetailsModal = (dismissToBottom = false) => {
-        Animated.timing(detailSheetTranslateY, {
-            toValue: dismissToBottom ? 520 : 0,
-            duration: dismissToBottom ? 160 : 180,
-            useNativeDriver: true
-        }).start(() => {
-            detailSheetTranslateY.setValue(0);
-            setDetailsVisible(false);
-        });
+    const closeDetailsModal = () => {
+        setDetailsVisible(false);
     };
-
-    const detailsPanResponder = useRef(
-        PanResponder.create({
-            onMoveShouldSetPanResponder: (_event, gestureState) =>
-                Math.abs(gestureState.dy) > 8 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
-            onPanResponderMove: (_event, gestureState) => {
-                if (gestureState.dy > 0) {
-                    detailSheetTranslateY.setValue(gestureState.dy);
-                }
-            },
-            onPanResponderRelease: (_event, gestureState) => {
-                if (gestureState.dy > 110 || gestureState.vy > 1.1) {
-                    closeDetailsModal(true);
-                    return;
-                }
-
-                Animated.spring(detailSheetTranslateY, {
-                    toValue: 0,
-                    useNativeDriver: true,
-                    bounciness: 4
-                }).start();
-            },
-            onPanResponderTerminate: () => {
-                Animated.spring(detailSheetTranslateY, {
-                    toValue: 0,
-                    useNativeDriver: true,
-                    bounciness: 4
-                }).start();
-            }
-        })
-    ).current;
 
     const loadProducts = async (term = '') => {
         setLoading(true);
@@ -214,13 +201,13 @@ export default function ProductsScreen({ token, onSummaryChange }) {
 
     const loadReferences = async () => {
         const [categoriesResponse, suppliersResponse, branchesResponse] = await Promise.all([
-            apiRequest({ endpoint: '/categorias', token }),
-            apiRequest({ endpoint: '/proveedores', token }),
+            apiRequest({ endpoint: buildReferenceEndpoint('/categorias'), token }),
+            apiRequest({ endpoint: buildReferenceEndpoint('/proveedores'), token }),
             apiRequest({ endpoint: '/sucursales', token })
         ]);
 
-        setCategories(categoriesResponse.ok && Array.isArray(categoriesResponse.data) ? categoriesResponse.data : []);
-        setSuppliers(suppliersResponse.ok && Array.isArray(suppliersResponse.data) ? suppliersResponse.data : []);
+        setCategories(normalizeReferenceOptions(categoriesResponse.ok && Array.isArray(categoriesResponse.data) ? categoriesResponse.data : [], 'id_categoria', 'nombreCategoria'));
+        setSuppliers(normalizeReferenceOptions(suppliersResponse.ok && Array.isArray(suppliersResponse.data) ? suppliersResponse.data : [], 'id_proveedor', 'nombreProveedor'));
         setBranches(branchesResponse.ok && Array.isArray(branchesResponse.data) ? branchesResponse.data : []);
     };
 
@@ -262,12 +249,13 @@ export default function ProductsScreen({ token, onSummaryChange }) {
     const openProductModal = (product = null) => {
         setEditingProduct(product);
         setProductForm(product ? mapProductToForm(product) : emptyProductForm());
+        setSupplierPickerOpen(false);
+        setSupplierFilter('');
         setFormVisible(true);
         setDetailsVisible(false); // Close details if opening edit
     };
 
     const openDetailsModal = (product) => {
-        detailSheetTranslateY.setValue(0);
         setSelectedProduct(product);
         setDetailsVisible(true);
     };
@@ -410,6 +398,13 @@ export default function ProductsScreen({ token, onSummaryChange }) {
 
     const visibleProducts = products.slice(0, visibleCount);
     const canLoadMoreProducts = visibleCount < products.length;
+    const filteredSuppliers = suppliers.filter((item) =>
+        String(item?.nombreProveedor || '')
+            .toLowerCase()
+            .includes(String(supplierFilter || '').trim().toLowerCase())
+    );
+    const selectedSupplierLabel =
+        suppliers.find((item) => String(item.id_proveedor) === productForm.id_proveedor)?.nombreProveedor || 'Sin proveedor';
 
     const loadMoreProducts = () => {
         if (loading || !canLoadMoreProducts) return;
@@ -575,13 +570,98 @@ export default function ProductsScreen({ token, onSummaryChange }) {
                     options={categories.map((item) => ({ label: item.nombreCategoria, value: String(item.id_categoria) }))}
                     emptyLabel="Sin categoría"
                 />
-                <PickerField
-                    label="Proveedor"
-                    value={productForm.id_proveedor}
-                    onChange={(value) => setProductForm((prev) => ({ ...prev, id_proveedor: value }))}
-                    options={suppliers.map((item) => ({ label: item.nombreProveedor, value: String(item.id_proveedor) }))}
-                    emptyLabel="Sin proveedor"
-                />
+                <View style={styles.inlineSelectBlock}>
+                    <Text style={styles.inlineSelectLabel}>Proveedor</Text>
+                    <TouchableOpacity
+                        style={styles.inlineSelectTrigger}
+                        activeOpacity={0.75}
+                        onPress={() => setSupplierPickerOpen((current) => !current)}
+                    >
+                        <Text
+                            style={[
+                                styles.inlineSelectTriggerText,
+                                !productForm.id_proveedor && styles.inlineSelectPlaceholder
+                            ]}
+                        >
+                            {selectedSupplierLabel}
+                        </Text>
+                        <Ionicons
+                            name={supplierPickerOpen ? 'chevron-up' : 'chevron-down'}
+                            size={18}
+                            color={brandColors.textMuted}
+                        />
+                    </TouchableOpacity>
+
+                    {supplierPickerOpen ? (
+                        <View style={styles.inlineSelectPanel}>
+                            <TextInput
+                                value={supplierFilter}
+                                onChangeText={setSupplierFilter}
+                                placeholder="Buscar proveedor..."
+                                placeholderTextColor={brandColors.textMuted}
+                                selectionColor={brandColors.accent}
+                                style={styles.inlineSelectSearch}
+                            />
+                            <ScrollView
+                                style={styles.inlineSelectList}
+                                showsVerticalScrollIndicator={false}
+                                nestedScrollEnabled
+                                keyboardShouldPersistTaps="handled"
+                            >
+                                <TouchableOpacity
+                                    style={[
+                                        styles.inlineSelectOption,
+                                        !productForm.id_proveedor && styles.inlineSelectOptionActive
+                                    ]}
+                                    onPress={() => {
+                                        setProductForm((prev) => ({ ...prev, id_proveedor: '' }));
+                                        setSupplierPickerOpen(false);
+                                        setSupplierFilter('');
+                                    }}
+                                >
+                                    <Text
+                                        style={[
+                                            styles.inlineSelectOptionText,
+                                            !productForm.id_proveedor && styles.inlineSelectOptionTextActive
+                                        ]}
+                                    >
+                                        Sin proveedor
+                                    </Text>
+                                </TouchableOpacity>
+
+                                {filteredSuppliers.map((item) => {
+                                    const isActive = String(item.id_proveedor) === productForm.id_proveedor;
+                                    return (
+                                        <TouchableOpacity
+                                            key={item.id_proveedor}
+                                            style={[
+                                                styles.inlineSelectOption,
+                                                isActive && styles.inlineSelectOptionActive
+                                            ]}
+                                            onPress={() => {
+                                                setProductForm((prev) => ({
+                                                    ...prev,
+                                                    id_proveedor: String(item.id_proveedor)
+                                                }));
+                                                setSupplierPickerOpen(false);
+                                                setSupplierFilter('');
+                                            }}
+                                        >
+                                            <Text
+                                                style={[
+                                                    styles.inlineSelectOptionText,
+                                                    isActive && styles.inlineSelectOptionTextActive
+                                                ]}
+                                            >
+                                                {item.nombreProveedor}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                            </ScrollView>
+                        </View>
+                    ) : null}
+                </View>
                 <SwitchField
                     label="¿Es un producto pesable?"
                     value={productForm.esPesable}
@@ -667,17 +747,25 @@ export default function ProductsScreen({ token, onSummaryChange }) {
                 />
             </FormModal>
 
-            {/* Modal de Detalles del Producto */}
-            <Modal visible={detailsVisible} transparent animationType="slide" onRequestClose={closeDetailsModal}>
-                <View style={styles.modalBackdrop}>
-                    <Pressable style={StyleSheet.absoluteFill} onPress={closeDetailsModal} />
-                    <Animated.View style={[styles.modalCard, { transform: [{ translateY: detailSheetTranslateY }] }]}>
-                        <View style={styles.modalHeader} {...detailsPanResponder.panHandlers}>
-                            <View style={styles.sheetHandle} />
-                            <Text style={styles.modalTitle}>Detalles del Producto</Text>
-                        </View>
+            <Modal
+                visible={detailsVisible && Boolean(selectedProduct)}
+                transparent
+                animationType="slide"
+                onRequestClose={closeDetailsModal}
+                statusBarTranslucent
+            >
+                {selectedProduct ? (
+                    <View style={styles.detailsOverlay}>
+                        <Pressable style={StyleSheet.absoluteFill} onPress={closeDetailsModal} />
+                        <View style={styles.detailsSheet}>
+                            <View style={styles.detailsSheetHeader}>
+                                <View style={styles.sheetHandle} />
+                                <Text style={styles.modalTitle}>Detalles del Producto</Text>
+                                <TouchableOpacity style={styles.detailsCloseIcon} onPress={closeDetailsModal}>
+                                    <Ionicons name="close" size={22} color={brandColors.textMuted} />
+                                </TouchableOpacity>
+                            </View>
 
-                        {selectedProduct && (
                             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
                                 <View style={styles.detailsHeader}>
                                     <Text style={styles.categoryLabel}>{selectedProduct.nombreCategoria || 'Sin categoría'}</Text>
@@ -720,17 +808,17 @@ export default function ProductsScreen({ token, onSummaryChange }) {
                                     </View>
                                 )}
                             </ScrollView>
-                        )}
 
-                        <View style={styles.modalActions}>
-                            <SecondaryButton title="Editar" onPress={() => openProductModal(selectedProduct)} style={styles.flexOne} />
-                            <DangerButton title="Eliminar" onPress={() => removeProduct(selectedProduct)} style={styles.flexOne} />
+                            <View style={styles.modalActions}>
+                                <SecondaryButton title="Editar" onPress={() => openProductModal(selectedProduct)} style={styles.flexOne} />
+                                <DangerButton title="Eliminar" onPress={() => removeProduct(selectedProduct)} style={styles.flexOne} />
+                            </View>
+                            <TouchableOpacity style={styles.closeFullButton} onPress={closeDetailsModal}>
+                                <Text style={styles.closeFullButtonText}>Cerrar</Text>
+                            </TouchableOpacity>
                         </View>
-                        <TouchableOpacity style={styles.closeFullButton} onPress={closeDetailsModal}>
-                            <Text style={styles.closeFullButtonText}>Cerrar</Text>
-                        </TouchableOpacity>
-                    </Animated.View>
-                </View>
+                    </View>
+                ) : null}
             </Modal>
 
             <Modal visible={scannerVisible} transparent animationType="slide" onRequestClose={() => setScannerVisible(false)}>
@@ -942,6 +1030,76 @@ const styles = StyleSheet.create({
         gap: 12,
         marginBottom: 16
     },
+    inlineSelectBlock: {
+        marginBottom: 18
+    },
+    inlineSelectLabel: {
+        marginBottom: 8,
+        fontSize: 14,
+        fontWeight: '700',
+        color: brandColors.shell,
+        marginLeft: 4
+    },
+    inlineSelectTrigger: {
+        backgroundColor: brandColors.backgroundAlt,
+        borderRadius: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 14,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between'
+    },
+    inlineSelectTriggerText: {
+        flex: 1,
+        color: brandColors.text,
+        fontWeight: '600',
+        fontSize: 16,
+        paddingRight: 10
+    },
+    inlineSelectPlaceholder: {
+        color: brandColors.textMuted
+    },
+    inlineSelectPanel: {
+        backgroundColor: brandColors.backgroundAlt,
+        borderRadius: 18,
+        marginTop: 10,
+        padding: 10,
+        borderWidth: 1,
+        borderColor: 'rgba(226, 232, 240, 0.8)'
+    },
+    inlineSelectSearch: {
+        backgroundColor: '#ffffff',
+        borderRadius: 14,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        fontSize: 14,
+        color: brandColors.text,
+        fontWeight: '500',
+        marginBottom: 10
+    },
+    inlineSelectList: {
+        maxHeight: 220
+    },
+    inlineSelectOption: {
+        backgroundColor: '#ffffff',
+        borderRadius: 14,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        marginBottom: 8
+    },
+    inlineSelectOptionActive: {
+        backgroundColor: brandColors.accentSoft,
+        borderWidth: 1,
+        borderColor: brandColors.accent
+    },
+    inlineSelectOptionText: {
+        color: brandColors.text,
+        fontSize: 14,
+        fontWeight: '600'
+    },
+    inlineSelectOptionTextActive: {
+        color: brandColors.accentStrong
+    },
     selectedProductCard: {
         backgroundColor: brandColors.accentSoft,
         borderRadius: 18,
@@ -986,6 +1144,37 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(15, 23, 42, 0.6)',
         justifyContent: 'flex-end'
     },
+    detailsOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        zIndex: 40,
+        backgroundColor: 'rgba(15, 23, 42, 0.6)',
+        justifyContent: 'flex-end'
+    },
+    detailsSheet: {
+        backgroundColor: brandColors.surface,
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
+        paddingHorizontal: 24,
+        paddingBottom: Platform.OS === 'ios' ? 40 : 24,
+        maxHeight: '90%'
+    },
+    detailsSheetHeader: {
+        alignItems: 'center',
+        paddingTop: 12,
+        marginBottom: 20,
+        position: 'relative'
+    },
+    detailsCloseIcon: {
+        position: 'absolute',
+        right: 0,
+        top: 8,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: brandColors.backgroundAlt
+    },
     modalCard: {
         backgroundColor: brandColors.surface,
         borderTopLeftRadius: 32,
@@ -996,7 +1185,7 @@ const styles = StyleSheet.create({
     },
     modalHeader: {
         alignItems: 'center',
-        paddingTop: 12,
+        paddingTop: 4,
         marginBottom: 20
     },
     sheetHandle: {

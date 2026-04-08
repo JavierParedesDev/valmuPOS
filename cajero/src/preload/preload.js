@@ -13,9 +13,10 @@ contextBridge.exposeInMainWorld('cajeroAPI', {
     closeCustomerDisplay: () => ipcRenderer.invoke('display:close-customer'),
     updateCustomerDisplay: (payload) => ipcRenderer.invoke('display:update-customer', payload),
     getCustomerDisplayState: () => ipcRenderer.invoke('display:get-customer-state'),
+    toggleFullscreen: () => ipcRenderer.invoke('app:toggle-fullscreen'),
     onCustomerDisplayUpdate: (callback) => {
         if (typeof callback !== 'function') {
-            return () => {};
+            return () => { };
         }
 
         const listener = (_event, payload) => callback(payload);

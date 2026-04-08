@@ -1,4 +1,5 @@
 const ADMIN_PRODUCT_LIMIT = 25;
+const ADMIN_PRODUCT_FORM_REFERENCE_LIMIT = 500;
 let adminProductSearchTimer = null;
 let adminProductRequestId = 0;
 let adminProductsCache = [];
@@ -71,6 +72,39 @@ async function fetchAdminProducts(term = '', limit = ADMIN_PRODUCT_LIMIT, page =
         method: 'GET',
         token
     });
+}
+
+function normalizeAdminReferenceOptions(items, idKey, nameKey) {
+    const uniqueItems = new Map();
+
+    (Array.isArray(items) ? items : []).forEach((item) => {
+        const id = item?.[idKey];
+        const label = String(item?.[nameKey] || '').trim();
+        if (!id || !label || uniqueItems.has(id)) return;
+        uniqueItems.set(id, item);
+    });
+
+    return Array.from(uniqueItems.values()).sort((left, right) =>
+        String(left?.[nameKey] || '').localeCompare(String(right?.[nameKey] || ''), 'es', { sensitivity: 'base' })
+    );
+}
+
+async function fetchAdminProductFormReferences(token) {
+    const [catRes, supRes] = await Promise.all([
+        apiRequest({
+            endpoint: `/categorias?limit=${ADMIN_PRODUCT_FORM_REFERENCE_LIMIT}&offset=0&page=1`,
+            token
+        }),
+        apiRequest({
+            endpoint: `/proveedores?limit=${ADMIN_PRODUCT_FORM_REFERENCE_LIMIT}&offset=0&page=1`,
+            token
+        })
+    ]);
+
+    return {
+        categories: normalizeAdminReferenceOptions(catRes.ok ? catRes.data : [], 'id_categoria', 'nombreCategoria'),
+        suppliers: normalizeAdminReferenceOptions(supRes.ok ? supRes.data : [], 'id_proveedor', 'nombreProveedor')
+    };
 }
 
 async function renderProducts() {
@@ -442,13 +476,7 @@ async function openProductForm(product = null) {
     const token = getAuthToken();
     const isEdit = !!product;
 
-    const [catRes, supRes] = await Promise.all([
-        apiRequest({ endpoint: '/categorias', token }),
-        apiRequest({ endpoint: '/proveedores', token })
-    ]);
-
-    const categories = catRes.ok ? catRes.data : [];
-    const suppliers = supRes.ok ? supRes.data : [];
+    const { categories, suppliers } = await fetchAdminProductFormReferences(token);
 
     const content = `
         <div class="product-form-grid">

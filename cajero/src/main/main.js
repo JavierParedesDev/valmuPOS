@@ -74,7 +74,7 @@ async function runPythonReceiptPrint(payload) {
             );
         });
     } finally {
-        await fs.unlink(tempPath).catch(() => {});
+        await fs.unlink(tempPath).catch(() => { });
     }
 }
 
@@ -87,6 +87,7 @@ function createMainWindow() {
         backgroundColor: '#1c1410',
         autoHideMenuBar: true,
         title: 'Valmu Cajero',
+        icon: getReceiptLogoPath(),
         webPreferences: {
             preload: path.join(__dirname, '../preload/preload.js'),
             contextIsolation: true,
@@ -318,6 +319,13 @@ function registerIpcHandlers() {
         isOpen: Boolean(customerDisplayWindow && !customerDisplayWindow.isDestroyed()),
         payload: lastCustomerDisplayPayload
     }));
+
+    ipcMain.handle('app:toggle-fullscreen', async () => {
+        if (!mainWindow || mainWindow.isDestroyed()) return false;
+        const isFullScreen = mainWindow.isFullScreen();
+        mainWindow.setFullScreen(!isFullScreen);
+        return !isFullScreen;
+    });
 }
 
 app.whenReady().then(() => {

@@ -208,13 +208,65 @@ document.addEventListener('DOMContentLoaded', async () => {
     bindDispatchView();
     bindGlobalRuntimeGuards();
 
-    if (getAuthToken() && getCurrentUser()) {
-        await bootAuthenticatedSession();
+    await restoreSessionOnStartup();
+});
+
+async function restoreSessionOnStartup() {
+    showLoginScreen();
+
+    if (!hasStoredSession()) {
+        clearIncompleteStoredSession();
+        setLoginStatus('Completa tus credenciales para entrar.');
+        focusLoginUsername();
         return;
     }
 
-    showLoginScreen();
-});
+    setLoginStatus('Recuperando sesion guardada...');
+
+    try {
+        const cashStatus = await validateStoredSession();
+        await bootAuthenticatedSession({ cashStatus });
+    } catch (error) {
+        console.error('Stored session restore error:', error);
+        resetCashierRuntimeState();
+        showLoginScreen();
+        setLoginStatus(error?.message || 'No se pudo recuperar la sesion guardada. Ingresa nuevamente.');
+        focusLoginUsername();
+    }
+}
+
+function hasStoredSession() {
+    return Boolean(
+        normalizeApiBaseUrl(getApiBaseUrl()) &&
+        getAuthToken() &&
+        getCurrentUserId()
+    );
+}
+
+function clearIncompleteStoredSession() {
+    if (!getAuthToken() && !getCurrentUser() && !getSessionValue('cajaAbierta')) {
+        return;
+    }
+
+    clearSession();
+}
+
+async function validateStoredSession() {
+    const apiBaseUrl = normalizeApiBaseUrl(getApiBaseUrl());
+    const token = getAuthToken();
+
+    if (!apiBaseUrl || !token || !getCurrentUserId()) {
+        throw new Error('No hay una sesion guardada valida. Ingresa nuevamente.');
+    }
+
+    return fetchCashStatus({ apiBaseUrl, token });
+}
+
+function focusLoginUsername() {
+    window.setTimeout(() => {
+        document.getElementById('login-username-input')?.focus();
+    }, 0);
+}
 
 function bindGlobalRuntimeGuards() {
     window.addEventListener('error', (event) => {
@@ -234,17 +286,19 @@ function bindGlobalRuntimeGuards() {
     });
 }
 
-async function bootAuthenticatedSession() {
+async function bootAuthenticatedSession(options = {}) {
     try {
-        await enterCashierMode();
+        await enterCashierMode(options);
     } catch (error) {
+        const detail = error?.message || 'No se pudo cargar el cajero con la sesion actual.';
         console.error('Cashier bootstrap error:', error);
-        handleRuntimeFailure({
-            title: 'Error al iniciar cajero',
-            detail: error?.message || 'No se pudo cargar el cajero con la sesion actual.'
-        });
         resetCashierRuntimeState();
         showLoginScreen();
+        handleRuntimeFailure({
+            title: 'Error al iniciar cajero',
+            detail
+        });
+        focusLoginUsername();
     }
 }
 
@@ -305,6 +359,7 @@ function bindLogin() {
                 token: session.token,
                 user: session.user
             });
+            setLoginStatus('Cargando cajero...');
             addAuditEntry({
                 type: 'success',
                 title: 'Sesion iniciada',
@@ -343,6 +398,8 @@ function bindNavigation() {
     const headerCloseCashButton = document.getElementById('header-close-cash-btn');
     const headerCashButton = document.getElementById('header-cash-btn');
     const headerSettingsButton = document.getElementById('header-settings-btn');
+    const headerFullscreenButton = document.getElementById('header-fullscreen-btn');
+    const settingsBackButton = document.getElementById('settings-back-btn');
     const saleDispatchButton = document.getElementById('sale-footer-dispatch-btn');
     const saleHistoryButton = document.getElementById('sale-footer-history-btn');
 
@@ -353,13 +410,24 @@ function bindNavigation() {
     headerCloseCashButton?.addEventListener('click', openCloseCashModal);
     headerCashButton?.addEventListener('click', () => showAppView('cash'));
     headerSettingsButton?.addEventListener('click', () => showAppView('settings'));
+
+    headerFullscreenButton?.addEventListener('click', async () => {
+        if (window.cajeroAPI && window.cajeroAPI.toggleFullscreen) {
+            await window.cajeroAPI.toggleFullscreen();
+        }
+    });
+
+    settingsBackButton?.addEventListener('click', () => {
+        showAppView('sale');
+    });
+
     saleDispatchButton?.addEventListener('click', () => showAppView('dispatch'));
     saleHistoryButton?.addEventListener('click', () => {
         if (isDispatchMode()) {
             openDispatchHistoryModal();
             return;
         }
-        showAppView('cash');
+        showAppView('sale');
     });
 }
 
@@ -400,7 +468,7 @@ function bindDispatchHistoryModal() {
     document.getElementById('dispatch-history-close-btn')?.addEventListener('click', closeDispatchHistoryModal);
     document.getElementById('dispatch-history-go-cash-btn')?.addEventListener('click', () => {
         closeDispatchHistoryModal();
-        showAppView('cash');
+        showAppView('sale');
     });
     document.getElementById('dispatch-history-modal-backdrop')?.addEventListener('click', (event) => {
         if (event.target.id === 'dispatch-history-modal-backdrop') {
@@ -443,31 +511,13 @@ function bindPaymentModal() {
     });
     document.getElementById('doc-factura-toggle')?.addEventListener('click', () => {
         if (isDispatchMode()) {
-            showAppView('cash');
+            showAppView('sale');
             return;
         }
         saleState.documentType = 'Factura';
         renderDocumentType();
     });
     document.getElementById('clear-sale-btn')?.addEventListener('click', clearCurrentSale);
-    document.getElementById('sale-add-item-btn')?.addEventListener('click', () => {
-        if (isDispatchMode()) {
-            openDispatchCarrierModal();
-            return;
-        }
-        document.getElementById('product-search-input')?.focus();
-    });
-    document.getElementById('sale-remove-item-btn')?.addEventListener('click', () => {
-        if (isDispatchMode()) {
-            openDispatchHistoryModal();
-            return;
-        }
-        const lastItem = saleState.cart[saleState.cart.length - 1];
-        if (!lastItem) {
-            return;
-        }
-        removeCartItem(lastItem.productId);
-    });
     document.getElementById('manage-invoice-customer-btn')?.addEventListener('click', openInvoiceClientFlow);
     document.getElementById('clear-invoice-customer-btn')?.addEventListener('click', clearInvoiceCustomer);
     document.getElementById('payment-cancel-btn')?.addEventListener('click', closePaymentModal);
@@ -583,10 +633,14 @@ function bindCloseCashModal() {
     });
 }
 
-async function enterCashierMode() {
+async function enterCashierMode({ cashStatus = null } = {}) {
+    hydrateCashierUser();
+    await verificarEstadoCaja({
+        cashStatus,
+        throwOnError: true
+    });
     showCashierApp();
     showAppView('sale');
-    hydrateCashierUser();
     bindSaleEvents();
     await loadBranchOptions();
     await loadCategoryOptions();
@@ -610,7 +664,6 @@ async function enterCashierMode() {
     await connectCatalogToBackend();
     await loadSalesHistory();
     await loadDispatchData();
-    await verificarEstadoCaja();
 
     if (saleState.cart.length) {
         setBackendStatus(`Venta en curso recuperada con ${formatQuantity(getCartSnapshot().items, false)} item(s).`);
@@ -635,14 +688,6 @@ function setFooterButtonContent(button, icon, label, active = false) {
     button.classList.toggle('active', active);
 }
 
-function setToolbarButtonContent(button, icon, label) {
-    if (!button) {
-        return;
-    }
-
-    button.innerHTML = `<i class="bi ${icon}"></i><span>${label}</span>`;
-}
-
 function renderOperationMode() {
     const dispatchMode = isDispatchMode();
     const searchInput = document.getElementById('product-search-input');
@@ -654,8 +699,6 @@ function renderOperationMode() {
     const totalCardLabel = document.querySelector('.retail-total-card .summary-label');
     const chargeButton = document.getElementById('charge-main-btn');
     const clearButton = document.getElementById('clear-sale-btn');
-    const addButton = document.getElementById('sale-add-item-btn');
-    const removeButton = document.getElementById('sale-remove-item-btn');
     const boletaButton = document.getElementById('doc-boleta-toggle');
     const facturaButton = document.getElementById('doc-factura-toggle');
     const dispatchButton = document.getElementById('sale-footer-dispatch-btn');
@@ -686,19 +729,20 @@ function renderOperationMode() {
     }
 
     if (dispatchMode) {
-        setToolbarButtonContent(addButton, 'bi-truck', 'Registrar transportista');
-        setToolbarButtonContent(removeButton, 'bi-clock-history', 'Ver historial');
         setFooterButtonContent(boletaButton, 'bi-upc-scan', 'Vender', false);
-        setFooterButtonContent(facturaButton, 'bi-cash-coin', 'Caja', false);
+        facturaButton?.classList.add('hidden');
         setFooterButtonContent(dispatchButton, 'bi-truck', 'Despacho', true);
         setFooterButtonContent(historyButton, 'bi-clock-history', 'Historial', false);
+        document.getElementById('manage-invoice-customer-btn')?.classList.add('hidden');
+        document.getElementById('clear-invoice-customer-btn')?.classList.add('hidden');
     } else {
-        setToolbarButtonContent(addButton, 'bi-plus-circle-fill', 'Agregar item');
-        setToolbarButtonContent(removeButton, 'bi-trash3', 'Eliminar item');
         setFooterButtonContent(boletaButton, 'bi-receipt-cutoff', 'Boleta', saleState.documentType === 'Boleta');
+        facturaButton?.classList.remove('hidden');
         setFooterButtonContent(facturaButton, 'bi-file-earmark-text', 'Factura', saleState.documentType === 'Factura');
         setFooterButtonContent(dispatchButton, 'bi-truck', 'Despacho', false);
         setFooterButtonContent(historyButton, 'bi-clock-history', 'Historial de ventas', false);
+        document.getElementById('manage-invoice-customer-btn')?.classList.remove('hidden');
+        document.getElementById('clear-invoice-customer-btn')?.classList.toggle('hidden', !saleState.customer?.id);
     }
 }
 
@@ -1841,7 +1885,7 @@ async function confirmSaleCancellation() {
     }
 }
 
-async function verificarEstadoCaja() {
+async function verificarEstadoCaja({ cashStatus = null, throwOnError = false } = {}) {
     const token = getAuthToken();
     const apiBaseUrl = normalizeApiBaseUrl(getApiBaseUrl());
 
@@ -1863,7 +1907,7 @@ async function verificarEstadoCaja() {
     }
 
     try {
-        const data = await fetchCashStatus({ apiBaseUrl, token });
+        const data = cashStatus || await fetchCashStatus({ apiBaseUrl, token });
 
         if (data?.abierta) {
             cashSessionState.isOpen = true;
@@ -1902,6 +1946,10 @@ async function verificarEstadoCaja() {
         resetTurnScopedRuntimeState(false);
         setSessionValue('cajaAbierta', 'false');
         setBackendStatus(error?.message || 'No se pudo verificar el estado de la caja.');
+
+        if (throwOnError) {
+            throw error;
+        }
     }
 
     renderCashSessionState();
@@ -2640,8 +2688,8 @@ function buildCustomerDisplayPayload() {
         customerLabel: dispatchMode
             ? (getSelectedDispatchCarrier()?.name || 'Transportista sin asignar')
             : saleState.customer?.rut
-            ? `${saleState.customer.name} · ${saleState.customer.rut}`
-            : 'Cliente general',
+                ? `${saleState.customer.name} · ${saleState.customer.rut}`
+                : 'Cliente general',
         itemsCount: snapshot.items,
         totalLabel: `$${formatCurrency(snapshot.total)}`,
         statusLabel: !cashSessionState.isOpen
