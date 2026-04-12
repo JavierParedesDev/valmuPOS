@@ -215,6 +215,39 @@ class InvoicesPage {
         });
     }
 
+    async renderDebitNote() {
+        if (this.clients.length === 0) {
+            await this.loadSmartData();
+        }
+
+        const now = new Date();
+        const year = now.getFullYear();
+        const month = String(now.getMonth() + 1).padStart(2, '0');
+        const day = String(now.getDate()).padStart(2, '0');
+        const today = `${year}-${month}-${day}`;
+
+        const local = invoicingConfigService.getLocalConfig(this.currentConfig);
+        const config = {
+            rutEmisor: local.rutEmisor || DEFAULT_EMISOR.rut,
+            razonSocial: local.razonSocial || DEFAULT_EMISOR.razonSocial,
+            direccion: local.direccion || DEFAULT_EMISOR.direccion,
+            comuna: local.comuna || DEFAULT_EMISOR.comuna,
+            giro: local.giro || DEFAULT_EMISOR.giro,
+            acteco: local.acteco || DEFAULT_EMISOR.acteco,
+            email: local.email || '',
+            telefono: local.telefono || '',
+            ciudad: local.ciudad || 'CONCEPCION'
+        };
+
+        const folio56 = local.folio_56 || 1;
+
+        return invoicingDebitView.render({
+            config,
+            today,
+            folio: folio56
+        });
+    }
+
     async emitCreditNote() {
         return invoicingAdjustmentEmission.emitCreditNote({
             page: this,
@@ -719,6 +752,46 @@ class InvoicesPage {
                 btnElement.innerHTML = '<i class="fas fa-cloud-upload-alt mr-1"></i> Subir';
             }
         }
+    }
+
+    async fetchHistory() {
+        this.historyData = null;
+        return invoicingHistoryController.fetch(this);
+    }
+
+    setHistoryFilter(filter) {
+        return invoicingHistoryController.setFilter(this, filter);
+    }
+
+    setHistoryPage(page) {
+        return invoicingHistoryController.setPage(this, page);
+    }
+
+    handleSearch(value) {
+        return invoicingHistoryController.handleSearch(this, value);
+    }
+
+    async handleDelete(filename) {
+        return invoicingDocuments.handleDelete({
+            filename,
+            api,
+            toast: Toast,
+            refreshHistory: async () => {
+                await this.fetchHistory();
+            }
+        });
+    }
+
+    async createPdfFromXmlWrapper(type, folio, filename) {
+        return invoicingDocuments.createPdfFromXmlWrapper({
+            type,
+            folio,
+            filename,
+            api,
+            electronAPI: window.electronAPI,
+            toast: Toast,
+            createPdfFromXml: (xmlContent, targetFilename, targetFolder) => this.createPdfFromXml(xmlContent, targetFilename, targetFolder)
+        });
     }
 }
 
