@@ -1,117 +1,175 @@
 window.ValmuInvoicingDebitView = {
     render({ config, today, folio } = {}) {
         return `
-            <div class="max-w-6xl mx-auto space-y-6 animate-fade-in pb-10">
-                
-                <!-- HEADER & REFERENCE -->
-                <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-6 border-l-8 border-l-emerald-500">
-                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-                        <div>
-                            <h2 class="text-xl font-bold text-gray-800">Nota de Débito</h2>
-                            <p class="text-sm text-gray-500">Recargo o Incremento (Tipo 56)</p>
-                        </div>
-                        <div class="bg-emerald-50 border border-emerald-100 p-4 rounded-xl text-center">
-                            <div class="text-[10px] font-bold text-emerald-600 uppercase tracking-widest mb-1">Folio Asignado</div>
-                            <div class="text-lg font-black text-emerald-900" id="nd-folio-display">${folio}</div>
-                            <input type="hidden" id="nd-folio" value="${folio}">
+            <div class="max-w-7xl mx-auto pb-10 space-y-8">
+                <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                    <div class="xl:col-span-2 bg-white/90 border border-orange-100 rounded-[28px] shadow-sm p-8">
+                        <h3 class="text-xl font-black text-[#4B2E1F] uppercase tracking-tight">Nota de Debito Electronica</h3>
+                        <p class="text-sm text-[#9B6B4A] mt-1">Documento tipo 56 para agregar cargos o corregir montos.</p>
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6">
+                            <div>
+                                <label class="block text-[11px] font-black text-[#B86B2B] uppercase mb-1">Folio</label>
+                                <input id="nd-folio-display" type="number" readonly value="${folio}" class="w-full rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 font-black text-[#4B2E1F]">
+                                <input id="nd-folio" type="hidden" value="${folio}">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-black text-[#B86B2B] uppercase mb-1">Fecha Emision</label>
+                                <input id="nd-fch-emis" type="date" value="${today}" class="w-full rounded-xl border border-orange-200 px-4 py-3 font-bold text-[#4B2E1F]">
+                            </div>
+                            <div>
+                                <label class="block text-[11px] font-black text-[#B86B2B] uppercase mb-1">Fecha Vencimiento</label>
+                                <input id="nd-fch-venc" type="date" value="${today}" class="w-full rounded-xl border border-orange-200 px-4 py-3 font-bold text-[#4B2E1F]">
+                            </div>
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div class="bg-gray-50/50 p-4 rounded-xl">
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-2">Tipo Ref.</label>
-                            <select id="nd-ref-type" class="w-full bg-white border border-gray-100 rounded-lg p-2 text-sm font-bold">
-                                <option value="33" selected>Factura Electrónica (33)</option>
-                                <option value="39">Boleta Electrónica (39)</option>
+                    <div class="bg-white/90 border-2 border-emerald-200 rounded-[28px] shadow-sm p-8 text-center">
+                        <div class="text-xs font-black text-emerald-600 uppercase tracking-[0.2em]">RUT ${config.rutEmisor || ''}</div>
+                        <div class="mt-3 text-2xl font-black text-[#4B2E1F] leading-tight">NOTA DE DEBITO</div>
+                        <div class="text-sm font-bold text-[#9B6B4A]">ELECTRONICA</div>
+                        <div class="mt-4 text-lg font-black text-emerald-700">Folio ${folio}</div>
+                        <div class="text-xs font-black text-[#9B6B4A] mt-2">S.I.I. CONCEPCION</div>
+                    </div>
+                </div>
+
+                <div class="bg-white/90 border border-orange-100 rounded-[28px] shadow-sm p-8">
+                    <h4 class="text-[12px] font-black text-[#FF6A00] uppercase tracking-[0.2em] mb-4">Documento Referenciado</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                        <div>
+                            <label class="block text-[11px] font-black text-[#7A4A28] uppercase mb-1">Tipo Doc.</label>
+                            <select id="nd-ref-type" class="w-full rounded-xl border border-orange-200 px-4 py-3 font-bold text-[#4B2E1F]">
+                                <option value="33" selected>Factura Electronica (33)</option>
+                                <option value="39">Boleta Electronica (39)</option>
                             </select>
                         </div>
-                        <div class="bg-gray-50/50 p-4 rounded-xl">
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-2">Folio Ref.</label>
+                        <div>
+                            <label class="block text-[11px] font-black text-[#7A4A28] uppercase mb-1">Folio Ref.</label>
                             <div class="flex gap-2">
-                                <input type="number" id="nd-ref-folio" class="w-full bg-white border border-gray-100 rounded-lg p-2 font-bold text-center" placeholder="000">
-                                <button id="btn-nd-load-ref" class="bg-orange-600 text-white p-2 px-3 rounded-lg"><i class="bi bi-search"></i></button>
+                                <input id="nd-ref-folio" type="number" class="w-full rounded-xl border border-orange-200 px-4 py-3 font-bold text-[#4B2E1F]" placeholder="Ej: 123">
+                                <button id="btn-nd-load-ref" type="button" class="px-4 rounded-xl bg-orange-500 text-white font-black">Buscar</button>
                             </div>
                         </div>
-                        <div class="bg-gray-50/50 p-4 rounded-xl">
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-2">Fecha Ref.</label>
-                            <input type="date" id="nd-ref-date" value="${today}" class="w-full bg-white border border-gray-100 rounded-lg p-2 text-sm font-bold">
+                        <div>
+                            <label class="block text-[11px] font-black text-[#7A4A28] uppercase mb-1">Fecha Ref.</label>
+                            <input id="nd-ref-date" type="date" value="${today}" class="w-full rounded-xl border border-orange-200 px-4 py-3 font-bold text-[#4B2E1F]">
                         </div>
-                        <div class="bg-gray-50/50 p-4 rounded-xl">
-                            <label class="block text-[10px] font-bold text-gray-400 uppercase mb-2">Código Acción</label>
-                            <select id="nd-ref-code" class="w-full bg-white border border-gray-100 rounded-lg p-2 text-sm font-bold">
-                                <option value="3" selected>3. Corrige Monto</option>
+                        <div>
+                            <label class="block text-[11px] font-black text-[#7A4A28] uppercase mb-1">Codigo Ref.</label>
+                            <select id="nd-ref-code" class="w-full rounded-xl border border-orange-200 px-4 py-3 font-bold text-[#4B2E1F]">
+                                <option value="3" selected>3. Corrige Montos</option>
                                 <option value="1">1. Anula Documento</option>
                                 <option value="2">2. Corrige Texto</option>
                             </select>
                         </div>
+                        <div>
+                            <label class="block text-[11px] font-black text-[#7A4A28] uppercase mb-1">Motivo</label>
+                            <input id="nd-ref-reason" type="text" class="w-full rounded-xl border border-orange-200 px-4 py-3 font-bold text-[#4B2E1F]" placeholder="Motivo de la ND">
+                        </div>
                     </div>
                 </div>
 
-                <!-- RECEPTOR (DENSE) -->
-                <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-                    <h3 class="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">DATOS RECEPTOR</h3>
+                <div class="bg-white/90 border border-orange-100 rounded-[28px] shadow-sm p-8">
+                    <h4 class="text-[12px] font-black text-[#FF6A00] uppercase tracking-[0.2em] mb-4">Datos Receptor</h4>
                     <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
                         <div class="md:col-span-3">
-                            <label class="block text-[9px] font-bold text-gray-400 uppercase mb-1">RUT Receptor</label>
-                            <input type="text" id="nd-rut-recep" class="w-full border border-gray-100 rounded-lg p-2 text-sm font-black" placeholder="BUSCAR...">
+                            <label class="block text-[11px] font-black text-[#7A4A28] uppercase mb-1">RUT</label>
+                            <input id="nd-rut-recep" type="text" class="w-full rounded-xl border border-orange-200 px-4 py-3 font-bold text-[#4B2E1F]" placeholder="Buscar...">
                         </div>
                         <div class="md:col-span-9">
-                            <label class="block text-[9px] font-bold text-gray-400 uppercase mb-1">Razón Social</label>
-                            <input type="text" id="nd-rzn-recep" class="w-full border border-gray-100 rounded-lg p-2 text-sm font-medium">
+                            <label class="block text-[11px] font-black text-[#7A4A28] uppercase mb-1">Razon Social</label>
+                            <input id="nd-rzn-recep" type="text" class="w-full rounded-xl border border-orange-200 px-4 py-3 font-bold text-[#4B2E1F]">
                         </div>
-                        <input type="hidden" id="nd-dir-recep"> <input type="hidden" id="nd-cmna-recep"> <input type="hidden" id="nd-ciudad-recep"> <input type="hidden" id="nd-giro-recep"> <input type="hidden" id="nd-contacto-recep">
-                    </div>
-                </div>
-
-                <!-- ITEMS TABLE -->
-                <div class="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                    <div class="px-6 py-4 border-b border-gray-50 flex items-center justify-between">
-                        <h3 class="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em]">DETALLE DEL CARGO</h3>
-                        <button id="btn-nd-add-line" class="text-xs font-bold text-gray-400 hover:text-emerald-600 flex items-center gap-2">
-                            <i class="bi bi-plus-circle-fill"></i> Agregar Detalle
-                        </button>
-                    </div>
-                    <table class="w-full border-collapse">
-                        <thead>
-                            <tr class="bg-gray-50/50">
-                                <th class="px-6 py-3 text-[10px] font-bold text-gray-400 uppercase text-left">Descripción</th>
-                                <th class="px-3 py-3 text-[10px] font-bold text-gray-400 uppercase text-center" style="width: 80px;">Cant.</th>
-                                <th class="px-3 py-3 text-[10px] font-bold text-gray-400 uppercase text-right" style="width: 120px;">Precio</th>
-                                <th class="px-3 py-3 text-[10px] font-bold text-gray-400 uppercase text-center" style="width: 80px;">% Desc.</th>
-                                <th class="px-3 py-3 text-[10px] font-bold text-gray-400 uppercase text-right" style="width: 120px;">Total</th>
-                                <th class="px-6 py-3" style="width: 50px;"></th>
-                            </tr>
-                        </thead>
-                        <tbody id="nd-items-container" class="divide-y divide-gray-50">
-                            ${this.renderItemRow()}
-                        </tbody>
-                    </table>
-                </div>
-
-                <!-- FOOTER -->
-                <div class="flex flex-col md:flex-row gap-6 justify-end items-end">
-                    <div class="w-full md:w-80 space-y-4">
-                         <button id="btn-emit-nd" class="w-full h-16 rounded-xl bg-emerald-600 text-white font-black text-xs uppercase tracking-[0.2em] shadow-lg hover:bg-emerald-700 transition-all flex items-center justify-center gap-3">
-                            <i class="bi bi-file-earmark-plus-fill"></i> Emitir Nota de Débito
-                         </button>
-                    </div>
-                    <div class="w-full md:w-80 bg-gray-900 rounded-xl p-6 text-white space-y-2">
-                        <div class="flex justify-between text-[10px] font-bold opacity-50 uppercase">
-                            <span>Neto</span>
-                            <span id="nd-monto-neto">$0</span>
+                        <div class="md:col-span-5">
+                            <label class="block text-[11px] font-black text-[#7A4A28] uppercase mb-1">Direccion</label>
+                            <input id="nd-dir-recep" type="text" class="w-full rounded-xl border border-orange-200 px-4 py-3 font-bold text-[#4B2E1F]">
                         </div>
-                        <div class="flex justify-between text-[10px] font-bold opacity-50 uppercase">
-                            <span>IVA (19%)</span>
-                            <span id="nd-monto-iva">$0</span>
+                        <div class="md:col-span-3">
+                            <label class="block text-[11px] font-black text-[#7A4A28] uppercase mb-1">Comuna</label>
+                            <input id="nd-cmna-recep" type="text" class="w-full rounded-xl border border-orange-200 px-4 py-3 font-bold text-[#4B2E1F]">
                         </div>
-                        <div class="pt-2 border-t border-white/10 flex justify-between items-center">
-                            <span class="text-xs font-black uppercase text-emerald-500">Monto Final</span>
-                            <span id="nd-monto-total" class="text-2xl font-black">$0</span>
+                        <div class="md:col-span-2">
+                            <label class="block text-[11px] font-black text-[#7A4A28] uppercase mb-1">Ciudad</label>
+                            <input id="nd-ciudad-recep" type="text" class="w-full rounded-xl border border-orange-200 px-4 py-3 font-bold text-[#4B2E1F]">
+                        </div>
+                        <div class="md:col-span-2">
+                            <label class="block text-[11px] font-black text-[#7A4A28] uppercase mb-1">Contacto</label>
+                            <input id="nd-contacto-recep" type="text" class="w-full rounded-xl border border-orange-200 px-4 py-3 font-bold text-[#4B2E1F]">
+                        </div>
+                        <div class="md:col-span-8">
+                            <label class="block text-[11px] font-black text-[#7A4A28] uppercase mb-1">Giro</label>
+                            <input id="nd-giro-recep" type="text" class="w-full rounded-xl border border-orange-200 px-4 py-3 font-bold text-[#4B2E1F]">
                         </div>
                     </div>
                 </div>
 
-                <!-- HIDDEN PROPS -->
+                <div class="bg-white/90 border border-orange-100 rounded-[28px] shadow-sm p-8">
+                    <div class="flex items-center justify-between mb-4">
+                        <h4 class="text-[12px] font-black text-[#FF6A00] uppercase tracking-[0.2em]">Detalle Nota de Debito</h4>
+                        <div class="flex gap-2">
+                            <button id="btn-nd-add-line" type="button" class="px-4 py-2 rounded-xl bg-orange-500 text-white font-black text-xs uppercase">Agregar linea</button>
+                            <button id="btn-nd-remove-last" type="button" class="px-4 py-2 rounded-xl bg-white border border-orange-200 text-[#7A4A28] font-black text-xs uppercase">Quitar</button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full min-w-[900px] text-sm">
+                            <thead>
+                                <tr class="text-[#8C5A35]">
+                                    <th class="text-left font-black py-3">DESCRIPCION</th>
+                                    <th class="text-center font-black py-3">CANT.</th>
+                                    <th class="text-center font-black py-3">UNIDAD</th>
+                                    <th class="text-right font-black py-3">PRECIO</th>
+                                    <th class="text-right font-black py-3">% DESC.</th>
+                                    <th class="text-right font-black py-3">SUBTOTAL</th>
+                                    <th class="text-right font-black py-3"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="nd-items-container">
+                                ${this.renderItemRow()}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                    <div class="bg-white/90 border border-orange-100 rounded-[28px] shadow-sm p-8">
+                        <label class="block text-[11px] font-black text-[#7A4A28] uppercase mb-2">Forma de Pago</label>
+                        <select id="nd-forma-pago" class="w-full rounded-xl border border-orange-200 px-4 py-3 font-bold text-[#4B2E1F]">
+                            <option value="1" selected>Contado</option>
+                            <option value="2">Credito</option>
+                        </select>
+                        <button id="btn-nd-limpiar" type="button" class="mt-6 w-full px-4 py-3 rounded-xl bg-purple-700 text-white font-black uppercase text-sm">Limpiar</button>
+                    </div>
+
+                    <div class="xl:col-span-2 bg-white/90 border border-orange-100 rounded-[28px] shadow-sm p-8">
+                        <div class="grid grid-cols-2 gap-4 items-center">
+                            <label class="font-black text-[#7A4A28]">Sub Total</label>
+                            <input id="nd-subtotal" type="number" readonly value="0" class="w-full rounded-xl border border-orange-200 px-4 py-3 text-right font-black text-[#4B2E1F] bg-orange-50">
+
+                            <label class="font-black text-[#7A4A28]">Desc. Global %</label>
+                            <input id="nd-descuento-global" type="number" value="0" min="0" max="100" class="w-full rounded-xl border border-orange-200 px-4 py-3 text-right font-black text-[#4B2E1F]">
+
+                            <label class="font-black text-[#7A4A28]">Monto Neto</label>
+                            <input id="nd-monto-neto" type="number" readonly value="0" class="w-full rounded-xl border border-orange-200 px-4 py-3 text-right font-black text-[#4B2E1F] bg-orange-50">
+
+                            <label class="font-black text-[#7A4A28]">IVA %</label>
+                            <div class="grid grid-cols-2 gap-4">
+                                <input type="number" readonly value="19" class="w-full rounded-xl border border-orange-200 px-4 py-3 text-right font-black text-[#4B2E1F] bg-orange-50">
+                                <input id="nd-monto-iva" type="number" readonly value="0" class="w-full rounded-xl border border-orange-200 px-4 py-3 text-right font-black text-[#4B2E1F] bg-orange-50">
+                            </div>
+
+                            <label class="font-black text-[#4B2E1F] text-xl">Total</label>
+                            <input id="nd-monto-total" type="number" readonly value="0" class="w-full rounded-xl border-2 border-[#4B2E1F] px-4 py-3 text-right font-black text-[#4B2E1F] text-2xl bg-white">
+                        </div>
+
+                        <div class="mt-6 flex justify-end">
+                            <button id="btn-emit-nd" type="button" class="px-8 py-4 rounded-2xl bg-emerald-600 text-white font-black uppercase tracking-wide shadow-sm">Emitir Nota de Debito</button>
+                        </div>
+                    </div>
+                </div>
+
+                <input type="hidden" id="nd-monto-calculado" value="0">
+                <input type="hidden" id="nd-net-amount" value="0">
                 <input type="hidden" id="nd-emi-razon" value="${config.razonSocial || ''}">
                 <input type="hidden" id="nd-emi-dir" value="${config.direccion || ''}">
                 <input type="hidden" id="nd-emi-comuna" value="${config.comuna || ''}">
@@ -120,37 +178,34 @@ window.ValmuInvoicingDebitView = {
                 <input type="hidden" id="nd-emi-acteco" value="${config.acteco || ''}">
                 <input type="hidden" id="nd-emi-email" value="${config.email || ''}">
                 <input type="hidden" id="nd-emisor-fono" value="${config.telefono || ''}">
-                <input type="hidden" id="nd-fch-emis" value="${today}">
-                <input type="hidden" id="nd-fch-venc" value="${today}">
-                <input type="hidden" id="nd-descuento-global" value="0">
-                <input type="hidden" id="nd-monto-calculado" value="0">
-                <input type="hidden" id="nd-subtotal" value="0">
-                <input type="hidden" id="nd-net-amount" value="0">
             </div>
         `;
     },
 
     renderItemRow() {
         return `
-            <tr class="nd-item-row hover:bg-emerald-50/20 transition-all">
-                <td class="px-6 py-4">
-                    <input type="text" class="nd-item-nombre w-full bg-transparent border-none outline-none text-sm font-bold text-gray-900" placeholder="Descripción...">
+            <tr class="nd-item-row border-t border-orange-50">
+                <td class="py-2 pr-2">
+                    <input type="text" class="nd-item-nombre w-full rounded-xl border border-orange-200 px-3 py-2 font-bold text-[#4B2E1F]" placeholder="Descripcion">
                 </td>
-                <td class="px-3 py-4">
-                    <input type="number" class="nd-item-qty w-full bg-gray-50 border-none rounded p-1 text-center font-bold" value="1">
+                <td class="py-2 px-1">
+                    <input type="number" class="nd-item-qty w-full rounded-xl border border-orange-200 px-3 py-2 text-center font-bold text-[#4B2E1F]" value="1">
                 </td>
-                <td class="px-3 py-4">
-                    <input type="number" class="nd-item-price w-full bg-gray-50 border-none rounded p-1 text-right font-bold" value="0">
+                <td class="py-2 px-1">
+                    <input type="text" class="nd-item-unit w-full rounded-xl border border-orange-200 px-3 py-2 text-center font-bold text-[#4B2E1F]" value="un">
                 </td>
-                <td class="px-3 py-4">
-                    <input type="number" class="nd-item-pct-desc w-full bg-gray-50 border-none rounded p-1 text-center font-bold" value="0" min="0" max="100">
+                <td class="py-2 px-1">
+                    <input type="number" class="nd-item-price w-full rounded-xl border border-orange-200 px-3 py-2 text-right font-bold text-[#4B2E1F]" value="0">
                 </td>
-                <td class="px-3 py-4 text-right">
-                    <span class="nd-item-total text-sm font-black">$0</span>
+                <td class="py-2 px-1">
+                    <input type="number" class="nd-item-pct-desc w-full rounded-xl border border-orange-200 px-3 py-2 text-right font-bold text-[#4B2E1F]" value="0" min="0" max="100">
+                </td>
+                <td class="py-2 pl-2">
+                    <input type="number" class="nd-item-total w-full rounded-xl border border-orange-200 px-3 py-2 text-right font-black text-[#4B2E1F] bg-orange-50" readonly value="0">
                     <input type="hidden" class="nd-item-subtotal" value="0">
                 </td>
-                <td class="px-6 py-4 text-right">
-                    <button class="nd-remove-item text-gray-300 hover:text-red-500"><i class="bi bi-x-circle-fill"></i></button>
+                <td class="py-2 pl-2 text-right">
+                    <button type="button" class="nd-remove-item text-red-500 font-black">X</button>
                 </td>
             </tr>
         `;
