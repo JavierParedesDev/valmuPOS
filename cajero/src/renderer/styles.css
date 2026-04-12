@@ -1684,7 +1684,8 @@ body {
 
 .retail-cart-header,
 .retail-cart-item {
-    grid-template-columns: 150px minmax(0, 1fr) 170px 120px 130px 68px;
+    grid-template-columns: 165px minmax(0, 1fr) 160px 120px 130px 60px;
+    gap: 0.75rem;
 }
 
 .retail-cart-header {
@@ -1736,6 +1737,32 @@ body {
 .discount-chip {
     background: rgba(58, 40, 29, 0.08);
     color: var(--text-soft);
+}
+
+.cart-offer-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    border: 1px solid rgba(249, 115, 22, 0.25);
+    background: #fff;
+    color: var(--primary);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.15s ease;
+}
+
+.cart-offer-btn:hover {
+    background: var(--primary-soft);
+}
+
+.cart-offer-btn.active {
+    background: linear-gradient(180deg, #ff9d4b, #ff6e08);
+    color: #fff;
+    border-color: transparent;
+    box-shadow: 0 4px 8px rgba(249, 115, 22, 0.35);
 }
 
 .retail-cart-item .col-desc {
@@ -2108,7 +2135,8 @@ body {
 
 .retail-cart-header,
 .retail-cart-item {
-    grid-template-columns: 112px minmax(220px, 1fr) 182px 86px 142px 46px;
+    gap: 0.75rem;
+    grid-template-columns: 145px minmax(180px, 1fr) 182px 86px 142px 46px;
 }
 
 .retail-cart-header {
@@ -2313,7 +2341,8 @@ body {
 
     .retail-cart-header,
     .retail-cart-item {
-        grid-template-columns: 88px minmax(180px, 1fr) 158px 74px 116px 42px;
+        gap: 0.5rem;
+        grid-template-columns: 125px minmax(150px, 1fr) 158px 74px 116px 42px;
     }
 
     .retail-cart-header {

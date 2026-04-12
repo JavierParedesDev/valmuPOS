@@ -11,6 +11,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            corePlugins: {
+                preflight: false,
+            }
+        }
+    </script>
 </head>
 
 <body>
@@ -24,7 +32,6 @@
                         <h2 class="brand-name">Admin</h2>
                     </div>
                 </div>
-                <p class="sidebar-brand-text">Operacion diaria, inventario y control comercial en un solo lugar.</p>
             </div>
 
             <nav class="sidebar-nav">
@@ -91,7 +98,8 @@
             <header class="top-header">
                 <h1 id="page-title">Dashboard</h1>
                 <div class="top-header-actions">
-                    <button class="window-action-btn" id="toggle-fullscreen-btn" type="button">Pantalla completa</button>
+                    <button class="window-action-btn" id="toggle-fullscreen-btn" type="button">Pantalla
+                        completa</button>
                     <div class="user-profile">
                         <span class="user-name">Administrador</span>
                         <div class="user-avatar">AD</div>
@@ -109,6 +117,9 @@
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bwip-js@4.5.1/dist/bwip-js-min.js"></script>
     <script src="js/services/session.js"></script>
     <script src="js/services/api.js"></script>
     <script src="js/utils.js"></script>
@@ -121,6 +132,28 @@
     <script src="js/views/users.js"></script>
     <script src="js/views/customers.js"></script>
     <script src="js/views/static-pages.js"></script>
+    <script src="js/views/finances.js"></script>
+    <script src="js/views/logistics.js"></script>
+    <script src="js/services/invoicing-api.js"></script>
+    <script src="js/services/invoicing-config.js"></script>
+    <script src="js/services/invoicing-utils.js"></script>
+    <script src="js/services/invoicing-transport.js"></script>
+    <script src="js/services/invoicing-smart-data.js"></script>
+    <script src="js/services/invoicing-config-controller.js"></script>
+    <script src="js/services/invoicing-create-controller.js"></script>
+    <script src="js/services/invoicing-create-emission.js"></script>
+    <script src="js/services/invoicing-adjustment-controller.js"></script>
+    <script src="js/services/invoicing-adjustment-emission.js"></script>
+    <script src="js/services/invoicing-documents.js"></script>
+    <script src="js/services/invoicing-folios.js"></script>
+    <script src="js/services/invoicing-history.js"></script>
+    <script src="js/services/invoicing-history-controller.js"></script>
+    <script src="js/views/invoicing-create-view.js"></script>
+    <script src="js/views/invoicing-debit-view.js"></script>
+    <script src="js/views/invoicing-note-view.js"></script>
+    <script src="js/views/invoicing-history-view.js"></script>
+    <script src="js/views/invoicing-config-view.js"></script>
+    <script src="js/views/invoicing.js"></script>
     <script src="js/views/settings.js"></script>
     <script src="js/app/routes.js"></script>
     <script src="js/app/navigation.js"></script>

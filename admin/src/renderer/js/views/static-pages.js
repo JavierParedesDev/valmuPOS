@@ -16,23 +16,3 @@ function renderConstructionPage({ title, description }) {
     `;
 }
 
-function renderFinances() {
-    renderConstructionPage({
-        title: 'Finanzas',
-        description: 'Estamos construyendo paneles financieros, balances y reportes para esta seccion.'
-    });
-}
-
-function renderInvoicing() {
-    renderConstructionPage({
-        title: 'Facturacion',
-        description: 'Estamos preparando la gestion de documentos, folios y estados de facturacion.'
-    });
-}
-
-function renderLogistics() {
-    renderConstructionPage({
-        title: 'Logistica',
-        description: 'Estamos desarrollando rutas, despachos y seguimiento operativo para esta seccion.'
-    });
-}

@@ -1406,7 +1406,12 @@ function buildReceiptRecord({ saleId, payload, snapshot, method, customer, docum
     previewLines.push(
         '--------------------------------',
         `Items: ${formatQuantity(snapshot.items, false)}`,
-        `Subtotal: $${formatCurrency(payload.subtotal)}`,
+        `Neto: $${formatCurrency(payload.subtotal)}`
+    );
+    if (payload.descuento > 0) {
+        previewLines.push(`Descuento: -$${formatCurrency(payload.descuento)}`);
+    }
+    previewLines.push(
         `IVA: $${formatCurrency(payload.iva)}`,
         `Total: $${formatCurrency(payload.total)}`,
         documentType === 'Vale interno' ? 'Documento no fiscal.' : 'Documento referencial, pendiente integracion fiscal.'
@@ -1421,6 +1426,7 @@ function buildReceiptRecord({ saleId, payload, snapshot, method, customer, docum
         customerLabel: normalizedCustomer,
         paymentMethod: capitalizePaymentMethod(method),
         subtotal: Number(payload.subtotal || 0),
+        descuento: Number(payload.descuento || 0),
         iva: Number(payload.iva || 0),
         total: Number(payload.total || 0),
         items: Number(snapshot.items || 0),
@@ -1577,7 +1583,12 @@ function buildDispatchReceiptRecord({ dispatchId, saleId, carrier, snapshot, bra
     previewLines.push(
         '--------------------------------',
         `Items: ${formatQuantity(snapshot.items, false)}`,
-        `Subtotal: $${formatCurrency(subtotal)}`,
+        `Neto: $${formatCurrency(subtotal)}`
+    );
+    if (snapshot.discount > 0) {
+        previewLines.push(`Descuento: -$${formatCurrency(snapshot.discount)}`);
+    }
+    previewLines.push(
         `IVA: $${formatCurrency(iva)}`,
         `Total referencial: $${formatCurrency(snapshot.total)}`,
         'Mercaderia cargada a ruta. La rendicion se revisa con administracion.'
@@ -2971,6 +2982,14 @@ function removeCartItem(productId) {
     renderCart();
 }
 
+function toggleCartItemOffer(productId) {
+    const item = saleState.cart.find((i) => String(i.productId) === String(productId));
+    if (item) {
+        item.applyOffer = !item.applyOffer;
+        renderCart();
+    }
+}
+
 function renderSearchResults(products) {
     if (isDispatchMode()) {
         renderDispatchSearchResults(products, {
@@ -3339,8 +3358,9 @@ window.selectProductForDispatch = selectProductForDispatch;
 window.updateCartItemQuantity = updateCartItemQuantity;
 window.updateDispatchItemQuantity = updateDispatchItemQuantity;
 window.removeCartItem = removeCartItem;
+window.toggleCartItemOffer = toggleCartItemOffer;
+window.clearCurrentSale = clearCurrentSale;
 window.removeDispatchItem = removeDispatchItem;
 window.openWeightedEditModal = openWeightedEditModal;
 window.openSaleCancellationModal = openSaleCancellationModal;
 window.openDispatchReceiptModal = openDispatchReceiptModal;
-

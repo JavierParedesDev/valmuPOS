@@ -88,10 +88,12 @@ export function buildDispatchSnapshot(cart, products, getPricingForProduct) {
 
         const pricing = getPricingForProduct(product, item.quantity, cart);
         const lineTotal = pricing.unitPrice * item.quantity;
+        const lineDiscount = (product.price - pricing.unitPrice) * item.quantity;
 
         return {
             items: snapshot.items + item.quantity,
             total: snapshot.total + lineTotal,
+            discount: snapshot.discount + lineDiscount,
             lines: [
                 ...snapshot.lines,
                 {
@@ -109,6 +111,7 @@ export function buildDispatchSnapshot(cart, products, getPricingForProduct) {
     }, {
         items: 0,
         total: 0,
+        discount: 0,
         lines: []
     });
 }

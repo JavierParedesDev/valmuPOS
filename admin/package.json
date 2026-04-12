@@ -17,7 +17,7 @@
   "author": "Valmu",
   "license": "ISC",
   "devDependencies": {
-    "electron": "^41.0.3",
+    "electron": "^31.0.3",
     "electron-builder": "^25.1.8"
   },
   "dependencies": {

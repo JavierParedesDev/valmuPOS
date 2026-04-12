@@ -1,22 +1,34 @@
-const ROUTES = window.AdminRoutes;
-const navigation = window.AdminNavigation;
-
 let currentPage = null;
 let updateStateCleanup = null;
 let lastUpdateStatus = null;
+
+function getRoutes() {
+    return window.AdminRoutes || {};
+}
+
+function getNavigation() {
+    return window.AdminNavigation || null;
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
     enforceSession();
     hydrateUserProfile();
     await hydrateSidebarVersion();
-    navigation.bindNavigation(ROUTES, loadPage);
+    const navigation = getNavigation();
+    if (!navigation) {
+        console.error('Admin navigation is unavailable.');
+        renderBootstrapError('No se pudo inicializar la navegacion del panel.');
+        return;
+    }
+
+    navigation.bindNavigation(getRoutes, loadPage);
     bindLogout();
     await bindWindowActions();
     bindUpdateStateListener();
 
-    const initialPage = navigation.getInitialPage(ROUTES);
+    const initialPage = navigation.getInitialPage(getRoutes);
     navigation.setActiveNav(initialPage);
-    navigation.updatePageTitle(initialPage, ROUTES);
+    navigation.updatePageTitle(initialPage, getRoutes);
     loadPage(initialPage);
 });
 
@@ -109,7 +121,7 @@ function bindUpdateStateListener() {
 }
 
 async function loadPage(page) {
-    const route = ROUTES[page];
+    const route = getRoutes()[page];
     const contentArea = document.getElementById('content-area');
 
     if (!route || !contentArea) {
@@ -131,6 +143,20 @@ async function loadPage(page) {
             </div>
         `;
     }
+}
+
+function renderBootstrapError(message) {
+    const contentArea = document.getElementById('content-area');
+    if (!contentArea) {
+        return;
+    }
+
+    contentArea.innerHTML = `
+        <div class="glass-panel">
+            <h2>No se pudo iniciar el panel</h2>
+            <p class="text-muted">${message}</p>
+        </div>
+    `;
 }
 
 function renderPlaceholderPage(page) {
@@ -227,8 +253,15 @@ function refreshGlobalUpdateBanner(state) {
     `;
 
     document.getElementById('app-update-open-settings')?.addEventListener('click', () => {
+        const navigation = getNavigation();
+        if (!navigation) {
+            loadPage('settings');
+            window.location.hash = 'settings';
+            return;
+        }
+
         navigation.setActiveNav('settings');
-        navigation.updatePageTitle('settings', ROUTES);
+        navigation.updatePageTitle('settings', getRoutes);
         loadPage('settings');
         window.location.hash = 'settings';
     });
