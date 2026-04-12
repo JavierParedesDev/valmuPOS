@@ -19,3 +19,5 @@ app-valmu/*.aab
 app-valmu/npm-debug.log*
 app-valmu/yarn-debug.log*
 app-valmu/yarn-error.log*
+
+almipos/

@@ -1,7 +1,7 @@
-const { autoUpdater } = require('electron-updater');
 const { IPC_CHANNELS } = require('../ipc/channels');
 
 function createUpdateManager({ app, getMainWindow }) {
+    const { autoUpdater } = require('electron-updater');
     let manualUpdateCheck = false;
     const updateState = {
         currentVersion: app.getVersion(),

@@ -27,7 +27,15 @@ export function getPricingForProduct(product, quantity, cart = saleState.cart) {
         ? Number(familyQuantities[product.familyPromo] || quantity)
         : quantity;
 
-    if (product.offerAvailable && product.offerPrice) {
+    let isOfferApplied = false;
+    if (cart) {
+        const cartItem = cart.find(i => i.productId === product.id);
+        if (cartItem && cartItem.applyOffer) {
+            isOfferApplied = true;
+        }
+    }
+
+    if (isOfferApplied && product.offerAvailable && product.offerPrice) {
         return { unitPrice: product.offerPrice, label: 'Precio oferta' };
     }
 

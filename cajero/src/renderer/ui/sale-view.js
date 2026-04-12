@@ -104,6 +104,7 @@ export function renderCartView({ cart, products }) {
 
     let total = 0;
     let totalItems = 0;
+    let totalDiscount = 0;
 
     cartList.innerHTML = cart.map((item) => {
         const product = products.find((entry) => entry.id === item.productId);
@@ -113,9 +114,34 @@ export function renderCartView({ cart, products }) {
 
         const pricing = getPricingForProduct(product, item.quantity, cart);
         const lineTotal = pricing.unitPrice * item.quantity;
+        const lineDiscount = (product.price - pricing.unitPrice) * item.quantity;
 
         total += lineTotal;
         totalItems += item.quantity;
+        totalDiscount += lineDiscount;
+
+        const hasOffer = product.offerAvailable && product.offerPrice;
+        const isOfferActive = Boolean(item.applyOffer);
+        let discountHtml = '';
+
+        if (hasOffer) {
+            discountHtml = `
+                <div style="display: flex; gap: 0.4rem; align-items: center; justify-content: flex-end; width: 100%;">
+                    <span class="discount-chip ${lineDiscount > 0 ? 'is-active' : ''}" ${lineDiscount > 0 ? 'style="background: rgba(249, 115, 22, 0.12); color: var(--primary-dark);"' : ''}>
+                        ${lineDiscount > 0 ? '-$' + formatCurrency(lineDiscount) : '$0'}
+                    </span>
+                    <button class="cart-offer-btn ${isOfferActive ? 'active' : ''}" type="button" onclick="toggleCartItemOffer('${product.id}')" title="${isOfferActive ? 'Quitar Oferta' : 'Aplicar Oferta'}">
+                        <i class="bi bi-tag-fill"></i>
+                    </button>
+                </div>
+            `;
+        } else {
+            discountHtml = `
+                <span class="discount-chip ${lineDiscount > 0 ? 'is-active' : ''}" ${lineDiscount > 0 ? 'style="background: rgba(249, 115, 22, 0.12); color: var(--primary-dark);"' : ''}>
+                    ${lineDiscount > 0 ? '-$' + formatCurrency(lineDiscount) : '$0'}
+                </span>
+            `;
+        }
 
         return `
             <article class="cart-item retail-cart-item">
@@ -135,8 +161,8 @@ export function renderCartView({ cart, products }) {
                         <button class="qty-btn" type="button" onclick="updateCartItemQuantity('${product.id}', 1)">+</button>
                     </div>
                 </div>
-                <div class="col-discount">
-                    <span class="discount-chip">$0</span>
+                <div class="col-discount" style="display: flex; align-items: center; justify-content: flex-end;">
+                    ${discountHtml}
                 </div>
                 <div class="col-total">
                     <strong class="cart-line-total">$${formatCurrency(lineTotal)}</strong>
@@ -154,12 +180,14 @@ export function renderCartView({ cart, products }) {
     const subtotalCalc = Math.round(total / 1.19);
     const ivaCalc = total - subtotalCalc;
 
+    const ivaLabel = document.getElementById('sale-tax') || document.getElementById('summary-iva');
+    const discountLabel = document.getElementById('summary-discount');
+
     totalLabel.textContent = `$${formatCurrency(total)}`;
     subtotalLabel.textContent = `$${formatCurrency(subtotalCalc)}`;
     itemsLabel.textContent = formatQuantity(totalItems, false);
-
-    const ivaLabel = document.getElementById('summary-iva');
     if (ivaLabel) ivaLabel.textContent = `$${formatCurrency(ivaCalc)}`;
+    if (discountLabel) discountLabel.textContent = totalDiscount > 0 ? `-$${formatCurrency(totalDiscount)}` : `$0`;
 }
 
 export function renderCatalogStatusView({ status, source }) {

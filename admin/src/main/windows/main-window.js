@@ -14,11 +14,14 @@ function createMainWindow() {
             nodeIntegration: false
         },
         title: 'Valmu Admin',
-        autoHideMenuBar: true,
+        autoHideMenuBar: false,
         show: false
     });
 
     mainWindow.loadFile(path.join(__dirname, '../../renderer/login.html'));
+
+    // Abrir DevTools automáticamente
+    mainWindow.webContents.openDevTools();
 
     return mainWindow;
 }

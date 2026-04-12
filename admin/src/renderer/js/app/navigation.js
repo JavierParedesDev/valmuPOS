@@ -1,7 +1,16 @@
 window.AdminNavigation = {
+    resolveRoutes(routes) {
+        if (typeof routes === 'function') {
+            return routes() || {};
+        }
+
+        return routes || {};
+    },
+
     getInitialPage(routes) {
+        const routeMap = this.resolveRoutes(routes);
         const requestedPage = window.location.hash.replace('#', '');
-        return routes[requestedPage] ? requestedPage : 'dashboard';
+        return routeMap[requestedPage] ? requestedPage : 'dashboard';
     },
 
     setActiveNav(page) {
@@ -13,9 +22,10 @@ window.AdminNavigation = {
     },
 
     updatePageTitle(page, routes) {
+        const routeMap = this.resolveRoutes(routes);
         const pageTitle = document.getElementById('page-title');
         if (pageTitle) {
-            pageTitle.textContent = routes[page]?.title || 'Valmu Admin';
+            pageTitle.textContent = routeMap[page]?.title || 'Valmu Admin';
         }
     },
 
@@ -26,14 +36,15 @@ window.AdminNavigation = {
             item.addEventListener('click', (event) => {
                 event.preventDefault();
 
+                const routeMap = this.resolveRoutes(routes);
                 const page = item.dataset.page;
-                if (!routes[page]) {
+                if (!routeMap[page]) {
                     onNavigate(page);
                     return;
                 }
 
                 this.setActiveNav(page);
-                this.updatePageTitle(page, routes);
+                this.updatePageTitle(page, routeMap);
                 onNavigate(page);
                 window.location.hash = page;
             });

@@ -9,7 +9,16 @@ const IPC_CHANNELS = {
     TOGGLE_FULLSCREEN: 'toggle-fullscreen',
     GET_WINDOW_STATE: 'get-window-state',
     API_REQUEST: 'api-request',
-    UPDATE_STATE_CHANGED: 'update-state-changed'
+    UPDATE_STATE_CHANGED: 'update-state-changed',
+    SAVE_SII_CONFIG: 'save-sii-config',
+    GET_SII_CONFIG: 'get-sii-config',
+    UPLOAD_SII_FILE: 'upload-sii-file',
+    READ_LOCAL_CERT: 'read-local-cert',
+    READ_LOCAL_TEXT: 'read-local-text',
+    SAVE_XML: 'save-xml',
+    LIST_INVOICES: 'list-invoices',
+    OPEN_FILE: 'open-file',
+    DELETE_INVOICE_FILES: 'delete-invoice-files'
 };
 
 module.exports = {

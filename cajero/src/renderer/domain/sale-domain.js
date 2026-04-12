@@ -1,6 +1,7 @@
 export function getCartSnapshot({ cart, products, getPricingForProduct }) {
     let total = 0;
     let totalItems = 0;
+    let totalDiscount = 0;
 
     cart.forEach((item) => {
         const product = products.find((entry) => entry.id === item.productId);
@@ -11,11 +12,13 @@ export function getCartSnapshot({ cart, products, getPricingForProduct }) {
         const pricing = getPricingForProduct(product, item.quantity, cart);
         total += pricing.unitPrice * item.quantity;
         totalItems += item.quantity;
+        totalDiscount += (product.price - pricing.unitPrice) * item.quantity;
     });
 
     return {
         total: Math.round(total),
-        items: totalItems
+        items: totalItems,
+        discount: Math.round(totalDiscount)
     };
 }
 
@@ -63,6 +66,7 @@ export function buildSalePayload({
         id_tipoDoc: idTipoDoc,
         folioDocumento: null,
         subtotal,
+        descuento: snapshot.discount || 0,
         iva,
         total: snapshot.total,
         metodoPago: paymentMethodMap[method] || paymentMethodMap.efectivo,

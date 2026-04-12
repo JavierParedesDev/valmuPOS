@@ -1,0 +1,15 @@
+c:\Users\javie\OneDrive\Desktop\Nueva carpeta\valmu\SimpleRutDesktop\bin\Debug\net8.0-windows\SimpleRutDesktop.exe
+c:\Users\javie\OneDrive\Desktop\Nueva carpeta\valmu\SimpleRutDesktop\bin\Debug\net8.0-windows\SimpleRutDesktop.deps.json
+c:\Users\javie\OneDrive\Desktop\Nueva carpeta\valmu\SimpleRutDesktop\bin\Debug\net8.0-windows\SimpleRutDesktop.runtimeconfig.json
+c:\Users\javie\OneDrive\Desktop\Nueva carpeta\valmu\SimpleRutDesktop\bin\Debug\net8.0-windows\SimpleRutDesktop.dll
+c:\Users\javie\OneDrive\Desktop\Nueva carpeta\valmu\SimpleRutDesktop\bin\Debug\net8.0-windows\SimpleRutDesktop.pdb
+c:\Users\javie\OneDrive\Desktop\Nueva carpeta\valmu\SimpleRutDesktop\obj\Debug\net8.0-windows\SimpleRutDesktop.GeneratedMSBuildEditorConfig.editorconfig
+c:\Users\javie\OneDrive\Desktop\Nueva carpeta\valmu\SimpleRutDesktop\obj\Debug\net8.0-windows\SimpleRutDesktop.AssemblyInfoInputs.cache
+c:\Users\javie\OneDrive\Desktop\Nueva carpeta\valmu\SimpleRutDesktop\obj\Debug\net8.0-windows\SimpleRutDesktop.AssemblyInfo.cs
+c:\Users\javie\OneDrive\Desktop\Nueva carpeta\valmu\SimpleRutDesktop\obj\Debug\net8.0-windows\SimpleRutDesktop.csproj.CoreCompileInputs.cache
+c:\Users\javie\OneDrive\Desktop\Nueva carpeta\valmu\SimpleRutDesktop\obj\Debug\net8.0-windows\SimpleRutDesktop.sourcelink.json
+c:\Users\javie\OneDrive\Desktop\Nueva carpeta\valmu\SimpleRutDesktop\obj\Debug\net8.0-windows\SimpleRutDesktop.dll
+c:\Users\javie\OneDrive\Desktop\Nueva carpeta\valmu\SimpleRutDesktop\obj\Debug\net8.0-windows\refint\SimpleRutDesktop.dll
+c:\Users\javie\OneDrive\Desktop\Nueva carpeta\valmu\SimpleRutDesktop\obj\Debug\net8.0-windows\SimpleRutDesktop.pdb
+c:\Users\javie\OneDrive\Desktop\Nueva carpeta\valmu\SimpleRutDesktop\obj\Debug\net8.0-windows\SimpleRutDesktop.genruntimeconfig.cache
+c:\Users\javie\OneDrive\Desktop\Nueva carpeta\valmu\SimpleRutDesktop\obj\Debug\net8.0-windows\ref\SimpleRutDesktop.dll
