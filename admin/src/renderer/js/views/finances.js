@@ -7,7 +7,13 @@ let finanzasState = {
     filtroBusqueda: ''
 };
 
+let financesRefreshTimer = null;
+
 async function renderFinances() {
+    if (financesRefreshTimer) {
+        clearInterval(financesRefreshTimer);
+        financesRefreshTimer = null;
+    }
     const contentArea = document.getElementById('content-area');
     if (!contentArea) return;
 
@@ -127,6 +133,16 @@ async function renderFinances() {
     `;
 
     await finanzasCargarVentas();
+
+    // Polling cada 60 segundos
+    financesRefreshTimer = setInterval(() => {
+        if (currentPage === 'finances') {
+            void finanzasCargarVentas();
+        } else {
+            clearInterval(financesRefreshTimer);
+            financesRefreshTimer = null;
+        }
+    }, 60000);
 }
 
 async function finanzasCargarVentas() {

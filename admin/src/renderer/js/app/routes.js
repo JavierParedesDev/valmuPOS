@@ -38,6 +38,7 @@ window.AdminRoutes = {
     invoicing: { title: 'Facturacion', render: resolveRenderer('renderInvoicing', 'Facturacion') },
     logistics: { title: 'Logistica', render: resolveRenderer('renderLogistics', 'Logistica') },
     branches: { title: 'Sucursales', render: resolveRenderer('renderBranches', 'Sucursales') },
+    advertising: { title: 'Publicidad', render: resolveRenderer('renderAdvertising', 'Publicidad') },
     settings: { title: 'Configuracion', render: resolveRenderer('renderSettings', 'Configuracion') }
 };
 console.log("AdminRoutes initialized:", !!window.AdminRoutes);

@@ -41,6 +41,10 @@ body {
     display: none !important;
 }
 
+#backend-status {
+    display: none !important;
+}
+
 .brand-kicker,
 .header-kicker {
     display: inline-block;

@@ -1,6 +1,6 @@
 {
   "name": "cajero",
-  "version": "0.1.0",
+  "version": "1.1.2",
   "description": "Valmu Cajero desktop app",
   "main": "src/main/main.js",
   "scripts": {
@@ -40,6 +40,7 @@
       }
     ],
     "win": {
+      "icon": "src/renderer/assets/icon.ico",
       "target": [
         {
           "target": "nsis",

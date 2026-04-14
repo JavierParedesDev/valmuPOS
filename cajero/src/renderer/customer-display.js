@@ -20,7 +20,11 @@ function getApiBaseUrl() {
 }
 
 function getApiOrigin() {
-    return getApiBaseUrl().replace(/\/api$/i, '');
+    try {
+        return new URL(getApiBaseUrl()).origin;
+    } catch {
+        return getApiBaseUrl().replace(/\/api$/i, '');
+    }
 }
 
 function buildAdvertisingImageUrl(item) {
@@ -61,6 +65,8 @@ function renderAdvertising() {
     const idleImage = document.getElementById('customer-idle-ad-image');
     const inlineContainer = document.getElementById('customer-inline-ad');
     const inlineImage = document.getElementById('customer-inline-ad-image');
+    const fullscreenContainer = document.getElementById('customer-fullscreen-ad');
+    const fullscreenImage = document.getElementById('customer-fullscreen-ad-image');
 
     const item = getCurrentAdvertisingItem();
     const imageUrl = buildAdvertisingImageUrl(item);
@@ -73,11 +79,15 @@ function renderAdvertising() {
     }
 
     if (idleContainer) {
-        idleContainer.classList.toggle('hidden', !hasAdvertising || hasItemsInCart);
+        idleContainer.classList.add('hidden'); // Siempre oculto en favor del fullscreen
     }
 
     if (inlineContainer) {
         inlineContainer.classList.toggle('hidden', !hasAdvertising || !hasItemsInCart);
+    }
+
+    if (fullscreenContainer) {
+        fullscreenContainer.classList.toggle('hidden', !hasAdvertising || hasItemsInCart);
     }
 
     if (idleImage && hasAdvertising) {
@@ -88,6 +98,11 @@ function renderAdvertising() {
     if (inlineImage && hasAdvertising) {
         inlineImage.src = imageUrl;
         inlineImage.alt = item?.titulo || 'Publicidad activa';
+    }
+
+    if (fullscreenImage && hasAdvertising) {
+        fullscreenImage.src = imageUrl;
+        fullscreenImage.alt = item?.titulo || 'Publicidad activa';
     }
 }
 
@@ -114,6 +129,28 @@ function startAdvertisingRotation() {
     advertisingState.timerId = window.setInterval(rotateAdvertising, 7000);
 }
 
+async function apiRequest({ endpoint, method = 'GET', body }) {
+    try {
+        const baseUrl = getApiBaseUrl();
+        const url = `${baseUrl}${endpoint.startsWith('/') ? endpoint : `/${endpoint}`}`;
+        const response = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: body ? JSON.stringify(body) : undefined
+        });
+
+        const text = await response.text();
+        try {
+            const data = JSON.parse(text);
+            return { ok: response.ok, status: response.status, data };
+        } catch {
+            return { ok: response.ok, status: response.status, data: text };
+        }
+    } catch (error) {
+        return { ok: false, error: error.message };
+    }
+}
+
 async function loadAdvertising() {
     const apiBaseUrl = getApiBaseUrl();
     if (!apiBaseUrl) {
@@ -123,10 +160,15 @@ async function loadAdvertising() {
     }
 
     try {
-        const response = await fetch(`${apiBaseUrl}/publicidad/activas`);
-        const payload = await response.json().catch(() => []);
+        const response = await apiRequest({ endpoint: '/publicidad/activas' });
+        const images = response.ok && Array.isArray(response.data) ? response.data : null;
 
-        advertisingState.items = Array.isArray(payload) ? payload : [];
+        if (Array.isArray(images)) {
+            advertisingState.items = images;
+        } else {
+            advertisingState.items = [];
+        }
+
         advertisingState.currentIndex = 0;
         advertisingState.failedUrls.clear();
         startAdvertisingRotation();
@@ -181,19 +223,40 @@ function renderCustomerDisplay(payload = {}) {
     }
 
     const cart = Array.isArray(payload.cart) ? payload.cart : [];
+
+    // Si no hay items, limpiamos la lista pero mantenemos el contenedor de publicidad
     if (!cart.length) {
-        itemsList.innerHTML = `
-            <div class="customer-empty ${advertisingState.items.length ? 'hidden' : ''}">
-                <strong>${payload.mode === 'locked' ? 'Caja cerrada' : 'Bienvenido'}</strong>
-                <p>${payload.mode === 'locked' ? 'La caja aun no esta lista para vender.' : 'Escanea tus productos para ver el detalle aqui.'}</p>
-            </div>
+        // Buscamos si ya existe el emptyState para no recrearlo y borrar la publicidad
+        let emptyState = itemsList.querySelector('.customer-empty');
+        if (!emptyState) {
+            emptyState = document.createElement('div');
+            emptyState.className = 'customer-empty';
+            itemsList.appendChild(emptyState);
+        }
+
+        emptyState.innerHTML = `
+            <strong>${payload.mode === 'locked' ? 'Caja cerrada' : 'Bienvenido'}</strong>
+            <p>${payload.mode === 'locked' ? 'La caja aun no esta lista para vender.' : 'Escanea tus productos para ver el detalle aqui.'}</p>
         `;
+
+        // Removemos cualquier item previo
+        itemsList.querySelectorAll('.customer-item').forEach(el => el.remove());
+
         renderAdvertising();
         return;
     }
 
-    itemsList.innerHTML = cart.map((item) => `
-        <article class="customer-item">
+    // Si hay items, removemos el empty state y renderizamos los items
+    itemsList.querySelector('.customer-empty')?.remove();
+
+    // Obtener todos los items actuales para actualizar/reemplazar sin tocar la publicidad
+    const existingItems = itemsList.querySelectorAll('.customer-item');
+    existingItems.forEach(el => el.remove());
+
+    cart.forEach((item) => {
+        const article = document.createElement('article');
+        article.className = 'customer-item';
+        article.innerHTML = `
             <div>
                 <strong class="customer-item-name">${item.name || 'Producto'}</strong>
                 <span class="customer-item-meta">${item.meta || ''}</span>
@@ -206,8 +269,9 @@ function renderCustomerDisplay(payload = {}) {
                 <strong>${item.lineTotalLabel || '$0'}</strong>
                 <span>Total</span>
             </div>
-        </article>
-    `).join('');
+        `;
+        itemsList.appendChild(article);
+    });
     renderAdvertising();
 }
 
@@ -217,6 +281,10 @@ async function bootCustomerDisplay() {
     if (typeof window.cajeroAPI?.onCustomerDisplayUpdate === 'function') {
         window.cajeroAPI.onCustomerDisplayUpdate(renderCustomerDisplay);
     }
+
+    // Ensure advertising loads regardless of IPC state
+    await loadAdvertising();
+    window.setInterval(loadAdvertising, 30000);
 
     if (typeof window.cajeroAPI?.getCustomerDisplayState === 'function') {
         try {
@@ -231,8 +299,6 @@ async function bootCustomerDisplay() {
     }
 
     renderCustomerDisplay();
-    await loadAdvertising();
-    window.setInterval(loadAdvertising, 60000);
 }
 
 bootCustomerDisplay();

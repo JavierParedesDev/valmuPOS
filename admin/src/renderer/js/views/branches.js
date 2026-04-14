@@ -230,7 +230,8 @@ function renderBranchInventoryRows() {
 
     list.innerHTML = slice.map(item => {
         const qty = Number(item.stockActual || item.cantidad || 0);
-        const lowStock = qty <= 5;
+        const lowStockThreshold = parseInt(localStorage.getItem('valmu_low_stock_threshold') || '10', 10);
+        const lowStock = qty <= lowStockThreshold;
 
         return `
             <tr class="group hover:bg-gray-50/50 transition-colors">

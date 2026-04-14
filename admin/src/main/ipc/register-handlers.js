@@ -78,6 +78,41 @@ function registerIpcHandlers(mainWindow, updaterApi = null) {
     ipcMain.handle(IPC_CHANNELS.GET_WINDOW_STATE, () => updaterController?.getWindowState?.() || { isFullScreen: false });
     ipcMain.handle(IPC_CHANNELS.API_REQUEST, async (_event, options) => requestJson(options));
 
+    ipcMain.handle(IPC_CHANNELS.UPLOAD_PUBLICIDAD, async (_event, { titulo, base64, mime, token }) => {
+        try {
+            const { buildApiUrl } = require('../services/http-client');
+            const url = buildApiUrl('/publicidad');
+
+            // Reconstruct Buffer from base64
+            const buffer = Buffer.from(base64, 'base64');
+
+            // Build Multipart Body manually or use FormData if node-fetch/form-data is present.
+            // Since we are in Electron 31, global fetch/FormData should work.
+            const formData = new FormData();
+            formData.append('titulo', titulo || 'Sin titulo');
+
+            // FormData file blob reconstruction
+            const blob = new Blob([buffer], { type: mime });
+            formData.append('imagen', blob, 'upload.jpg');
+
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
+            });
+
+            const text = await response.text();
+            try {
+                return { ok: response.ok, status: response.status, data: JSON.parse(text) };
+            } catch {
+                return { ok: response.ok, status: response.status, data: text };
+            }
+        } catch (error) {
+            console.error('Error in UPLOAD_PUBLICIDAD handler:', error);
+            return { ok: false, error: error.message };
+        }
+    });
+
     ipcMain.handle(IPC_CHANNELS.GET_SII_CONFIG, () => {
         const configPath = path.join(siiDataDir, 'config.json');
         if (fs.existsSync(configPath)) {

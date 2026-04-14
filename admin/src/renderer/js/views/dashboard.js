@@ -1,18 +1,27 @@
+let dashboardRefreshTimer = null;
+
 async function renderDashboard() {
+    if (dashboardRefreshTimer) {
+        clearInterval(dashboardRefreshTimer);
+        dashboardRefreshTimer = null;
+    }
     const contentArea = document.getElementById('content-area');
     if (!contentArea) return;
+
+    const user = getCurrentUser();
+    const isBodeguero = user && Number(user.id_rol) === 3;
 
     contentArea.innerHTML = `
         <div class="dashboard-v2-container" style="padding: 0.5rem 0;">
             <!-- Welcome Section -->
             <div class="mb-6">
                 <h2 class="text-2xl font-bold tracking-tight text-gray-900">Panel de Control</h2>
-                <p class="text-gray-500 text-sm mt-1">Bienvenido de nuevo. Aquí tienes el rendimiento de tu negocio hoy.</p>
+                <p class="text-gray-500 text-sm mt-1">${isBodeguero ? 'Resumen de inventario y stock crítico.' : 'Bienvenido de nuevo. Aquí tienes el rendimiento de tu negocio hoy.'}</p>
             </div>
 
             <!-- Stats Grid -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm ${isBodeguero ? 'hidden' : ''}">
                     <div class="flex items-center justify-between mb-3">
                         <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Ventas Hoy</span>
                         <div class="h-8 w-8 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center">
@@ -25,7 +34,7 @@ async function renderDashboard() {
                     <p id="stat-sales-count" class="text-xs text-gray-400 mt-1">Cero transacciones</p>
                 </div>
 
-                <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm ${isBodeguero ? 'hidden' : ''}">
                     <div class="flex items-center justify-between mb-3">
                         <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Utilidad bruta</span>
                         <div class="h-8 w-8 rounded-lg bg-green-50 text-green-600 flex items-center justify-center">
@@ -65,7 +74,7 @@ async function renderDashboard() {
                 </div>
             </div>
 
-            <div class="grid grid-cols-12 gap-6">
+            <div class="grid grid-cols-12 gap-6 ${isBodeguero ? 'hidden' : ''}">
                 <!-- Main Chart -->
                 <div class="col-span-12 lg:col-span-8 bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
                     <div class="flex items-center justify-between mb-6">
@@ -119,11 +128,22 @@ async function renderDashboard() {
     `;
 
     void hydrateDashboard();
+
+    // Polling cada 60 segundos para historial "en vivo"
+    dashboardRefreshTimer = setInterval(() => {
+        if (currentPage === 'dashboard') {
+            void hydrateDashboard();
+        } else {
+            clearInterval(dashboardRefreshTimer);
+            dashboardRefreshTimer = null;
+        }
+    }, 60000);
 }
 
 async function hydrateDashboard() {
     const token = getAuthToken();
-    const hoyStr = new Date().toISOString().slice(0, 10);
+    const today = new Date();
+    const hoyStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
 
     try {
         // 1. Fetch data
@@ -169,7 +189,7 @@ async function hydrateDashboard() {
             const stockItems = Array.isArray(res?.data) ? res.data : [];
             stockItems.forEach(item => {
                 const stock = parseFloat(item.stockActual || item.cantidad || 0);
-                if (stock > 0 && stock <= lowStockThreshold) {
+                if (stock >= 0 && stock <= lowStockThreshold) {
                     criticalItems.push({
                         ...item,
                         branchName: branch.nombreSucursal,
@@ -195,14 +215,29 @@ async function hydrateDashboard() {
         const salesByDay = last7Days.reduce((acc, date) => ({ ...acc, [date]: 0 }), {});
 
         sales.forEach(s => {
-            const date = (s.fecha_venta || s.created_at || '').slice(0, 10);
+            const rawDate = (s.fecha_venta || s.fechaVenta || s.created_at || '');
+            if (!rawDate) return;
+
+            // Robust UTC-aware parsing
+            let normalizedDate = rawDate;
+            if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(rawDate)) {
+                normalizedDate = rawDate.replace(' ', 'T') + 'Z'; // Force UTC
+            } else if (/^\d{2}-\d{2}-\d{4}/.test(rawDate)) {
+                const p = rawDate.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
+                normalizedDate = `${p[3]}-${p[2]}-${p[1]}T00:00:00Z`;
+            }
+
+            const dateObj = new Date(normalizedDate);
+            if (isNaN(dateObj.getTime())) return;
+
+            const date = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
             const total = Number(s.total || s.monto_total || 0);
 
             if (salesByDay[date] !== undefined) {
                 salesByDay[date] += total;
             }
 
-            if (date === hoyStr && (s.estado || s.status) !== 'anulada') {
+            if (date === hoyStr && (s.estado || s.status || '').toLowerCase() !== 'anulada') {
                 todaySales += total;
                 todayCount++;
                 const cost = Number(s.costo_total) || (total * 0.78); // Estimate if not present
@@ -211,31 +246,40 @@ async function hydrateDashboard() {
         });
 
         // 3. UI Update
-        document.getElementById('stat-sales-today').textContent = `$${todaySales.toLocaleString('es-CL')}`;
-        document.getElementById('stat-sales-count').textContent = `${todayCount} tickets registrados`;
-        document.getElementById('stat-profit-today').textContent = `$${Math.round(todayProfit).toLocaleString('es-CL')}`;
-        document.getElementById('stat-inventory-value').textContent = `$${Math.round(totalValue).toLocaleString('es-CL')}`;
-        document.getElementById('stat-low-stock').textContent = productsWithLowStock;
+        const salesEl = document.getElementById('stat-sales-today');
+        const countEl = document.getElementById('stat-sales-count');
+        const profitEl = document.getElementById('stat-profit-today');
+        const inventoryEl = document.getElementById('stat-inventory-value');
+        const lowStockEl = document.getElementById('stat-low-stock');
+
+        if (salesEl) salesEl.textContent = `$${todaySales.toLocaleString('es-CL')}`;
+        if (countEl) countEl.textContent = `${todayCount} tickets registrados`;
+        if (profitEl) profitEl.textContent = `$${Math.round(todayProfit).toLocaleString('es-CL')}`;
+        if (inventoryEl) inventoryEl.textContent = `$${Math.round(totalValue).toLocaleString('es-CL')}`;
+        if (lowStockEl) lowStockEl.textContent = productsWithLowStock;
 
         // Recent Sales List
-        const recent = sales.slice(0, 10);
-        document.getElementById('dashboard-recent-list').innerHTML = recent.length ? recent.map(s => `
-            <div class="flex items-center justify-between group">
-                <div class="flex items-center gap-3">
-                    <div class="h-10 w-10 rounded-full bg-gray-50 text-gray-400 flex items-center justify-center border border-gray-100">
-                        <i class="bi bi-receipt-cutoff"></i>
+        const recentList = document.getElementById('dashboard-recent-list');
+        if (recentList) {
+            const recent = sales.slice(0, 10);
+            recentList.innerHTML = recent.length ? recent.map(s => `
+                <div class="flex items-center justify-between group">
+                    <div class="flex items-center gap-3">
+                        <div class="h-10 w-10 rounded-full bg-gray-50 text-gray-400 flex items-center justify-center border border-gray-100">
+                            <i class="bi bi-receipt-cutoff"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-bold text-gray-800">Folio ${s.folio || s.folioDocumento || '#' + (s.id_venta || s.ticket_id)}</p>
+                            <p class="text-[10px] text-gray-400">${(s.fecha_venta || s.fechaVenta || s.created_at || '').slice(11, 16)} • ${s.medio_pago || 'Efectivo'}</p>
+                        </div>
                     </div>
-                    <div>
-                        <p class="text-sm font-bold text-gray-800">Folio ${s.folio || '#' + (s.id_venta || s.ticket_id)}</p>
-                        <p class="text-[10px] text-gray-400">${(s.fecha_venta || s.created_at || '').slice(11, 16)} • ${s.medio_pago || 'Efectivo'}</p>
+                    <div class="text-right">
+                        <p class="text-sm font-black text-gray-900">$${(Number(s.total || s.monto_total || 0)).toLocaleString('es-CL')}</p>
+                        <span class="text-[9px] uppercase font-bold text-green-500">Completada</span>
                     </div>
                 </div>
-                <div class="text-right">
-                    <p class="text-sm font-black text-gray-900">$${(Number(s.total || s.monto_total || 0)).toLocaleString('es-CL')}</p>
-                    <span class="text-[9px] uppercase font-bold text-green-500">Completada</span>
-                </div>
-            </div>
-        `).join('') : '<p class="text-center text-gray-400 py-10">Sin ventas realizadas</p>';
+            `).join('') : '<p class="text-center text-gray-400 py-10">Sin ventas realizadas</p>';
+        }
 
         // Critical Stock List
         const lowStockTbody = document.getElementById('dashboard-low-stock-list');
