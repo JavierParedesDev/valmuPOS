@@ -6,10 +6,14 @@
   "scripts": {
     "start": "electron .",
     "pack": "electron-builder --dir",
-    "dist": "electron-builder --win nsis"
+    "dist": "electron-builder --win nsis",
+    "dist:publish": "electron-builder --win nsis --publish always"
   },
   "author": "Valmu",
   "license": "ISC",
+  "dependencies": {
+    "electron-updater": "^6.8.3"
+  },
   "devDependencies": {
     "electron": "^41.0.3",
     "electron-builder": "^25.1.8"
@@ -44,6 +48,12 @@
           ]
         }
       ]
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "JavierParedesDev",
+      "repo": "valmuPOS",
+      "releaseType": "release"
     },
     "nsis": {
       "oneClick": true,

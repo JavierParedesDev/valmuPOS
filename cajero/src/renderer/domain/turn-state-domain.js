@@ -5,6 +5,7 @@ export function hydrateTurnSummaryState(turnSummaryState, rawSummary) {
         turnSummaryState.totalCard = 0;
         turnSummaryState.totalTransfer = 0;
         turnSummaryState.totalInternal = 0;
+        turnSummaryState.totalWithdrawals = 0;
         return false;
     }
 
@@ -15,6 +16,7 @@ export function hydrateTurnSummaryState(turnSummaryState, rawSummary) {
         turnSummaryState.totalCard = Number(parsed?.totalCard || 0);
         turnSummaryState.totalTransfer = Number(parsed?.totalTransfer || 0);
         turnSummaryState.totalInternal = Number(parsed?.totalInternal || 0);
+        turnSummaryState.totalWithdrawals = Number(parsed?.totalWithdrawals || 0);
         return true;
     } catch (_error) {
         turnSummaryState.salesCount = 0;
@@ -22,6 +24,7 @@ export function hydrateTurnSummaryState(turnSummaryState, rawSummary) {
         turnSummaryState.totalCard = 0;
         turnSummaryState.totalTransfer = 0;
         turnSummaryState.totalInternal = 0;
+        turnSummaryState.totalWithdrawals = 0;
         return false;
     }
 }
@@ -32,6 +35,7 @@ export function resetTurnSummaryState(turnSummaryState) {
     turnSummaryState.totalCard = 0;
     turnSummaryState.totalTransfer = 0;
     turnSummaryState.totalInternal = 0;
+    turnSummaryState.totalWithdrawals = 0;
 }
 
 export function hydrateTurnHistoryState(turnHistoryState, rawHistory) {

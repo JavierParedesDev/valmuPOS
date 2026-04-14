@@ -1,4 +1,107 @@
 window.ValmuInvoicingConfigController = {
+    stopAutoSync() {
+        if (this.autoSyncInterval) {
+            clearInterval(this.autoSyncInterval);
+            this.autoSyncInterval = null;
+        }
+    },
+
+    setSyncStatus(message, variant = 'neutral') {
+        const element = document.getElementById('config-folios-sync-status');
+        if (!element) {
+            return;
+        }
+
+        element.textContent = message;
+        if (variant === 'success') {
+            element.className = 'text-sm font-black text-[#236844]';
+            return;
+        }
+
+        if (variant === 'error') {
+            element.className = 'text-sm font-black text-[#c45b37]';
+            return;
+        }
+
+        element.className = 'text-sm font-black text-[#6b7a6b]';
+    },
+
+    applyFoliosToDom(config = {}) {
+        [33, 39, 61, 56].forEach((type) => {
+            const currentInput = document.getElementById(`conf-folio-${type}`);
+            const maxInput = document.getElementById(`conf-folio-final-${type}`);
+
+            const nextFolio = parseInt(config[`folio_${type}`], 10) || 0;
+            const maxFolio = parseInt(config[`folio_final_${type}`], 10) || 0;
+
+            if (currentInput && document.activeElement !== currentInput) {
+                currentInput.value = nextFolio;
+            }
+
+            if (maxInput && document.activeElement !== maxInput) {
+                maxInput.value = maxFolio;
+            }
+        });
+    },
+
+    async syncFoliosFromBackend({ api, electronAPI, onConfigUpdated, silent = false } = {}) {
+        if (!api?.getFoliosControl) {
+            return null;
+        }
+
+        try {
+            const controls = await api.getFoliosControl();
+            const currentConfig = await electronAPI.getSiiConfig();
+            const nextConfig = { ...(currentConfig || {}) };
+
+            let updated = false;
+            (Array.isArray(controls) ? controls : []).forEach((row) => {
+                const tipo = String(row.tipoDte || '');
+                if (!['33', '39', '61', '56'].includes(tipo)) {
+                    return;
+                }
+
+                const nextFolio = (parseInt(row.ultimoFolioUsado, 10) || 0) + 1;
+                const maxFolio = parseInt(row.folioDisponibleHasta, 10) || 0;
+
+                if (parseInt(nextConfig[`folio_${tipo}`], 10) !== nextFolio) {
+                    nextConfig[`folio_${tipo}`] = nextFolio;
+                    updated = true;
+                }
+
+                if (maxFolio > 0 && parseInt(nextConfig[`folio_final_${tipo}`], 10) !== maxFolio) {
+                    nextConfig[`folio_final_${tipo}`] = maxFolio;
+                    updated = true;
+                }
+            });
+
+            if (updated) {
+                await electronAPI.saveSiiConfig(nextConfig);
+            }
+
+            localStorage.setItem('sii_config', JSON.stringify(nextConfig));
+            this.applyFoliosToDom(nextConfig);
+            onConfigUpdated?.(nextConfig);
+            this.setSyncStatus(`Ultima sincronizacion: ${new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`, 'success');
+
+            return nextConfig;
+        } catch (error) {
+            console.error('Auto sync folios failed:', error);
+            if (!silent) {
+                this.setSyncStatus(`Sin conexion con backend: ${error.message}`, 'error');
+            }
+            return null;
+        }
+    },
+
+    startAutoSync({ api, electronAPI, onConfigUpdated } = {}) {
+        this.stopAutoSync();
+        this.syncFoliosFromBackend({ api, electronAPI, onConfigUpdated, silent: false });
+        this.autoSyncInterval = setInterval(() => {
+            this.syncFoliosFromBackend({ api, electronAPI, onConfigUpdated, silent: true });
+        }, 8000);
+    },
+
     async updateStatusBadge({ electronAPI, type, elementId } = {}) {
         const element = document.getElementById(elementId);
         if (!element) {
@@ -101,13 +204,17 @@ window.ValmuInvoicingConfigController = {
         });
     },
 
-    async bind({ electronAPI, saveConfig, syncFolios, reserveFolio, onConfigUpdated, SwalRef } = {}) {
+    async bind({ electronAPI, api, saveConfig, syncFolios, reserveFolio, onConfigUpdated, SwalRef } = {}) {
         document.getElementById('btn-save-config')?.addEventListener('click', () => saveConfig?.());
-        document.getElementById('btn-sync-folios')?.addEventListener('click', () => syncFolios?.());
+        document.getElementById('btn-sync-folios')?.addEventListener('click', async () => {
+            await this.syncFoliosFromBackend({ api, electronAPI, onConfigUpdated, silent: false });
+            syncFolios?.();
+        });
         document.getElementById('btn-reserve-folio')?.addEventListener('click', () => reserveFolio?.());
 
         this.bindAutoSave({ saveConfig });
         this.bindInstallButtons({ electronAPI, onConfigUpdated, SwalRef });
         await this.refreshStatuses({ electronAPI });
+        this.startAutoSync({ api, electronAPI, onConfigUpdated });
     }
 };

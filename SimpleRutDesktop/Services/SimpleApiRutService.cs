@@ -60,6 +60,93 @@ public sealed class SimpleApiRutService
         }
     }
 
+    public async Task<DteInfoQueryResult> QueryDteInfoAsync(DteInfoQueryRequest query, AppSettings settings, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(settings.ApiKey))
+        {
+            throw new InvalidOperationException("Debes ingresar la API key de SimpleAPI.");
+        }
+
+        if (string.IsNullOrWhiteSpace(settings.DteInfoEndpointUrl))
+        {
+            throw new InvalidOperationException("Debes indicar la URL de consulta DTE.");
+        }
+
+        if (string.IsNullOrWhiteSpace(query.RutEmpresa))
+        {
+            throw new InvalidOperationException("Debes ingresar el RUT de la empresa emisora.");
+        }
+
+        if (query.Folio <= 0)
+        {
+            throw new InvalidOperationException("Debes ingresar un folio valido.");
+        }
+
+        if (string.IsNullOrWhiteSpace(query.FechaDte))
+        {
+            throw new InvalidOperationException("Debes ingresar la fecha del DTE.");
+        }
+
+        if (query.Tipo <= 0)
+        {
+            throw new InvalidOperationException("Debes seleccionar el tipo de DTE.");
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, settings.DteInfoEndpointUrl.Trim());
+        await ApplyAuthenticationAsync(request, settings, cancellationToken);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["RutEmpresa"] = NormalizeRut(query.RutEmpresa),
+            ["RutReceptor"] = string.IsNullOrWhiteSpace(query.RutReceptor) ? "66666666-6" : NormalizeRut(query.RutReceptor),
+            ["Folio"] = query.Folio,
+            ["FechaDTE"] = query.FechaDte,
+            ["Tipo"] = query.Tipo,
+            ["Ambiente"] = query.Ambiente
+        };
+
+        if (!string.IsNullOrWhiteSpace(query.AuthRut) && !string.IsNullOrWhiteSpace(query.AuthPassword))
+        {
+            payload["Autenticacion"] = new
+            {
+                Rut = NormalizeRut(query.AuthRut),
+                Password = query.AuthPassword
+            };
+        }
+
+        request.Content = new StringContent(
+            JsonSerializer.Serialize(payload),
+            Encoding.UTF8,
+            "application/json");
+
+        using var response = await _httpClient.SendAsync(request, cancellationToken);
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new InvalidOperationException(
+                $"Consulta DTE fallida ({(int)response.StatusCode}).{Environment.NewLine}" +
+                $"URL: {settings.DteInfoEndpointUrl.Trim()}{Environment.NewLine}" +
+                $"Respuesta: {body}");
+        }
+
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            throw new InvalidOperationException("SimpleAPI respondio sin contenido al consultar el DTE.");
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            return MapDteInfoResult(document.RootElement, body);
+        }
+        catch (JsonException)
+        {
+            throw new InvalidOperationException("SimpleAPI no devolvio JSON valido al consultar el DTE.");
+        }
+    }
+
     public static string NormalizeRut(string rut)
     {
         var source = (rut ?? string.Empty).Trim().ToUpperInvariant();
@@ -137,6 +224,18 @@ public sealed class SimpleApiRutService
             Ciudad = FirstString(mainAddress, ["ciudad", "Ciudad", "city", "CiudadOrigen", "CiudadRecep"]) ?? string.Empty,
             Correo = FirstString(root, ["correoIntercambio", "correo", "email", "Correo", "CorreoEmisor"]) ?? string.Empty,
             Telefono = FirstString(root, ["telefono", "Telefono", "phone", "fono"]) ?? string.Empty,
+            RawJson = PrettyJson(rawJson)
+        };
+    }
+
+    private static DteInfoQueryResult MapDteInfoResult(JsonElement root, string rawJson)
+    {
+        return new DteInfoQueryResult
+        {
+            Estado = FirstString(root, ["Estado", "estado", "EstadoDTE", "estadoDte", "Resultado", "resultado"]) ?? string.Empty,
+            Detalle = FirstString(root, ["Glosa", "glosa", "Detalle", "detalle", "Mensaje", "message", "Descripcion", "descripcion"]) ?? string.Empty,
+            Reparos = FirstString(root, ["Reparo", "reparo", "Reparos", "reparos", "Observaciones", "observaciones"]) ?? string.Empty,
+            TrackId = FirstString(root, ["TrackId", "trackId", "track_id"]) ?? string.Empty,
             RawJson = PrettyJson(rawJson)
         };
     }

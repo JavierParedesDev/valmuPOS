@@ -1,11 +1,14 @@
 const { app, BrowserWindow, Menu, ipcMain, screen } = require('electron');
 const { execFile } = require('child_process');
 const fs = require('fs/promises');
+const fsSync = require('fs');
 const os = require('os');
 const path = require('path');
+const { createUpdateManager } = require('./updater/update-manager');
 
 let mainWindow = null;
 let customerDisplayWindow = null;
+let updateManager = null;
 let lastCustomerDisplayPayload = {
     mode: 'idle',
     branchName: 'Sucursal',
@@ -17,6 +20,77 @@ let lastCustomerDisplayPayload = {
     statusLabel: 'Pantalla cliente lista',
     cart: []
 };
+
+function buildAppMenu() {
+    const template = [
+        {
+            label: 'Archivo',
+            submenu: [
+                { role: 'reload', label: 'Recargar' },
+                { role: 'forceReload', label: 'Forzar recarga' },
+                { type: 'separator' },
+                { role: 'quit', label: 'Salir' }
+            ]
+        },
+        {
+            label: 'Editar',
+            submenu: [
+                { role: 'undo', label: 'Deshacer' },
+                { role: 'redo', label: 'Rehacer' },
+                { type: 'separator' },
+                { role: 'cut', label: 'Cortar' },
+                { role: 'copy', label: 'Copiar' },
+                { role: 'paste', label: 'Pegar' },
+                { role: 'selectAll', label: 'Seleccionar todo' }
+            ]
+        },
+        {
+            label: 'Ver',
+            submenu: [
+                { role: 'togglefullscreen', label: 'Pantalla completa' },
+                { role: 'toggleDevTools', label: 'Herramientas de desarrollador' }
+            ]
+        },
+        {
+            label: 'Ventana',
+            submenu: [
+                { role: 'minimize', label: 'Minimizar' },
+                { role: 'close', label: 'Cerrar' }
+            ]
+        }
+    ];
+
+    Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+
+const siiDataDir = path.join(process.cwd(), 'sii_data');
+const invoiceFolders = ['facturas', 'boletas'];
+
+function ensureSiiDataDir() {
+    if (!fsSync.existsSync(siiDataDir)) {
+        fsSync.mkdirSync(siiDataDir, { recursive: true });
+    }
+}
+
+function getSiiConfigPath() {
+    ensureSiiDataDir();
+    return path.join(siiDataDir, 'config.json');
+}
+
+function ensureInvoiceFolder(folder = '') {
+    ensureSiiDataDir();
+    const safeFolder = invoiceFolders.includes(String(folder || '').trim()) ? String(folder || '').trim() : 'facturas';
+    const fullPath = path.join(siiDataDir, safeFolder);
+    if (!fsSync.existsSync(fullPath)) {
+        fsSync.mkdirSync(fullPath, { recursive: true });
+    }
+    return fullPath;
+}
+
+function bufferFromBase64Payload(base64Data) {
+    const rawBase64 = String(base64Data || '').replace(/^data:.*?;base64,/, '');
+    return Buffer.from(rawBase64, 'base64');
+}
 
 function getReceiptPrinterScriptPath() {
     if (app.isPackaged) {
@@ -85,7 +159,7 @@ function createMainWindow() {
         minWidth: 1180,
         minHeight: 760,
         backgroundColor: '#1c1410',
-        autoHideMenuBar: true,
+        autoHideMenuBar: false,
         title: 'Valmu Cajero',
         icon: getReceiptLogoPath(),
         webPreferences: {
@@ -101,6 +175,14 @@ function createMainWindow() {
     mainWindow.once('ready-to-show', () => {
         mainWindow.show();
     });
+}
+
+function sendToMainWindow(channel, payload) {
+    if (!mainWindow || mainWindow.isDestroyed()) {
+        return;
+    }
+
+    mainWindow.webContents.send(channel, payload);
 }
 
 function getCustomerDisplayFilePath() {
@@ -144,7 +226,7 @@ function createCustomerDisplayWindow() {
         minWidth: 800,
         minHeight: 600,
         backgroundColor: '#241710',
-        autoHideMenuBar: true,
+        autoHideMenuBar: false,
         title: 'Valmu Cliente',
         webPreferences: {
             preload: path.join(__dirname, '../preload/preload.js'),
@@ -219,6 +301,14 @@ function compareVersions(left, right) {
 }
 
 function registerIpcHandlers() {
+    ensureSiiDataDir();
+
+    ipcMain.handle('app:get-version', async () => app.getVersion());
+    ipcMain.handle('update:get-state', async () => updateManager?.getUpdateState?.() || null);
+    ipcMain.handle('update:check', async () => updateManager?.checkForUpdates?.(true) || null);
+    ipcMain.handle('update:download', async () => updateManager?.downloadUpdate?.() || null);
+    ipcMain.handle('update:install', async () => updateManager?.installUpdate?.() || null);
+
     ipcMain.handle('settings:get-printers', async () => {
         if (!mainWindow || mainWindow.isDestroyed()) {
             return [];
@@ -232,54 +322,6 @@ function registerIpcHandlers() {
             status: printer.status || 0,
             isDefault: Boolean(printer.isDefault)
         }));
-    });
-
-    ipcMain.handle('settings:check-github-release', async (_event, repo) => {
-        const normalizedRepo = normalizeGithubRepo(repo);
-        if (!normalizedRepo || !normalizedRepo.includes('/')) {
-            return {
-                ok: false,
-                error: 'Repositorio invalido. Usa el formato usuario/repositorio.'
-            };
-        }
-
-        try {
-            const response = await fetch(`https://api.github.com/repos/${normalizedRepo}/releases/latest`, {
-                headers: {
-                    'Accept': 'application/vnd.github+json',
-                    'User-Agent': 'Valmu-Cajero'
-                }
-            });
-
-            const payload = await response.json().catch(() => null);
-
-            if (!response.ok) {
-                return {
-                    ok: false,
-                    error: payload?.message || 'No se pudo consultar la ultima release.'
-                };
-            }
-
-            const latestVersion = payload?.tag_name || payload?.name || null;
-            const currentVersion = app.getVersion();
-            const hasUpdate = latestVersion ? compareVersions(latestVersion, currentVersion) > 0 : false;
-
-            return {
-                ok: true,
-                repo: normalizedRepo,
-                currentVersion,
-                latestVersion,
-                hasUpdate,
-                releaseName: payload?.name || latestVersion,
-                publishedAt: payload?.published_at || null,
-                url: payload?.html_url || null
-            };
-        } catch (error) {
-            return {
-                ok: false,
-                error: error?.message || 'No se pudo consultar GitHub Releases.'
-            };
-        }
     });
 
     ipcMain.handle('printer:print-receipt', async (_event, payload) => {
@@ -326,16 +368,107 @@ function registerIpcHandlers() {
         mainWindow.setFullScreen(!isFullScreen);
         return !isFullScreen;
     });
+
+    ipcMain.handle('sii:get-config', async () => {
+        try {
+            const configPath = getSiiConfigPath();
+            if (!fsSync.existsSync(configPath)) {
+                return {};
+            }
+
+            return JSON.parse(await fs.readFile(configPath, 'utf8'));
+        } catch (error) {
+            console.error('SII config read error:', error);
+            return {};
+        }
+    });
+
+    ipcMain.handle('sii:save-config', async (_event, config) => {
+        try {
+            const configPath = getSiiConfigPath();
+            await fs.writeFile(configPath, JSON.stringify(config || {}, null, 2), 'utf8');
+            return { success: true };
+        } catch (error) {
+            console.error('SII config save error:', error);
+            return { success: false, error: error?.message || 'sii_config_save_failed' };
+        }
+    });
+
+    ipcMain.handle('sii:upload-file', async (_event, { filename, base64Data }) => {
+        try {
+            ensureSiiDataDir();
+            const targetPath = path.join(siiDataDir, String(filename || '').trim());
+            await fs.writeFile(targetPath, bufferFromBase64Payload(base64Data));
+            return { success: true, path: targetPath, filename: path.basename(targetPath) };
+        } catch (error) {
+            console.error('SII file upload error:', error);
+            return { success: false, error: error?.message || 'sii_file_upload_failed' };
+        }
+    });
+
+    ipcMain.handle('sii:read-local-cert', async (_event, filename) => {
+        try {
+            const targetPath = path.join(siiDataDir, String(filename || '').trim());
+            if (!fsSync.existsSync(targetPath)) {
+                return null;
+            }
+
+            const buffer = await fs.readFile(targetPath);
+            return buffer.toString('base64');
+        } catch (error) {
+            console.error('SII read cert error:', error);
+            return null;
+        }
+    });
+
+    ipcMain.handle('sii:read-local-text', async (_event, filename) => {
+        try {
+            const targetPath = path.join(siiDataDir, String(filename || '').trim());
+            if (!fsSync.existsSync(targetPath)) {
+                return null;
+            }
+
+            return await fs.readFile(targetPath, 'utf8');
+        } catch (error) {
+            console.error('SII read text error:', error);
+            return null;
+        }
+    });
+
+    ipcMain.handle('sii:save-xml', async (_event, { filename, data, folder }) => {
+        try {
+            const folderPath = ensureInvoiceFolder(folder);
+            const targetPath = path.join(folderPath, String(filename || '').trim());
+            await fs.writeFile(targetPath, typeof data === 'string' ? data : String(data || ''), 'utf8');
+            return { success: true, path: targetPath, filename: path.basename(targetPath) };
+        } catch (error) {
+            console.error('SII save xml error:', error);
+            return { success: false, error: error?.message || 'sii_save_xml_failed' };
+        }
+    });
 }
 
 app.whenReady().then(() => {
-    Menu.setApplicationMenu(null);
+    updateManager = createUpdateManager({
+        app,
+        getMainWindow: () => mainWindow,
+        sendToWindow: sendToMainWindow
+    });
+
+    buildAppMenu();
     createMainWindow();
     registerIpcHandlers();
+    updateManager.initialize();
+    mainWindow?.once('ready-to-show', () => {
+        updateManager?.sendStateToWindow?.();
+    });
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
             createMainWindow();
+            mainWindow?.once('ready-to-show', () => {
+                updateManager?.sendStateToWindow?.();
+            });
         }
     });
 });

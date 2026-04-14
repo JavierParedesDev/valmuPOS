@@ -25,7 +25,12 @@ export async function createQuickCustomer({ apiBaseUrl, token, customer }) {
         body: JSON.stringify({
             rut_cliente: customer.rut,
             nombreCliente: customer.name,
-            giroCliente: customer.business
+            giroCliente: customer.business,
+            direccion: customer.address || null,
+            comuna: customer.comuna || null,
+            ciudad: customer.city || null,
+            telefono: customer.phone || null,
+            correo: customer.email || null
         })
     });
 

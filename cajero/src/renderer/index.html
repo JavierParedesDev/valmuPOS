@@ -94,6 +94,7 @@
                         <button class="header-utility-btn" id="header-fullscreen-btn" type="button"
                             title="Pantalla Completa"><i class="bi bi-arrows-fullscreen"></i></button>
                         <button class="header-utility-btn" id="header-settings-btn" type="button">Ajustes</button>
+                        <button class="header-utility-btn" id="header-cash-withdrawal-btn" type="button">Retiro</button>
                         <button class="header-close-cash-btn" id="header-close-cash-btn" type="button">Cerrar
                             caja</button>
                     </div>
@@ -195,31 +196,13 @@
                             <button id="charge-invoice-btn"></button>
                             <button id="charge-internal-btn"></button>
                         </div>
-                        <div class="summary-top retail-total-card">
+                        <div class="summary-top retail-total-card" id="sale-total-card" title="Doble click para activar o desactivar vale interno">
                             <span class="summary-label">Total a pagar</span>
                             <strong id="sale-total">$0</strong>
                         </div>
                     </div>
 
-                    <div class="retail-keypad-shell" id="sale-keypad-shell">
-                        <div class="retail-keypad-grid">
-                            <button class="keypad-btn" type="button">1</button>
-                            <button class="keypad-btn" type="button">2</button>
-                            <button class="keypad-btn" type="button">3</button>
-                            <button class="keypad-btn is-accent" type="button">C</button>
-                            <button class="keypad-btn" type="button">4</button>
-                            <button class="keypad-btn" type="button">5</button>
-                            <button class="keypad-btn" type="button">6</button>
-                            <button class="keypad-btn is-dark" type="button">-</button>
-                            <button class="keypad-btn" type="button">7</button>
-                            <button class="keypad-btn" type="button">8</button>
-                            <button class="keypad-btn" type="button">9</button>
-                            <button class="keypad-btn is-dark" type="button">+</button>
-                            <button class="keypad-btn is-wide" type="button">0</button>
-                            <button class="keypad-btn" type="button">00</button>
-                            <button class="keypad-btn" type="button">.</button>
-                        </div>
-                    </div>
+
 
                     <div class="summary-breakdown-box retail-breakdown-box" id="sale-breakdown-box">
                         <div class="summary-row">
@@ -237,11 +220,17 @@
                     </div>
 
                     <div class="dispatch-inline-shell hidden" id="dispatch-inline-shell">
-                        <label class="input-label" for="dispatch-inline-carrier-select">Seleccionar
-                            transportista</label>
-                        <select class="input-control" id="dispatch-inline-carrier-select">
-                            <option value="">Seleccionar transportista</option>
-                        </select>
+                        <label class="input-label">Transportista</label>
+                        <button class="selection-tile" id="dispatch-inline-carrier-tile" type="button">
+                            <div class="selection-tile-info">
+                                <i class="bi bi-truck selection-tile-icon"></i>
+                                <div class="selection-tile-text">
+                                    <strong id="dispatch-inline-carrier-name-display">Seleccionar transportista</strong>
+                                    <span id="dispatch-inline-carrier-meta-display">Toca para elegir de la lista</span>
+                                </div>
+                            </div>
+                            <i class="bi bi-chevron-right selection-tile-chevron"></i>
+                        </button>
                         <div class="summary-breakdown-box retail-breakdown-box dispatch-inline-breakdown">
                             <div class="summary-row">
                                 <span>Items cargados</span>
@@ -307,45 +296,56 @@
                             <i class="bi bi-clock-history"></i>
                             <span>Historial</span>
                         </button>
+                        <button class="footer-action-btn" id="dispatch-manage-customer-btn" type="button">
+                            <i class="bi bi-person-plus-fill"></i>
+                            <span>Añadir Cliente</span>
+                        </button>
+                        <button class="footer-action-btn hidden" id="dispatch-clear-customer-btn" type="button">
+                            <i class="bi bi-person-x-fill"></i>
+                            <span>Quitar Cliente</span>
+                        </button>
                     </div>
                 </div>
 
                 <aside class="summary-panel retail-payment-panel dispatch-summary-panel">
-                    <div class="retail-panel-top dispatch-panel-top">
-                        <div class="summary-context-card retail-customer-card dispatch-carrier-card">
-                            <span class="summary-context-label">Transportista</span>
-                            <strong id="dispatch-carrier-summary">Sin transportista seleccionado</strong>
-                            <div class="summary-context-actions">
-                                <button class="summary-link-btn" id="dispatch-add-carrier-btn" type="button">Registrar
-                                    transportista</button>
-                                <button class="summary-link-btn" id="dispatch-open-history-btn" type="button">Ver
-                                    historial</button>
-                            </div>
-                        </div>
+                    <div class="summary-top retail-total-card dispatch-total-card">
+                        <span class="summary-label">Total referencial</span>
+                        <strong id="dispatch-total-label">$0</strong>
+                    </div>
 
-                        <div class="summary-top retail-total-card dispatch-total-card">
-                            <span class="summary-label">Total referencial</span>
-                            <strong id="dispatch-total-label">$0</strong>
+                    <div class="dispatch-document-shell">
+                        <label class="input-label">Tipo de documento</label>
+                        <div class="document-type-chips">
+                            <button class="doc-chip active" data-type="3" type="button">Vale Despacho</button>
+                            <button class="doc-chip" data-type="1" type="button">Boleta</button>
+                            <button class="doc-chip" data-type="2" type="button">Factura</button>
                         </div>
                     </div>
 
-                    <div class="dispatch-operation-shell">
-                        <label class="input-label" for="dispatch-carrier-select">Seleccionar transportista</label>
-                        <select class="input-control" id="dispatch-carrier-select">
-                            <option value="">Seleccionar transportista</option>
-                        </select>
+                    <!-- Customer moved to footer buttons -->
 
-                        <div class="summary-breakdown-box retail-breakdown-box dispatch-breakdown-box">
-                            <div class="summary-row">
-                                <span>Items cargados</span>
-                                <strong id="dispatch-items-label">0</strong>
+                    <div class="selection-tile-shell">
+                        <label class="input-label">Seleccionar transportista</label>
+                        <button class="selection-tile" id="dispatch-carrier-tile" type="button">
+                            <div class="selection-tile-info">
+                                <i class="bi bi-truck selection-tile-icon"></i>
+                                <div class="selection-tile-text">
+                                    <strong id="dispatch-carrier-name-display">Seleccionar transportista</strong>
+                                    <span id="dispatch-carrier-meta-display">Toca para elegir de la lista</span>
+                                </div>
                             </div>
-                        </div>
+                            <i class="bi bi-chevron-right selection-tile-chevron"></i>
+                        </button>
+                    </div>
 
-                        <div class="connection-status hidden" id="dispatch-status">
-                            El cajero prepara la carga y descuenta stock para ruta. La rendicion la revisa el jefe con
-                            el
-                            transportista.
+                    <div class="dispatch-operation-shell">
+                        <div class="summary-row">
+                            <span>Venta en ruta</span>
+                            <strong id="dispatch-carrier-summary">Sin transportista</strong>
+                        </div>
+                        <div class="summary-row">
+                            <span>Items cargados</span>
+                            <strong id="dispatch-items-label">0</strong>
                         </div>
                     </div>
 
@@ -359,96 +359,313 @@
             </section>
 
             <div class="modal-backdrop hidden" id="dispatch-history-modal-backdrop">
-                <div class="weighted-modal receipt-modal dispatch-history-modal">
-                    <span class="header-kicker">Historial</span>
-                    <h3>Vales emitidos</h3>
-                    <p>Consulta los despachos generados y abre su comprobante cuando lo necesites.</p>
-                    <div class="turn-history-list dispatch-history-modal-list" id="dispatch-records-list">
-                        <div class="turn-history-empty">Aun no hay vales de despacho emitidos.</div>
+                <div class="weighted-modal receipt-modal sale-history-modal dispatch-history-modal"
+                    style="display: flex; flex-direction: column; max-height: 90vh;">
+                    <div class="modal-header" style="flex-shrink: 0;">
+                        <h3>Historial de Despachos</h3>
+                        <p>Haz clic en un despacho para ver su comprobante.</p>
                     </div>
-                    <div class="weighted-actions">
+
+                    <div class="modal-body custom-scrollbar"
+                        style="flex: 1; overflow-y: auto; padding-right: 0.5rem; margin-top: 1rem;">
+                        <div class="turn-history-info"
+                            style="margin-bottom: 0.75rem; color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">
+                            Mostrando <strong id="dispatch-history-count">0</strong> registros
+                        </div>
+
+                        <div class="turn-history-list compact-history-list dispatch-history-modal-list" id="dispatch-records-list">
+                            <div class="turn-history-empty">Aun no hay vales de despacho emitidos.</div>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer"
+                        style="flex-shrink: 0; margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid rgba(0,0,0,0.05); display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
                         <button class="secondary-btn" id="dispatch-history-close-btn" type="button">Cerrar</button>
                         <button class="primary-btn" id="dispatch-history-go-cash-btn" type="button">Volver a
-                            Vender</button>
+                            vender</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="modal-backdrop hidden" id="sale-history-modal-backdrop">
+                <div class="weighted-modal receipt-modal sale-history-modal"
+                    style="display: flex; flex-direction: column; max-height: 90vh;">
+                    <div class="modal-header" id="sale-history-header" style="flex-shrink: 0;">
+                        <h3 id="sale-history-title">Historial de Ventas</h3>
+                        <p id="sale-history-subtitle">Haz clic en una venta para ver opciones.</p>
+                    </div>
+
+                    <div class="modal-body custom-scrollbar"
+                        style="flex: 1; overflow-y: auto; padding-right: 0.5rem; margin-top: 1rem;">
+                        <div class="history-tabs">
+                            <button class="tab-btn active" id="sales-tab-active-btn">Activas</button>
+                            <button class="tab-btn" id="sales-tab-cancelled-btn">Anuladas</button>
+                        </div>
+
+                        <div class="turn-history-info"
+                            style="margin-bottom: 0.75rem; color: var(--text-muted); font-size: 0.85rem; font-weight: 600;">
+                            Mostrando <strong id="sales-history-count">0</strong> registros
+                        </div>
+
+                        <div class="turn-history-list compact-history-list" id="sales-history-list">
+                            <div class="turn-history-empty">Cargando historial...</div>
+                        </div>
+                    </div>
+
+                    <div class="modal-footer"
+                        style="flex-shrink: 0; margin-top: 1.5rem; padding-top: 1.2rem; border-top: 1px solid rgba(0,0,0,0.05);">
+                        <button class="secondary-btn" id="sale-history-close-btn" type="button"
+                            style="width: 100%; min-height: 50px;">Cerrar Historial</button>
                     </div>
                 </div>
             </div>
 
             <section class="settings-view hidden" id="settings-view">
-                <article class="settings-card cash-view-span"
-                    style="display: flex; align-items: center; padding: 0.8rem 1.2rem;">
-                    <button class="secondary-btn" id="settings-back-btn" type="button"
-                        style="width: auto; padding: 0.6rem 1.2rem; font-size: 0.95rem; font-weight: 700; display: flex; gap: 0.5rem; justify-content: center; align-items: center;"><i
-                            class="bi bi-arrow-left"></i> Volver a Vender</button>
-                </article>
+                <div class="settings-layout">
+                    <aside class="settings-sidebar">
+                        <div class="settings-sidebar-header">
+                            <span class="header-kicker">Panel</span>
+                            <h3>Ajustes</h3>
+                        </div>
+                        <nav class="settings-nav">
+                            <button class="settings-nav-item active" data-tab="general" type="button">
+                                <i class="bi bi-gear-fill"></i>
+                                <span>General</span>
+                            </button>
+                            <button class="settings-nav-item" data-tab="sii" type="button">
+                                <i class="bi bi-file-earmark-text-fill"></i>
+                                <span>Facturación SII</span>
+                            </button>
+                            <button class="settings-nav-item" data-tab="hardware" type="button">
+                                <i class="bi bi-gpu-card"></i>
+                                <span>Hardware</span>
+                            </button>
+                            <button class="settings-nav-item" data-tab="system" type="button">
+                                <i class="bi bi-info-circle-fill"></i>
+                                <span>Sistema</span>
+                            </button>
+                        </nav>
+                        <button class="secondary-btn settings-back-sidebar-btn" id="settings-back-btn" type="button">
+                            <i class="bi bi-arrow-left"></i> Volver
+                        </button>
+                    </aside>
 
-                <article class="settings-card">
-                    <span class="header-kicker">Caja</span>
-                    <h3>Sucursal</h3>
-                    <label class="input-label" for="branch-select">Sucursal de venta</label>
-                    <select class="input-control" id="branch-select">
-                        <option value="">Cargando sucursales...</option>
-                    </select>
-                </article>
+                    <div class="settings-content-area custom-scrollbar">
+                        <!-- TAB: GENERAL -->
+                        <div class="settings-tab-content active" id="settings-tab-general">
+                            <article class="settings-card">
+                                <span class="header-kicker">Caja</span>
+                                <h3>Sucursal</h3>
+                                <label class="input-label" for="branch-select">Sucursal de venta</label>
+                                <select class="input-control" id="branch-select">
+                                    <option value="">Cargando sucursales...</option>
+                                </select>
+                            </article>
 
-                <article class="settings-card">
-                    <span class="header-kicker">Hardware</span>
-                    <h3>Impresora</h3>
-                    <label class="input-label" for="printer-select">Seleccionar impresora</label>
-                    <select class="input-control" id="printer-select">
-                        <option>Impresora termica 80mm</option>
-                        <option>Predeterminada del sistema</option>
-                        <option>Configurar despues</option>
-                    </select>
-                    <label class="input-label" for="printer-paper-select">Formato de papel</label>
-                    <select class="input-control" id="printer-paper-select">
-                        <option value="80mm">Ticket 80mm</option>
-                        <option value="58mm">Ticket 58mm</option>
-                    </select>
-                    <button class="secondary-btn" id="save-printer-settings-btn" type="button">Guardar
-                        impresora</button>
-                </article>
+                            <article class="settings-card">
+                                <span class="header-kicker">Hardware</span>
+                                <h3>Impresora</h3>
+                                <label class="input-label" for="printer-select">Seleccionar impresora</label>
+                                <select class="input-control" id="printer-select">
+                                    <option>Impresora termica 80mm</option>
+                                    <option>Predeterminada del sistema</option>
+                                    <option>Configurar despues</option>
+                                </select>
+                                <label class="input-label" for="printer-paper-select">Formato de papel</label>
+                                <select class="input-control" id="printer-paper-select">
+                                    <option value="80mm">Ticket 80mm</option>
+                                    <option value="58mm">Ticket 58mm</option>
+                                </select>
+                                <button class="secondary-btn" id="save-printer-settings-btn" type="button">Guardar
+                                    impresora</button>
+                            </article>
+                        </div>
 
-                <article class="settings-card">
-                    <span class="header-kicker">Pantalla cliente</span>
-                    <h3>Segunda pantalla</h3>
-                    <div class="settings-info-row">
-                        <span>Estado</span>
-                        <strong id="customer-display-status">Desactivada</strong>
-                    </div>
-                    <label class="settings-toggle">
-                        <input id="customer-display-enabled-input" type="checkbox">
-                        <span>Activar segunda pantalla al iniciar caja</span>
-                    </label>
-                    <button class="secondary-btn" id="save-customer-display-settings-btn" type="button">Guardar
-                        pantalla cliente</button>
-                    <button class="secondary-btn" id="open-customer-display-btn" type="button">Abrir pantalla
-                        cliente</button>
-                    <button class="secondary-btn" id="close-customer-display-btn" type="button">Cerrar pantalla
-                        cliente</button>
-                </article>
+                        <!-- TAB: SII -->
+                        <div class="settings-tab-content" id="settings-tab-sii">
+                            <article class="settings-card">
+                                <span class="header-kicker">SII</span>
+                                <h3>CAF de emision</h3>
+                                <div class="caf-settings-grid">
+                                    <div class="caf-settings-item">
+                                        <div class="caf-settings-head">
+                                            <div>
+                                                <strong>Certificado Digital</strong>
+                                                <span>Archivo de firma tributaria</span>
+                                            </div>
+                                            <div class="caf-status-badge" id="cert-status">Sin archivo</div>
+                                        </div>
+                                        <div class="settings-info-row compact-row">
+                                            <span>Archivo actual</span>
+                                            <strong id="cert-filename">No cargado</strong>
+                                        </div>
+                                        <label class="input-label" for="cert-password-input">Contrasena
+                                            certificado</label>
+                                        <input class="input-control" id="cert-password-input" type="password"
+                                            placeholder="Ingresa la contrasena del .pfx">
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem;">
+                                            <button class="secondary-btn" id="save-cert-password-btn"
+                                                type="button">Guardar clave</button>
+                                            <button class="secondary-btn" id="upload-cert-btn" type="button">Subir
+                                                archivo</button>
+                                        </div>
+                                    </div>
 
-                <article class="settings-card">
-                    <span class="header-kicker">Software</span>
-                    <h3>Actualizaciones</h3>
-                    <div class="settings-info-row">
-                        <span>Canal</span>
-                        <strong>GitHub Releases</strong>
+                                    <div class="caf-settings-item">
+                                        <div class="caf-settings-head">
+                                            <div>
+                                                <strong>Credenciales SII</strong>
+                                                <span>Datos SimpleAPI</span>
+                                            </div>
+                                            <div class="caf-status-badge" id="sii-credentials-status">Pendiente
+                                            </div>
+                                        </div>
+                                        <label class="input-label" for="sii-api-key-input">API Key
+                                            SimpleAPI</label>
+                                        <input class="input-control" id="sii-api-key-input" type="password"
+                                            placeholder="Ingresa tu API Key">
+
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem;">
+                                            <div>
+                                                <label class="input-label" for="sii-rut-emisor-input">RUT
+                                                    empresa</label>
+                                                <input class="input-control" id="sii-rut-emisor-input" type="text"
+                                                    placeholder="77292701-0">
+                                            </div>
+                                            <div>
+                                                <label class="input-label" for="sii-rut-envia-input">RUT
+                                                    firmante</label>
+                                                <input class="input-control" id="sii-rut-envia-input" type="text"
+                                                    placeholder="17445030-7">
+                                            </div>
+                                        </div>
+
+                                        <button class="secondary-btn" id="save-sii-credentials-btn" type="button"
+                                            style="margin-top: 0.5rem;">Guardar
+                                            credenciales</button>
+                                    </div>
+
+                                    <div class="caf-settings-item">
+                                        <div class="caf-settings-head">
+                                            <div>
+                                                <strong>Boleta Electronica</strong>
+                                                <span>CAF tipo 39</span>
+                                            </div>
+                                            <div class="caf-status-badge" id="caf39-status">Sin archivo</div>
+                                        </div>
+                                        <div class="settings-info-row compact-row">
+                                            <span>Archivo actual</span>
+                                            <strong id="caf39-filename">No cargado</strong>
+                                        </div>
+                                        <button class="secondary-btn" id="upload-caf39-btn" type="button">Cargar
+                                            CAF
+                                            Boleta</button>
+                                    </div>
+
+                                    <div class="caf-settings-item">
+                                        <div class="caf-settings-head">
+                                            <div>
+                                                <strong>Sobre de Boletas</strong>
+                                                <span>Agrupacion automatica cada 45 minutos</span>
+                                            </div>
+                                            <div class="caf-status-badge" id="boleta-envelope-status">Sin pendientes</div>
+                                        </div>
+                                        <div class="settings-info-row compact-row">
+                                            <span>Pendientes en cola</span>
+                                            <strong id="boleta-envelope-count-label">0 boletas</strong>
+                                        </div>
+                                        <button class="secondary-btn" id="force-boleta-envelope-btn" type="button">Forzar envio del sobre</button>
+                                    </div>
+
+                                    <div class="caf-settings-item">
+                                        <div class="caf-settings-head">
+                                            <div>
+                                                <strong>Factura Electronica</strong>
+                                                <span>CAF tipo 33</span>
+                                            </div>
+                                            <div class="caf-status-badge" id="caf33-status">Sin archivo</div>
+                                        </div>
+                                        <div class="settings-info-row compact-row">
+                                            <span>Archivo actual</span>
+                                            <strong id="caf33-filename">No cargado</strong>
+                                        </div>
+                                        <button class="secondary-btn" id="upload-caf33-btn" type="button">Cargar
+                                            CAF
+                                            Factura</button>
+                                    </div>
+                                </div>
+                                <div class="connection-status" id="sii-settings-status">Sube aqui los CAF que
+                                    usara
+                                    el cajero para
+                                    boleta y factura.</div>
+                            </article>
+                        </div>
+
+                        <!-- TAB: HARDWARE -->
+                        <div class="settings-tab-content" id="settings-tab-hardware">
+                            <article class="settings-card">
+                                <span class="header-kicker">Pantalla cliente</span>
+                                <h3>Segunda pantalla</h3>
+                                <div class="settings-info-row">
+                                    <span>Estado</span>
+                                    <strong id="customer-display-status">Desactivada</strong>
+                                </div>
+                                <label class="settings-toggle" style="margin: 1rem 0;">
+                                    <input id="customer-display-enabled-input" type="checkbox">
+                                    <span>Activar segunda pantalla al iniciar caja</span>
+                                </label>
+                                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.8rem;">
+                                    <button class="secondary-btn" id="save-customer-display-settings-btn"
+                                        type="button">Guardar</button>
+                                    <button class="secondary-btn" id="open-customer-display-btn"
+                                        type="button">Abrir</button>
+                                    <button class="secondary-btn" id="close-customer-display-btn"
+                                        type="button">Cerrar</button>
+                                </div>
+                            </article>
+                        </div>
+
+                        <!-- TAB: SYSTEM -->
+                        <div class="settings-tab-content" id="settings-tab-system">
+                            <article class="settings-card">
+                                <span class="header-kicker">Software</span>
+                                <h3>Actualizaciones</h3>
+                                <div class="settings-info-row">
+                                    <span>Canal</span>
+                                    <strong>GitHub Releases</strong>
+                                </div>
+                                <div class="settings-info-row">
+                                    <span>Version actual</span>
+                                    <strong id="settings-version-label">v0.1.0</strong>
+                                </div>
+                                <div class="settings-info-row">
+                                    <span>Ultima version</span>
+                                    <strong id="settings-latest-version-label">Sin registro</strong>
+                                </div>
+                                <div class="settings-info-row">
+                                    <span>Ultima revision</span>
+                                    <strong id="settings-update-checked-at">Aun sin revision</strong>
+                                </div>
+                                <div class="settings-info-row">
+                                    <span>Estado</span>
+                                    <strong id="settings-update-status">Preparando autoactualizacion</strong>
+                                </div>
+                                <div class="connection-status" style="margin-top: 1rem;">
+                                    Cuando subas una nueva release publicada en GitHub, el cajero la detecta y te
+                                    muestra un modal para descargarla. Cuando termine, quedara lista para instalarse
+                                    automaticamente.
+                                </div>
+                                <div
+                                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-top: 1rem;">
+                                    <button class="secondary-btn" id="check-updates-btn" type="button">Buscar
+                                        actualizaciones</button>
+                                    <button class="primary-btn" id="download-update-btn" type="button">Buscar
+                                        actualización</button>
+                                </div>
+                            </article>
+                        </div>
                     </div>
-                    <div class="settings-info-row">
-                        <span>Version actual</span>
-                        <strong id="settings-version-label">v0.1.0</strong>
-                    </div>
-                    <div class="settings-info-row">
-                        <span>Estado</span>
-                        <strong id="settings-update-status">Preparando autoactualizacion</strong>
-                    </div>
-                    <label class="input-label" for="release-repo-input">Repositorio release</label>
-                    <input class="input-control" id="release-repo-input" type="text" placeholder="usuario/repositorio">
-                    <button class="secondary-btn" id="save-update-settings-btn" type="button">Guardar
-                        actualizaciones</button>
-                    <button class="secondary-btn" id="check-updates-btn" type="button">Buscar actualizaciones</button>
-                </article>
+                </div>
             </section>
         </main>
     </section>
@@ -535,71 +752,83 @@
     </div>
 
     <div class="modal-backdrop hidden" id="close-cash-modal-backdrop">
-        <div class="weighted-modal">
+        <div class="weighted-modal close-cash-modal">
             <h3>Cierre de caja</h3>
-            <p>Revisa el resumen esperado antes de cerrar el turno.</p>
+            <div class="customer-modal-view">
+                <p>Revisa el resumen esperado antes de cerrar el turno.</p>
 
-            <div class="summary-stats compact-summary">
-                <div class="summary-row">
-                    <span>Fondo inicial</span>
-                    <strong id="close-opening-amount">$0</strong>
+                <!-- Section: Expected Totals -->
+                <div class="customer-modal-group"
+                    style="background: var(--bg-main); border: 1px dashed var(--primary-border-strong); margin-bottom: 1.5rem;">
+                    <h4
+                        style="margin: 0 0 1rem 0; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-soft);">
+                        Resumen Esperado</h4>
+                    <div class="summary-stats compact-summary" style="gap: 0.6rem;">
+                        <div class="summary-row"><span>Fondo inicial</span><strong id="close-opening-amount">$0</strong>
+                        </div>
+                        <div class="summary-row" style="opacity: 0.8;"><span>Efectivo</span><strong
+                                id="close-total-cash">$0</strong></div>
+                        <div class="summary-row" style="opacity: 0.8;"><span>Tarjeta</span><strong
+                                id="close-total-card">$0</strong></div>
+                        <div class="summary-row" style="opacity: 0.8;"><span>Transferencia</span><strong
+                                id="close-total-transfer">$0</strong></div>
+                        <div class="summary-row" style="opacity: 0.8;"><span>Retiros</span><strong
+                                id="close-total-withdrawals">$0</strong></div>
+                        <div class="summary-row" style="opacity: 0.8; font-size: 0.85rem;"><span>Vales
+                                internos</span><strong id="close-total-internal">$0</strong></div>
+                        <div class="summary-row"
+                            style="margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px solid rgba(0,0,0,0.05);">
+                            <span style="font-weight: 700;">TOTAL ESPERADO</span>
+                            <strong id="close-expected-cash"
+                                style="font-size: 1.2rem; color: var(--primary);">$0</strong>
+                        </div>
+                    </div>
                 </div>
-                <div class="summary-row">
-                    <span>Efectivo</span>
-                    <strong id="close-total-cash">$0</strong>
+
+                <!-- Section: Counts (Grid) -->
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 1rem;">
+                    <div class="customer-modal-section"
+                        style="background: white; padding: 0.75rem; border-radius: 16px; border: 1px solid rgba(0,0,0,0.05);">
+                        <label class="input-label" for="close-counted-cash-input"
+                            style="font-size: 0.8rem; margin-bottom: 0.4rem;">Efectivo Contado</label>
+                        <input class="input-control" id="close-counted-cash-input" type="number" min="0" placeholder="0"
+                            style="font-size: 1.2rem; height: 3rem; padding: 0 0.5rem;">
+                        <div class="settings-info-row" style="margin-top: 0.4rem; font-size: 0.8rem; padding: 0;">
+                            <span>Diferencia</span>
+                            <strong id="close-cash-difference">$0</strong>
+                        </div>
+                    </div>
+
+                    <div class="customer-modal-section"
+                        style="background: white; padding: 0.75rem; border-radius: 16px; border: 1px solid rgba(0,0,0,0.05);">
+                        <label class="input-label" for="close-counted-card-input"
+                            style="font-size: 0.8rem; margin-bottom: 0.4rem;">Vouchers Tarjeta</label>
+                        <input class="input-control" id="close-counted-card-input" type="number" min="0" placeholder="0"
+                            style="font-size: 1.2rem; height: 3rem; padding: 0 0.5rem;">
+                        <div class="settings-info-row" style="margin-top: 0.4rem; font-size: 0.8rem; padding: 0;">
+                            <span>Diferencia</span>
+                            <strong id="close-card-difference">$0</strong>
+                        </div>
+                    </div>
+
+                    <div class="customer-modal-section"
+                        style="background: white; padding: 0.75rem; border-radius: 16px; border: 1px solid rgba(0,0,0,0.05);">
+                        <label class="input-label" for="close-counted-transfer-input"
+                            style="font-size: 0.8rem; margin-bottom: 0.4rem;">Transferencias</label>
+                        <input class="input-control" id="close-counted-transfer-input" type="number" min="0"
+                            placeholder="0" style="font-size: 1.2rem; height: 3rem; padding: 0 0.5rem;">
+                        <div class="settings-info-row" style="margin-top: 0.4rem; font-size: 0.8rem; padding: 0;">
+                            <span>Diferencia</span>
+                            <strong id="close-transfer-difference">$0</strong>
+                        </div>
+                    </div>
                 </div>
-                <div class="summary-row">
-                    <span>Tarjeta</span>
-                    <strong id="close-total-card">$0</strong>
+
+                <div class="settings-info-row"
+                    style="margin-top: 1.25rem; padding: 0.75rem 1rem; background: #f8fafc; border-radius: 16px; border: 2px solid #e2e8f0;">
+                    <span style="font-size: 0.95rem; font-weight: 700;">DIFERENCIA TOTAL EN CAJA</span>
+                    <strong id="close-total-difference" style="font-size: 1.5rem; letter-spacing: -0.02em;">$0</strong>
                 </div>
-                <div class="summary-row">
-                    <span>Transferencia</span>
-                    <strong id="close-total-transfer">$0</strong>
-                </div>
-                <div class="summary-row">
-                    <span>Vale interno no fiscal</span>
-                    <strong id="close-total-internal">$0</strong>
-                </div>
-                <div class="summary-row">
-                    <span>Total ventas</span>
-                    <strong id="close-total-sales">$0</strong>
-                </div>
-                <div class="summary-row">
-                    <span>Caja esperada</span>
-                    <strong id="close-expected-cash">$0</strong>
-                </div>
-            </div>
-
-            <label class="input-label" for="close-counted-cash-input">Dinero contado en caja</label>
-            <input class="input-control weighted-input" id="close-counted-cash-input" type="number" min="0" step="1"
-                placeholder="0">
-
-            <div class="settings-info-row">
-                <span>Diferencia efectivo</span>
-                <strong id="close-cash-difference">$0</strong>
-            </div>
-
-            <label class="input-label" for="close-counted-card-input">Comprobantes de tarjeta</label>
-            <input class="input-control weighted-input" id="close-counted-card-input" type="number" min="0" step="1"
-                placeholder="0">
-
-            <div class="settings-info-row">
-                <span>Diferencia tarjeta</span>
-                <strong id="close-card-difference">$0</strong>
-            </div>
-
-            <label class="input-label" for="close-counted-transfer-input">Transferencias confirmadas</label>
-            <input class="input-control weighted-input" id="close-counted-transfer-input" type="number" min="0" step="1"
-                placeholder="0">
-
-            <div class="settings-info-row">
-                <span>Diferencia transferencia</span>
-                <strong id="close-transfer-difference">$0</strong>
-            </div>
-
-            <div class="settings-info-row">
-                <span>Diferencia total</span>
-                <strong id="close-total-difference">$0</strong>
             </div>
 
             <div class="weighted-actions">
@@ -610,37 +839,147 @@
     </div>
 
     <div class="modal-backdrop hidden" id="invoice-client-modal-backdrop">
-        <div class="weighted-modal">
-            <h3>Cliente para factura</h3>
-            <p>Busca un cliente existente o registra uno rapido para emitir la factura.</p>
+        <div class="weighted-modal customer-modal">
+            <div class="modal-header">
+                <h3>Gestion de Cliente</h3>
+                <p>Busca un cliente existente o registra uno nuevo para la factura.</p>
+            </div>
 
             <div class="connection-status hidden" id="invoice-client-current-card"></div>
 
-            <label class="input-label" for="invoice-client-search-input">Buscar cliente</label>
-            <input class="input-control" id="invoice-client-search-input" type="text" placeholder="RUT o nombre">
+            <div class="customer-modal-view" id="customer-selection-view">
+                <div
+                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: 1rem; margin-bottom: 2rem;">
+                    <div class="selection-card" id="btn-select-search-step"
+                        style="padding: 2.5rem 1.5rem; border: 2px solid #eee; border-radius: 20px; text-align: center; cursor: pointer; transition: all 0.2s ease; background: #fff;">
+                        <div style="font-size: 2.5rem; margin-bottom: 1rem;">🔍</div>
+                        <strong
+                            style="display: block; font-size: 1.1rem; color: var(--primary-color); margin-bottom: 0.25rem;">Buscar
+                            Cliente</strong>
+                        <span style="font-size: 0.85rem; color: #666;">Selecciona uno ya registrado</span>
+                    </div>
+                    <div class="selection-card" id="btn-select-register-step"
+                        style="padding: 2.5rem 1.5rem; border: 2px solid #eee; border-radius: 20px; text-align: center; cursor: pointer; transition: all 0.2s ease; background: #fff;">
+                        <div style="font-size: 2.5rem; margin-bottom: 1rem;">👤</div>
+                        <strong style="display: block; font-size: 1.1rem; color: #10b981; margin-bottom: 0.25rem;">Nuevo
+                            Cliente</strong>
+                        <span style="font-size: 0.85rem; color: #666;">Crea un perfil completo</span>
+                    </div>
+                </div>
+                <div class="weighted-actions" style="margin-top: 0;">
+                    <button class="secondary-btn" id="invoice-client-cancel-btn" type="button"
+                        style="width: 100%;">Cerrar</button>
+                </div>
+            </div>
 
-            <label class="input-label" for="invoice-client-select">Clientes registrados</label>
-            <select class="input-control" id="invoice-client-select">
-                <option value="">Cargando clientes...</option>
-            </select>
+            <!-- STEP 2: SEARCH -->
+            <div class="customer-modal-view hidden" id="customer-search-view">
+                <div class="customer-modal-group"
+                    style="background: #f9fafb; padding: 1.5rem; border-radius: 12px; border: 1px solid #eee;">
+                    <label class="input-label" for="invoice-client-search-input">Búsqueda rápida (RUT o nombre)</label>
+                    <input class="input-control" id="invoice-client-search-input" type="text"
+                        placeholder="Escribe para buscar...">
 
-            <button class="secondary-btn" id="invoice-client-use-existing-btn" type="button">Usar cliente
-                seleccionado</button>
+                    <label class="input-label" style="margin-top: 1.25rem;">Resultados encontrados</label>
+                    <div class="custom-selection-list" id="invoice-client-select-list"
+                        style="max-height: 250px; overflow-y: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; margin-bottom: 1rem; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
+                        <div style="padding: 1.5rem; text-align: center; color: #9ca3af; font-size: 0.95rem;">Escribe
+                            arriba para buscar clientes...</div>
+                    </div>
 
-            <label class="input-label" for="invoice-rut-input">RUT</label>
-            <input class="input-control" id="invoice-rut-input" type="text" placeholder="11.111.111-1">
+                    <div style="display: flex; gap: 0.75rem;">
+                        <button class="secondary-btn" id="btn-back-to-selection-search" type="button"
+                            style="flex: 1;">Volver</button>
+                        <button class="primary-btn" id="invoice-client-use-existing-btn" type="button"
+                            style="flex: 2;">Usar Cliente Seleccionado</button>
+                    </div>
+                </div>
+            </div>
 
-            <label class="input-label" for="invoice-name-input">Nombre o razon social</label>
-            <input class="input-control" id="invoice-name-input" type="text" placeholder="Comercializadora SPA">
+            <!-- STEP 3: REGISTER -->
+            <div class="customer-modal-view hidden" id="customer-register-view">
+                <div class="customer-modal-group"
+                    style="background: #f9fafb; padding: 1.5rem; border-radius: 12px; border: 1px solid #eee;">
+                    <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1rem; margin-bottom: 1rem;">
+                        <div>
+                            <label class="input-label" for="invoice-rut-input">RUT</label>
+                            <input class="input-control" id="invoice-rut-input" type="text" placeholder="11.111.111-1">
+                        </div>
+                        <div>
+                            <label class="input-label" for="invoice-name-input">Nombre / Razon Social</label>
+                            <input class="input-control" id="invoice-name-input" type="text"
+                                placeholder="Ingresa el nombre completo">
+                        </div>
+                    </div>
 
-            <label class="input-label" for="invoice-business-input">Giro</label>
-            <input class="input-control" id="invoice-business-input" type="text" placeholder="Abarrotes">
+                    <label class="input-label" for="invoice-business-input">Giro Comercial</label>
+                    <input class="input-control" id="invoice-business-input" type="text"
+                        placeholder="Giro o actividad comercial">
 
-            <div class="connection-status hidden" id="invoice-client-status"></div>
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+                        <div>
+                            <label class="input-label" for="invoice-address-input">Dirección</label>
+                            <input class="input-control" id="invoice-address-input" type="text"
+                                placeholder="Calle, numero, depto">
+                        </div>
+                        <div>
+                            <label class="input-label" for="invoice-comuna-input">Comuna</label>
+                            <input class="input-control" id="invoice-comuna-input" type="text" placeholder="Comuna">
+                        </div>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem;">
+                        <div>
+                            <label class="input-label" for="invoice-phone-input">Teléfono</label>
+                            <input class="input-control" id="invoice-phone-input" type="text" placeholder="+569...">
+                        </div>
+                        <div>
+                            <label class="input-label" for="invoice-email-input">Correo Electrónico</label>
+                            <input class="input-control" id="invoice-email-input" type="email"
+                                placeholder="email@ejemplo.com">
+                        </div>
+                    </div>
+
+                    <div class="connection-status hidden" id="invoice-client-status" style="margin-top: 1.25rem;"></div>
+
+                    <div style="margin-top: 1.5rem; display: flex; gap: 0.75rem;">
+                        <button class="secondary-btn" id="btn-back-to-selection-register" type="button"
+                            style="flex: 1;">Volver</button>
+                        <button class="primary-btn" id="invoice-client-confirm-btn" type="button"
+                            style="flex: 2;">Registrar y Usar Cliente</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop hidden" id="cash-withdrawal-modal-backdrop">
+        <div class="weighted-modal">
+            <h3>Retiro de caja</h3>
+            <p>Registra una sangria de efectivo y emite el ticket del retiro.</p>
+
+            <div class="settings-info-row">
+                <span>Efectivo disponible</span>
+                <strong id="cash-withdrawal-available-label">$0</strong>
+            </div>
+            <div class="settings-info-row">
+                <span>Total retirado turno</span>
+                <strong id="cash-withdrawal-total-label">$0</strong>
+            </div>
+
+            <label class="input-label" for="cash-withdrawal-amount-input">Monto a retirar</label>
+            <input class="input-control weighted-input" id="cash-withdrawal-amount-input" type="number" min="1" step="1"
+                placeholder="0">
+
+            <label class="input-label" for="cash-withdrawal-reason-input">Motivo</label>
+            <textarea class="input-control" id="cash-withdrawal-reason-input" rows="3"
+                placeholder="Ejemplo: deposito, resguardo, retiro de exceso de caja"></textarea>
+
+            <div class="connection-status hidden" id="cash-withdrawal-status"></div>
 
             <div class="weighted-actions">
-                <button class="secondary-btn" id="invoice-client-cancel-btn" type="button">Cancelar</button>
-                <button class="primary-btn" id="invoice-client-confirm-btn" type="button">Guardar cliente</button>
+                <button class="secondary-btn" id="cash-withdrawal-cancel-btn" type="button">Cancelar</button>
+                <button class="primary-btn" id="cash-withdrawal-confirm-btn" type="button">Registrar retiro</button>
             </div>
         </div>
     </div>
@@ -652,6 +991,21 @@
 
             <div class="weighted-actions">
                 <button class="primary-btn" id="info-modal-confirm-btn" type="button">Entendido</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-backdrop hidden" id="confirm-modal-backdrop">
+        <div class="weighted-modal" style="width: min(100%, 480px);">
+            <h3 id="confirm-modal-title">Confirmar acción</h3>
+            <p id="confirm-modal-message" style="margin-bottom: 2rem; color: var(--text-soft); line-height: 1.5;">¿Estás
+                seguro de realizar esta operación?</p>
+
+            <div class="weighted-actions" style="gap: 1.25rem;">
+                <button class="secondary-btn" id="confirm-modal-cancel-btn" type="button"
+                    style="flex: 1; height: 3.5rem;">Cancelar</button>
+                <button class="primary-btn" id="confirm-modal-confirm-btn" type="button"
+                    style="flex: 1; height: 3.5rem;">Confirmar</button>
             </div>
         </div>
     </div>
@@ -675,42 +1029,38 @@
 
     <div class="modal-backdrop hidden" id="receipt-modal-backdrop">
         <div class="weighted-modal receipt-modal">
-            <h3 id="receipt-modal-title">Comprobante</h3>
-            <p id="receipt-modal-copy">Resumen de la venta seleccionada.</p>
+            <div class="receipt-visual-container custom-scrollbar"
+                style="background: white; border: 1px solid rgba(0,0,0,0.08); border-radius: 12px; padding: 1.5rem; margin-top: 1rem; max-height: 550px; overflow-y: auto; font-family: 'Courier New', Courier, monospace;">
+                <div class="receipt-header"
+                    style="text-align: center; border-bottom: 1px dashed #ccc; padding-bottom: 1rem; margin-bottom: 1rem;">
+                    <strong style="font-size: 1.2rem; display: block;">VALMU</strong>
+                    <span id="visual-receipt-type"
+                        style="font-size: 0.95rem; text-transform: uppercase; font-weight: bold; display: block; margin: 0.2rem 0;">Boleta
+                        Electrónica</span>
+                    <span id="visual-receipt-folio" style="font-size: 0.9rem; display: block;">Folio: 0</span>
+                    <div
+                        style="font-size: 0.8rem; color: #444; margin-top: 0.5rem; text-align: left; border-top: 1px dashed #eee; padding-top: 0.5rem;">
+                        <div id="visual-receipt-date">Fecha: -</div>
+                        <div id="visual-receipt-customer">Cliente: General</div>
+                        <div id="visual-receipt-payment">Pago: Efectivo</div>
+                    </div>
+                </div>
 
-            <div class="summary-stats compact-summary">
-                <div class="summary-row">
-                    <span>Venta</span>
-                    <strong id="receipt-sale-id-label">#0</strong>
+                <div id="receipt-items-body"
+                    style="display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.85rem;">
+                    <!-- Items go here -->
                 </div>
-                <div class="summary-row">
-                    <span>Documento</span>
-                    <strong id="receipt-document-label">Boleta</strong>
-                </div>
-                <div class="summary-row">
-                    <span>Cliente</span>
-                    <strong id="receipt-customer-label">General</strong>
-                </div>
-                <div class="summary-row">
-                    <span>Medio de pago</span>
-                    <strong id="receipt-payment-label">Efectivo</strong>
-                </div>
-                <div class="summary-row">
-                    <span>Subtotal</span>
-                    <strong id="receipt-subtotal-label">$0</strong>
-                </div>
-                <div class="summary-row">
-                    <span>IVA</span>
-                    <strong id="receipt-iva-label">$0</strong>
-                </div>
-                <div class="summary-row">
-                    <span>Total</span>
-                    <strong id="receipt-total-label">$0</strong>
+
+                <div class="receipt-visual-footer"
+                    style="margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed #ccc; font-weight: bold;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>TOTAL</span>
+                        <span id="visual-receipt-total">$0</span>
+                    </div>
                 </div>
             </div>
 
-            <label class="input-label" for="receipt-preview-output">Vista previa</label>
-            <textarea class="input-control receipt-preview" id="receipt-preview-output" rows="10" readonly></textarea>
+            <textarea class="hidden" id="receipt-preview-output"></textarea>
             <div class="connection-status hidden" id="receipt-status"></div>
 
             <div class="weighted-actions">
@@ -722,35 +1072,36 @@
 
     <div class="modal-backdrop hidden" id="dispatch-receipt-modal-backdrop">
         <div class="weighted-modal receipt-modal">
-            <h3 id="dispatch-receipt-modal-title">Vale de despacho</h3>
-            <p id="dispatch-receipt-modal-copy">Resumen de la carga asignada al transportista.</p>
+            <div class="receipt-visual-container custom-scrollbar"
+                style="background: white; border: 1px solid rgba(0,0,0,0.08); border-radius: 12px; padding: 1.5rem; margin-top: 1rem; max-height: 550px; overflow-y: auto; font-family: 'Courier New', Courier, monospace;">
+                <div class="receipt-header"
+                    style="text-align: center; border-bottom: 1px dashed #ccc; padding-bottom: 1rem; margin-bottom: 1rem;">
+                    <strong style="font-size: 1.2rem; display: block;">VALMU</strong>
+                    <span id="dispatch-receipt-document-label"
+                        style="font-size: 0.95rem; text-transform: uppercase; font-weight: bold; display: block; margin: 0.2rem 0;">Vale de despacho</span>
+                    <span id="dispatch-receipt-id-label" style="font-size: 0.9rem; display: block;">#DSP-0</span>
+                    <div
+                        style="font-size: 0.8rem; color: #444; margin-top: 0.5rem; text-align: left; border-top: 1px dashed #eee; padding-top: 0.5rem;">
+                        <div id="dispatch-receipt-date-label">Fecha: -</div>
+                        <div id="dispatch-receipt-carrier-label">Transportista: -</div>
+                        <div id="dispatch-receipt-branch-label">Sucursal: -</div>
+                    </div>
+                </div>
 
-            <div class="summary-stats compact-summary">
-                <div class="summary-row">
-                    <span>Despacho</span>
-                    <strong id="dispatch-receipt-id-label">#0</strong>
+                <div id="dispatch-receipt-items-body"
+                    style="display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.85rem;">
                 </div>
-                <div class="summary-row">
-                    <span>Transportista</span>
-                    <strong id="dispatch-receipt-carrier-label">Transportista</strong>
-                </div>
-                <div class="summary-row">
-                    <span>Sucursal</span>
-                    <strong id="dispatch-receipt-branch-label">Sucursal</strong>
-                </div>
-                <div class="summary-row">
-                    <span>Documento</span>
-                    <strong id="dispatch-receipt-document-label">Vale de despacho</strong>
-                </div>
-                <div class="summary-row">
-                    <span>Total</span>
-                    <strong id="dispatch-receipt-total-label">$0</strong>
+
+                <div class="receipt-visual-footer"
+                    style="margin-top: 1rem; padding-top: 1rem; border-top: 1px dashed #ccc; font-weight: bold;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <span>TOTAL</span>
+                        <span id="dispatch-receipt-total-label">$0</span>
+                    </div>
                 </div>
             </div>
 
-            <label class="input-label" for="dispatch-receipt-preview-output">Vista previa</label>
-            <textarea class="input-control receipt-preview" id="dispatch-receipt-preview-output" rows="10"
-                readonly></textarea>
+            <textarea class="hidden" id="dispatch-receipt-preview-output"></textarea>
             <div class="connection-status hidden" id="dispatch-receipt-status"></div>
 
             <div class="weighted-actions">
@@ -782,6 +1133,38 @@
         </div>
     </div>
 
+    <div class="modal-backdrop hidden" id="carrier-selection-modal-backdrop">
+        <div class="weighted-modal customer-modal">
+            <div class="modal-header">
+                <h3>Seleccionar Transportista</h3>
+                <p>Elige un transportista de la lista para asignar despacho.</p>
+            </div>
+
+            <div class="customer-modal-view">
+                <div class="customer-modal-group"
+                    style="background: #f9fafb; padding: 1.25rem; border-radius: 12px; border: 1px solid #eee;">
+                    <label class="input-label" for="carrier-selection-search-input">Búsqueda rápida</label>
+                    <input class="input-control" id="carrier-selection-search-input" type="text"
+                        placeholder="Buscar por nombre o patente...">
+
+                    <div class="custom-selection-list" id="carrier-selection-list"
+                        style="max-height: 250px; overflow-y: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 12px; margin-top: 1rem; margin-bottom: 1rem;">
+                        <div style="padding: 1.5rem; text-align: center; color: #9ca3af;">Cargando transportistas...
+                        </div>
+                    </div>
+
+                    <div class="weighted-actions">
+                        <button class="secondary-btn" id="carrier-selection-close-btn" type="button"
+                            style="flex: 1;">Cancelar</button>
+                        <button class="primary-btn" id="carrier-selection-add-new-btn" type="button"
+                            style="flex: 1;">Registrar Nuevo</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="backend-status" id="backend-status">Listo</div>
     <script type="module" src="./renderer.js"></script>
 </body>
 

@@ -17,6 +17,61 @@ export function renderDispatchCarrierOptions({ carriers, selectedCarrierId, sele
     `;
 }
 
+export function renderCarrierSelectionList(carriers, selectedCarrierId, listId = 'carrier-selection-list') {
+    const list = document.getElementById(listId);
+    if (!list) {
+        return;
+    }
+
+    if (!carriers.length) {
+        list.innerHTML = '<div style="padding: 1.5rem; text-align: center; color: #9ca3af;">Aun no hay transportistas registrados.</div>';
+        return;
+    }
+
+    list.innerHTML = carriers.map((carrier) => `
+        <button class="custom-selection-item ${String(selectedCarrierId) === String(carrier.id) ? 'selected' : ''}" 
+            type="button" onclick="selectCarrierFromModal('${carrier.id}')">
+            <div class="selection-item-info">
+                <strong>${escapeHtml(carrier.name)}</strong>
+                <span>Patente: ${escapeHtml(carrier.plate)}</span>
+            </div>
+            ${String(selectedCarrierId) === String(carrier.id) ? '<i class="bi bi-check-circle-fill selection-item-check"></i>' : ''}
+        </button>
+    `).join('');
+}
+
+export function updateCarrierTiles(carrier) {
+    const mainName = document.getElementById('dispatch-carrier-name-display');
+    const mainMeta = document.getElementById('dispatch-carrier-meta-display');
+    const inlineName = document.getElementById('dispatch-inline-carrier-name-display');
+    const inlineMeta = document.getElementById('dispatch-inline-carrier-meta-display');
+
+    if (mainName) mainName.textContent = carrier ? carrier.name : 'Seleccionar transportista';
+    if (mainMeta) mainMeta.textContent = carrier ? `Patente: ${carrier.plate}` : 'Toca para elegir de la lista';
+
+    if (inlineName) inlineName.textContent = carrier ? carrier.name : 'Seleccionar transportista';
+    if (inlineMeta) inlineMeta.textContent = carrier ? `Patente: ${carrier.plate}` : 'Toca para elegir de la lista';
+}
+
+export function updateDispatchCustomerTile(customer) {
+    const manageBtn = document.getElementById('dispatch-manage-customer-btn');
+    const clearBtn = document.getElementById('dispatch-clear-customer-btn');
+
+    if (manageBtn) manageBtn.classList.toggle('hidden', !!customer);
+    if (clearBtn) clearBtn.classList.toggle('hidden', !customer);
+}
+
+export function updateDispatchDocumentTypeUI(selectedTypeId) {
+    const chips = document.querySelectorAll('.doc-chip');
+    chips.forEach((chip) => {
+        if (String(chip.getAttribute('data-type')) === String(selectedTypeId)) {
+            chip.classList.add('active');
+        } else {
+            chip.classList.remove('active');
+        }
+    });
+}
+
 export function renderDispatchCarrierSummary(carrier, summaryId = 'dispatch-carrier-summary') {
     const label = document.getElementById(summaryId);
     if (!label) {
@@ -100,8 +155,33 @@ export function renderDispatchCart({
 
         const pricing = getPricingForProduct(product, item.quantity, cart);
         const lineTotal = pricing.unitPrice * item.quantity;
+        const lineDiscount = (product.price - pricing.unitPrice) * item.quantity;
         total += lineTotal;
         items += item.quantity;
+
+        const hasOffer = product.offerAvailable && product.offerPrice;
+        const isOfferActive = Boolean(item.applyOffer);
+        const isWholesale = pricing.isWholesale;
+
+        let discountHtml = '';
+        if (hasOffer) {
+            discountHtml = `
+                <div style="display: flex; gap: 0.4rem; align-items: center; justify-content: flex-end; width: 100%;">
+                    <span class="discount-chip ${lineDiscount > 0 ? 'is-active' : ''}" ${lineDiscount > 0 ? 'style="background: rgba(249, 115, 22, 0.12); color: var(--primary-dark);"' : ''}>
+                        ${lineDiscount > 0 ? '-$' + formatCurrency(lineDiscount) : '$0'}
+                    </span>
+                    <button class="cart-offer-btn ${isOfferActive ? 'active' : ''}" type="button" onclick="toggleDispatchItemOffer('${product.id}')" title="${isOfferActive ? 'Quitar Oferta' : 'Aplicar Oferta'}">
+                        <i class="bi bi-tag-fill"></i>
+                    </button>
+                </div>
+            `;
+        } else {
+            discountHtml = `
+                <span class="discount-chip ${lineDiscount > 0 ? 'is-active' : ''}" ${lineDiscount > 0 ? 'style="background: rgba(249, 115, 22, 0.12); color: var(--primary-dark);"' : ''}>
+                    ${lineDiscount > 0 ? '-$' + formatCurrency(lineDiscount) : '$0'}
+                </span>
+            `;
+        }
 
         return `
             <article class="cart-item retail-cart-item">
@@ -110,7 +190,10 @@ export function renderDispatchCart({
                 </div>
                 <div class="col-desc">
                     <strong class="cart-item-name">${escapeHtml(product.name)}</strong>
-                    <span>${escapeHtml(product.category || 'Sin categoria')}</span>
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <span>${escapeHtml(product.category || 'Sin categoria')}</span>
+                        ${isWholesale ? '<span class="badge badge-primary" style="font-size: 0.7rem; padding: 0.1rem 0.4rem; background: var(--primary-light); color: var(--primary-dark); border-radius: 4px;">MAYOREO</span>' : ''}
+                    </div>
                 </div>
                 <div class="col-qty">
                     <div class="cart-qty-controls">
@@ -119,8 +202,8 @@ export function renderDispatchCart({
                         <button class="qty-btn" type="button" onclick="${quantityUpdateFunction}('${product.id}', 1)">+</button>
                     </div>
                 </div>
-                <div class="col-discount">
-                    <span class="discount-chip">$0</span>
+                <div class="col-discount" style="display: flex; align-items: center; justify-content: flex-end;">
+                    ${discountHtml}
                 </div>
                 <div class="col-total">
                     <strong class="cart-line-total">$${formatCurrency(lineTotal)}</strong>
@@ -139,8 +222,13 @@ export function renderDispatchCart({
 
 export function renderDispatchRecords(records, openDispatchReceiptModal) {
     const list = document.getElementById('dispatch-records-list');
+    const count = document.getElementById('dispatch-history-count');
     if (!list) {
         return;
+    }
+
+    if (count) {
+        count.textContent = String(records.length);
     }
 
     if (!records.length) {
@@ -149,15 +237,18 @@ export function renderDispatchRecords(records, openDispatchReceiptModal) {
     }
 
     list.innerHTML = records.map((record) => `
-            <article class="turn-history-item">
+        <article class="turn-history-item" onclick="this.parentElement.querySelectorAll('.turn-history-item').forEach(el => el.classList.remove('is-active')); this.classList.add('is-active');">
             <div class="turn-history-meta">
-                <strong>DSP-${escapeHtml(record.id)}</strong>
+                <strong>Despacho #DSP-${escapeHtml(record.id)}</strong>
                 <span>${escapeHtml(record.createdAtLabel)}</span>
             </div>
-            <strong>${escapeHtml(record.carrierName)} · ${escapeHtml(record.plate || '')}</strong>
-            <p>${escapeHtml(record.branchName || record.saleReference || 'Despacho registrado')} · ${record.total ? `${formatQuantity(record.items || 0, false)} item(s) · Total referencial $${formatCurrency(record.total)}` : escapeHtml(record.status || 'PENDIENTE')}</p>
-            <div class="sale-history-actions">
-                <button class="summary-link-btn" type="button" onclick="openDispatchReceiptModal('${escapeHtml(record.id)}')">Comprobante</button>
+            <div class="sale-history-badges">
+                <span class="sale-history-badge is-internal">Despacho</span>
+                <span class="sale-history-badge is-payment">${escapeHtml(record.status || 'EN RUTA')}</span>
+            </div>
+            <div class="turn-history-detail">$${formatCurrency(record.total || 0)}</div>
+            <div class="product-actions-cell">
+                <button class="btn btn-ghost btn-sm product-action-btn" type="button" onclick="event.stopPropagation(); openDispatchReceiptModal('${escapeHtml(record.id)}')">Comprobante</button>
             </div>
         </article>
     `).join('');

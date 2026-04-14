@@ -50,7 +50,6 @@ window.ValmuInvoicingConfig = {
             const loadedConfig = config || {};
             this.persistLocalConfig(loadedConfig);
             onLoaded?.(loadedConfig);
-            console.log('Loaded SII Config from Local Filesystem:', loadedConfig);
             return loadedConfig;
         } catch (error) {
             console.error('Failed to load local config:', error);

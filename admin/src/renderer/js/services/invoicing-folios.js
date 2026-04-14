@@ -1,4 +1,17 @@
 window.ValmuInvoicingFolios = {
+    getBackendNextFolio(controls, tipoDTE) {
+        const match = (Array.isArray(controls) ? controls : []).find((row) => String(row.tipoDte) === String(tipoDTE));
+        if (!match) {
+            return null;
+        }
+
+        return {
+            current: (parseInt(match.ultimoFolioUsado, 10) || 0) + 1,
+            max: parseInt(match.folioDisponibleHasta, 10) || 0,
+            idTipoDoc: parseInt(match.id_tipoDoc, 10) || 0
+        };
+    },
+
     getFallbackFolio(tipoDTE) {
         return String(tipoDTE) === '61' ? 41 : 1;
     },
@@ -62,22 +75,28 @@ window.ValmuInvoicingFolios = {
         const folioInput = document.getElementById(target.inputId);
 
         try {
-            const settings = await api.getSiiSettings();
-            if (!settings) {
+            const controls = await api.getFoliosControl?.();
+            const backend = this.getBackendNextFolio(controls, target.tipoDTE);
+            if (!backend) {
                 return null;
             }
 
             const configService = window.ValmuInvoicingConfig;
             const localConfig = configService.getLocalConfig(currentConfig);
-            const backendFolio = parseInt(settings[`folio_${target.tipoDTE}`], 10) || 0;
+            const backendFolio = parseInt(backend.current, 10) || 0;
             const localFolio = parseInt(localConfig[`folio_${target.tipoDTE}`], 10) || this.getFallbackFolio(target.tipoDTE);
             const nextFolio = Math.max(backendFolio, localFolio);
 
-            if (localFolio !== nextFolio) {
-                const updatedConfig = {
-                    ...localConfig,
-                    [`folio_${target.tipoDTE}`]: nextFolio
-                };
+            const updatedConfig = {
+                ...localConfig,
+                [`folio_${target.tipoDTE}`]: nextFolio
+            };
+
+            if (backend.max > 0) {
+                updatedConfig[`folio_final_${target.tipoDTE}`] = backend.max;
+            }
+
+            if (localFolio !== nextFolio || (backend.max > 0 && parseInt(localConfig[`folio_final_${target.tipoDTE}`], 10) !== backend.max)) {
                 configService.persistLocalConfig(updatedConfig);
                 onConfigUpdated?.(updatedConfig);
             }
@@ -105,48 +124,31 @@ window.ValmuInvoicingFolios = {
         }
 
         try {
-            const token = await getBearerToken();
             const configService = window.ValmuInvoicingConfig;
             const config = configService.getLocalConfig(currentConfig);
-            const history = [];
-            console.log('Sincronizacion de historial del servidor omitida (404)');
+            const controls = await api?.getFoliosControl?.();
+            const syncedTypes = [];
 
-            for (const type of [33, 39]) {
-                let current = parseInt(config[`folio_${type}`], 10) || 1;
-
-                try {
-                    const emisorRut = String(config.rutEmisor || '').replace(/\./g, '');
-                    const ultimoUrl = `https://api.simpleapi.cl/api/v1/documentos/ultimo/${emisorRut}/${type}/0`;
-                    const ultimoRes = await fetch(ultimoUrl, {
-                        headers: { Authorization: `Bearer ${token}` }
-                    });
-
-                    if (ultimoRes.ok) {
-                        const lastFolio = parseInt(await ultimoRes.text(), 10) || 0;
-                        if (lastFolio >= current) {
-                            current = lastFolio + 1;
-                            console.log(`Tipo ${type}: SimpleAPI (/ultimo) sugiere empezar desde folio ${current}`);
-                        }
-                    }
-                } catch (error) {
-                    console.error('Error consultando /ultimo:', error);
+            for (const type of [33, 39, 61, 56]) {
+                const backend = this.getBackendNextFolio(controls, type);
+                if (!backend) {
+                    continue;
                 }
 
-                const maxInHistory = history
-                    .filter((entry) => entry.doc_type == type || entry.doc_type == String(type))
-                    .reduce((max, entry) => Math.max(max, parseInt(entry.folio, 10) || 0), 0);
-
-                if (maxInHistory >= current) {
-                    current = maxInHistory + 1;
-                    console.log(`Tipo ${type}: Historial sugiere empezar desde folio ${current}`);
+                config[`folio_${type}`] = backend.current;
+                if (backend.max > 0) {
+                    config[`folio_final_${type}`] = backend.max;
                 }
+                syncedTypes.push(type);
+                toast?.show?.(`Folio ${type} sincronizado en: ${backend.current}`, 'success');
+            }
 
-                toast?.show?.(`Sincronizando ${type} (Demo)...`, 'info');
-                config[`folio_${type}`] = current;
-                toast?.show?.(`Folio ${type} sincronizado en: ${current}`, 'success');
+            if (!syncedTypes.length) {
+                throw new Error('El backend no devolvio tipos de documento compatibles');
             }
 
             configService.persistLocalConfig(config);
+            await api?.saveSiiSettings?.(config);
             await loadConfig?.();
             toast?.show?.('Sincronizacion completada', 'success');
             return config;

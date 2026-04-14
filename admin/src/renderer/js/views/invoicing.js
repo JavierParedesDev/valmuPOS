@@ -206,7 +206,7 @@ class InvoicesPage {
         };
 
         // Determine Next Folio for NC (61)
-        const folio61 = local.folio_61 || 41;
+        const folio61 = invoicingFolioService.getLocalNextFolio(61, this.currentConfig);
 
         return invoicingNoteView.render({
             config,
@@ -239,7 +239,7 @@ class InvoicesPage {
             ciudad: local.ciudad || 'CONCEPCION'
         };
 
-        const folio56 = local.folio_56 || 1;
+        const folio56 = invoicingFolioService.getLocalNextFolio(56, this.currentConfig);
 
         return invoicingDebitView.render({
             config,
@@ -298,21 +298,23 @@ class InvoicesPage {
     }
 
     // --- NEW: Handle Remote XML Download & Open ---
-    async openRemoteXml(filename, folder) {
+    async openRemoteXml(filename, folder, idXml) {
         return invoicingDocuments.openRemoteXml({
             filename,
             folder,
+            idXml,
             api,
             toast: Toast,
             createPdfFromXml: (xmlContent, targetFilename, targetFolder) => this.createPdfFromXml(xmlContent, targetFilename, targetFolder)
         });
     }
 
-    async createPdfFromXmlWrapper(type, folio, filename) {
+    async createPdfFromXmlWrapper(type, folio, filename, idXml) {
         return invoicingDocuments.createPdfFromXmlWrapper({
             type,
             folio,
             filename,
+            idXml,
             api,
             electronAPI: window.electronAPI,
             toast: Toast,
@@ -331,10 +333,11 @@ class InvoicesPage {
         });
     }
 
-    async downloadDteXml(filename, folder) {
+    async downloadDteXml(filename, folder, idXml) {
         return invoicingDocuments.downloadAndSaveXml({
             filename,
             folder,
+            idXml,
             api,
             electronAPI: window.electronAPI,
             toast: Toast
@@ -429,6 +432,7 @@ class InvoicesPage {
         if (this.activeTab === 'config') {
             void invoicingConfigController.bind({
                 electronAPI: window.electronAPI,
+                api,
                 saveConfig: () => this.saveConfig(),
                 syncFolios: () => this.syncFolios(),
                 reserveFolio: () => this.reserveFolio(),
@@ -437,6 +441,8 @@ class InvoicesPage {
                 },
                 SwalRef: typeof Swal !== 'undefined' ? Swal : null
             });
+        } else {
+            invoicingConfigController?.stopAutoSync?.();
         }
 
         // Create Events
@@ -665,9 +671,17 @@ class InvoicesPage {
         }
     }
 
-    createPdfFromXmlWrapper(type, folio, filename) {
-        const folder = window.ValmuInvoicingHistory.getFolderForType(type);
-        return window.ValmuInvoicingDocuments?.createPdfFromXml?.({ type, folio, filename, folder, electronAPI: window.electronAPI, toast: Toast });
+    createPdfFromXmlWrapper(type, folio, filename, idXml) {
+        return window.ValmuInvoicingDocuments.createPdfFromXmlWrapper({
+            type,
+            folio,
+            filename,
+            idXml,
+            api,
+            electronAPI: window.electronAPI,
+            toast: Toast,
+            createPdfFromXml: (xmlContent, targetFilename, targetFolder) => this.createPdfFromXml(xmlContent, targetFilename, targetFolder)
+        });
     }
 
     // ── Subir DTE local al servidor ─────────────────────────────────────────
@@ -782,11 +796,12 @@ class InvoicesPage {
         });
     }
 
-    async createPdfFromXmlWrapper(type, folio, filename) {
+    async createPdfFromXmlWrapper(type, folio, filename, idXml) {
         return invoicingDocuments.createPdfFromXmlWrapper({
             type,
             folio,
             filename,
+            idXml,
             api,
             electronAPI: window.electronAPI,
             toast: Toast,

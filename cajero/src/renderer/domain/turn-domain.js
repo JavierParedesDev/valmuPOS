@@ -2,7 +2,7 @@ import { cashSessionState, turnSummaryState } from '../state/store.js';
 import { formatCurrency } from '../utils/formatters.js';
 
 export function getExpectedCashAmount() {
-    return cashSessionState.openingAmount + turnSummaryState.totalCash;
+    return Math.max(0, cashSessionState.openingAmount + turnSummaryState.totalCash - Number(turnSummaryState.totalWithdrawals || 0));
 }
 
 export function getTurnSalesTotal() {

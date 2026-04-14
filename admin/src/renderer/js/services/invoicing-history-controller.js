@@ -52,6 +52,7 @@ window.ValmuInvoicingHistoryController = {
         if (paginationContainer) {
             paginationContainer.innerHTML = result.paginationHtml;
         }
+        window.ValmuInvoicingHistoryView?.bindFilterDropdown?.(page.historyFilter || 'all');
     },
 
     async fetch(page) {
