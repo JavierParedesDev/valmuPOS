@@ -481,6 +481,7 @@ function bindNavigation() {
 
 function bindSettings() {
     document.getElementById('save-printer-settings-btn')?.addEventListener('click', savePrinterSettings);
+    document.getElementById('test-printer-btn')?.addEventListener('click', testPrinter);
     document.getElementById('save-customer-display-settings-btn')?.addEventListener('click', saveCustomerDisplaySettings);
     document.getElementById('open-customer-display-btn')?.addEventListener('click', openCustomerDisplayWindow);
     document.getElementById('close-customer-display-btn')?.addEventListener('click', closeCustomerDisplayWindow);
@@ -3026,33 +3027,45 @@ function confirmPayment() {
 }
 
 async function confirmPaymentFlow() {
-    if (!cashSessionState.isOpen || !saleState.cart.length) {
-        closePaymentModal();
-        return;
-    }
-
-    const method = document.getElementById('payment-method-select')?.value || 'efectivo';
-    const snapshot = getCartSnapshot();
-    const received = Number(document.getElementById('payment-received-input')?.value || 0);
     const confirmButton = document.getElementById('payment-confirm-btn');
-
-    if (method === 'efectivo' && received < snapshot.total) {
-        document.getElementById('payment-received-input')?.focus();
-        return;
-    }
-
-    const stockValidation = validateCartStock();
-    if (!stockValidation.ok) {
-        setBackendStatus(stockValidation.message || 'No hay stock suficiente para completar la venta.');
-        closePaymentModal();
-        return;
-    }
-
-    confirmButton.disabled = true;
-    confirmButton.textContent = 'Procesando...';
-    document.getElementById('payment-cancel-btn')?.setAttribute('disabled', 'disabled');
+    const cancelBtn = document.getElementById('payment-cancel-btn');
 
     try {
+        if (!cashSessionState.isOpen || !saleState.cart.length) {
+            closePaymentModal();
+            return;
+        }
+
+        const method = document.getElementById('payment-method-select')?.value || 'efectivo';
+        const snapshot = getCartSnapshot();
+        const received = Number(document.getElementById('payment-received-input')?.value || 0);
+
+        if (method === 'efectivo' && received < snapshot.total) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Monto insuficiente',
+                text: `El monto recibido ($${formatCurrency(received)}) es menor al total de la venta ($${formatCurrency(snapshot.total)}).`,
+                target: '#payment-modal-backdrop'
+            });
+            document.getElementById('payment-received-input')?.focus();
+            return;
+        }
+
+        const stockValidation = validateCartStock();
+        if (!stockValidation.ok) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Problema de Stock',
+                text: stockValidation.message || 'No hay stock suficiente.',
+                target: '#payment-modal-backdrop'
+            });
+            return;
+        }
+
+        confirmButton.disabled = true;
+        confirmButton.textContent = 'Procesando...';
+        cancelBtn?.setAttribute('disabled', 'disabled');
+
         let dteResult = null;
         if (saleState.documentType === 'Boleta' || saleState.documentType === 'Factura') {
             setBackendStatus(`Emitiendo ${saleState.documentType.toLowerCase()} al SII...`);
@@ -3077,7 +3090,7 @@ async function confirmPaymentFlow() {
                     endpoint: '/dte/guardar',
                     method: 'POST',
                     body: {
-                        id_venta: result.saleId || null,
+                        id_venta: result.saleId,
                         tipoDte: Number(dteResult.tipoDte),
                         folio: Number(dteResult.folio),
                         xmlContenido: dteResult.xmlContent,
@@ -3094,6 +3107,7 @@ async function confirmPaymentFlow() {
                 });
             }
         }
+
         const receiptRecord = buildReceiptRecord({
             saleId: result.saleId,
             payload: {
@@ -3108,6 +3122,7 @@ async function confirmPaymentFlow() {
             dteMetadata: dteResult
         });
 
+        // Actualizar totales de turno
         if (method === 'efectivo') {
             turnSummaryState.totalCash += snapshot.total;
         } else if (method === 'tarjeta') {
@@ -3133,9 +3148,11 @@ async function confirmPaymentFlow() {
         addAuditEntry({
             type: 'success',
             title: 'Venta registrada',
-            detail: `Venta #${result.saleId} registrada como ${saleState.documentType} por $${formatCurrency(snapshot.total)}.${dteResult?.folio ? ` Folio ${dteResult.folio}.` : ''}${dteResult?.trackId ? ` Track ID SII: ${dteResult.trackId}.` : ''}${dteResult?.estadoSii ? ` Estado SII: ${dteResult.estadoSii}.` : ''}${dteResult?.reparos ? ` Reparo: ${dteResult.reparos}.` : ''}${dteResult?.estadoDetalle && !dteResult?.reparos ? ` ${dteResult.estadoDetalle}` : ''}`
+            detail: `Venta #${result.saleId} registrada como ${saleState.documentType} por $${formatCurrency(snapshot.total)}.${dteResult?.folio ? ` Folio ${dteResult.folio}.` : ''}`
         });
+
         saveReceiptRecord(receiptRecord);
+
         try {
             await printReceiptRecord({
                 record: receiptRecord,
@@ -3151,30 +3168,31 @@ async function confirmPaymentFlow() {
                 detail: printError?.message || `La venta #${result.saleId} se registro, pero no se pudo imprimir.`
             });
         }
+
         saleState.cart = [];
-        saleState.documentType = 'Boleta';
         saleState.customer = null;
         renderCustomerSummary();
-        renderDocumentType();
-        renderSearchResults([]);
         renderCart();
         closePaymentModal();
         await loadSalesHistory();
+
         setBackendStatus(dteResult?.folio
-            ? `Venta #${result.saleId} registrada. DTE ${dteResult.tipoDte}-${dteResult.folio} ${dteResult.estadoSii === 'PENDIENTE_SOBRE' ? 'agregado al sobre pendiente de envio' : dteResult.estadoSii === 'REPARO' ? `con reparo${dteResult.reparos ? `: ${dteResult.reparos}` : ''}` : dteResult.estadoSii === 'ACEPTADO' ? 'aceptado' : 'emitido correctamente'}.`
+            ? `Venta #${result.saleId} registrada. Folio ${dteResult.folio}.`
             : `Venta #${result.saleId} registrada correctamente.`);
+
     } catch (error) {
-        console.error('Sale submit error:', error);
-        setBackendStatus(error?.message || 'No se pudo registrar la venta.');
-        addAuditEntry({
-            type: 'error',
-            title: 'Error de venta',
-            detail: error?.message || 'No se pudo registrar la venta.'
+        console.error('Fatal confirmation error:', error);
+        Swal.fire({
+            icon: 'error',
+            title: 'Error al procesar venta',
+            text: error?.message || 'Ha ocurrido un error inesperado.',
+            target: '#payment-modal-backdrop'
         });
+        setBackendStatus(error?.message || 'Error en el proceso de venta.');
     } finally {
         confirmButton.disabled = false;
         confirmButton.textContent = 'Confirmar cobro';
-        document.getElementById('payment-cancel-btn')?.removeAttribute('disabled');
+        cancelBtn?.removeAttribute('disabled');
     }
 }
 
@@ -3967,13 +3985,14 @@ async function requestBackendJson({ endpoint, method = 'GET', body, token = getA
         throw new Error('No hay conexion activa con la API.');
     }
 
-    const response = await fetch(`${apiBaseUrl}${endpoint}`, {
+    const response = await fetchWithTimeout(`${apiBaseUrl}${endpoint}`, {
         method,
         headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`
         },
-        body: body ? JSON.stringify(body) : undefined
+        body: body ? JSON.stringify(body) : undefined,
+        timeout: 15000
     });
 
     const payload = await parseJsonResponse(response);
@@ -4016,8 +4035,28 @@ async function requestNextDteFolio(tipoDte) {
     return Number(payload?.folio || 0);
 }
 
+async function fetchWithTimeout(resource, options = {}) {
+    const { timeout = 15000 } = options;
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeout);
+    try {
+        const response = await fetch(resource, {
+            ...options,
+            signal: controller.signal
+        });
+        clearTimeout(id);
+        return response;
+    } catch (error) {
+        clearTimeout(id);
+        if (error.name === 'AbortError') {
+            throw new Error('La peticion al servicio externo ha excedido el tiempo limite (15s).');
+        }
+        throw error;
+    }
+}
+
 async function getSimpleApiToken(apiKey) {
-    const response = await fetch('https://api.simpleapi.cl/api/auth/token', {
+    const response = await fetchWithTimeout('https://api.simpleapi.cl/api/auth/token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ apikey: apiKey })
@@ -4327,6 +4366,7 @@ async function generateAndSendDte({ cart, customer, documentType, snapshot }) {
     const cafText = await window.cajeroAPI.readLocalText(cafFilename);
     if (!cafText) throw new Error(`No se encontro ${cafFilename} en Ajustes > SII.`);
 
+    // setBackendStatus(`Reservando folio SII...`);
     const folio = await requestNextDteFolio(tipoDte);
     if (!folio) {
         throw new Error('No se pudo reservar folio en CONTROL_FOLIO.');
@@ -4419,11 +4459,15 @@ async function generateAndSendDte({ cart, customer, documentType, snapshot }) {
     formData.append('caf', cafBlob, cafFilename);
     formData.append('input', JSON.stringify(inputPayload));
 
+    // setBackendStatus(`Obteniendo token de firma...`);
     const token = await getSimpleApiToken(config.apiKey);
-    const generateResponse = await fetch('https://api.simpleapi.cl/api/v1/dte/generar', {
+
+    // setBackendStatus(`Firmando y generando XML...`);
+    const generateResponse = await fetchWithTimeout('https://api.simpleapi.cl/api/v1/dte/generar', {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}` },
-        body: formData
+        body: formData,
+        timeout: 20000
     });
 
     const generateClone = generateResponse.clone();
@@ -4607,6 +4651,53 @@ async function loadPrinterOptions() {
         `).join('');
     } catch (error) {
         console.error('Printer load error:', error);
+    }
+}
+
+async function testPrinter() {
+    if (typeof window.cajeroAPI?.printReceipt !== 'function') {
+        setBackendStatus('El servicio de impresión no está disponible.');
+        return;
+    }
+
+    const printerSelect = document.getElementById('printer-select');
+    const paperSelect = document.getElementById('printer-paper-select');
+
+    const payload = {
+        printerName: printerSelect?.value || 'Predeterminada del sistema',
+        printerPaper: paperSelect?.value || '80mm',
+        receipt: {
+            documentType: 'Ticket de Prueba',
+            dateLabel: new Date().toLocaleString(),
+            customerLabel: 'Cliente de Prueba',
+            paymentMethod: 'Ninguno',
+            lineItems: [
+                {
+                    name: 'PRODUCTO DE PRUEBA 1',
+                    quantityLabel: '1.000',
+                    unitPrice: 1000,
+                    subtotal: 1000
+                },
+                {
+                    name: 'PRODUCTO DE PRUEBA 2 (MAYORISTA)',
+                    quantityLabel: '5.000',
+                    unitPrice: 850,
+                    subtotal: 4250
+                }
+            ],
+            subtotal: 5250,
+            iva: 0,
+            total: 5250,
+            footerMessage: 'PRUEBA DE IMPRESION EXITOSA - VALMU POS'
+        }
+    };
+
+    setBackendStatus('Enviando ticket de prueba...');
+    const result = await window.cajeroAPI.printReceipt(payload);
+    if (result && result.ok) {
+        setBackendStatus(`Prueba exitosa en ${result.printerName || 'impresora'}`);
+    } else {
+        setBackendStatus(`Error en prueba: ${result?.error || 'Desconocido'}`);
     }
 }
 

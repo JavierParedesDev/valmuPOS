@@ -121,15 +121,15 @@ def build_receipt_image(payload):
     padding = 18 if is_small_paper else 24
     gap = 8 if is_small_paper else 10
 
-    font_brand = load_font(34 if is_small_paper else 36, bold=True)
-    font_title = load_font(25 if is_small_paper else 27, bold=True)
-    font_body = load_font(19 if is_small_paper else 21, bold=False)
-    font_body_bold = load_font(20 if is_small_paper else 22, bold=True)
-    font_small = load_font(16 if is_small_paper else 18, bold=False)
-    font_small_bold = load_font(17 if is_small_paper else 19, bold=True)
-    font_mono = load_font(18 if is_small_paper else 20, bold=True)
-    font_box_rut = load_font(21 if is_small_paper else 23, bold=True)
-    font_box_doc = load_font(19 if is_small_paper else 21, bold=True)
+    font_brand = load_font(40 if is_small_paper else 44, bold=True)
+    font_title = load_font(30 if is_small_paper else 34, bold=True)
+    font_body = load_font(23 if is_small_paper else 27, bold=False)
+    font_body_bold = load_font(24 if is_small_paper else 28, bold=True)
+    font_small = load_font(20 if is_small_paper else 24, bold=False)
+    font_small_bold = load_font(21 if is_small_paper else 25, bold=True)
+    font_mono = load_font(22 if is_small_paper else 26, bold=True)
+    font_box_rut = load_font(25 if is_small_paper else 29, bold=True)
+    font_box_doc = load_font(23 if is_small_paper else 27, bold=True)
 
     document_type = str(receipt.get('documentType') or 'Documento')
     tipo_dte = dte.get('tipo')
@@ -313,28 +313,31 @@ def build_receipt_image(payload):
     if not footer:
         footer = 'GRACIAS POR SU COMPRA'
 
-    if is_fiscal:
-        stamp_title = 'TIMBRE ELECTRONICO SII'
-        draw.text((padding, cursor_y), stamp_title, fill='black', font=font_small_bold)
-        stamp_title_box = draw.textbbox((padding, cursor_y), stamp_title, font=font_small_bold)
-        cursor_y += (stamp_title_box[3] - stamp_title_box[1]) + 6
+    # --- SII TIMBRE (REMOVED AS PER USER REQUEST) ---
+    # if is_fiscal:
+    #     stamp_title = 'TIMBRE ELECTRONICO SII'
+    #     draw.text((padding, cursor_y), stamp_title, fill='black', font=font_small_bold)
+    #     stamp_title_box = draw.textbbox((padding, cursor_y), stamp_title, font=font_small_bold)
+    #     cursor_y += (stamp_title_box[3] - stamp_title_box[1]) + 6
+    # 
+    #     stamp_height = 92 if is_small_paper else 108
+    #     draw_fake_pdf417(draw, padding, cursor_y, content_width, stamp_height, build_stamp_seed(receipt, dte))
+    #     cursor_y += stamp_height + 8
+    # 
+    #     resolution = f"Resolucion SII N° {emisor.get('resolucionNumero') or 80} del {emisor.get('resolucionFecha') or '2014-08-22'}"
+    #     cursor_y = draw_wrapped_text(
+    #         draw,
+    #         padding,
+    #         cursor_y,
+    #         resolution,
+    #         font_small,
+    #         content_width,
+    #         align='center',
+    #         line_gap=2
+    #     )
+    #     cursor_y += 4
 
-        stamp_height = 92 if is_small_paper else 108
-        draw_fake_pdf417(draw, padding, cursor_y, content_width, stamp_height, build_stamp_seed(receipt, dte))
-        cursor_y += stamp_height + 8
-
-        resolution = f"Resolucion SII N° {emisor.get('resolucionNumero') or 80} del {emisor.get('resolucionFecha') or '2014-08-22'}"
-        cursor_y = draw_wrapped_text(
-            draw,
-            padding,
-            cursor_y,
-            resolution,
-            font_small,
-            content_width,
-            align='center',
-            line_gap=2
-        )
-        cursor_y += 4
+    cursor_y += 10 # Extra gap before footer
 
     cursor_y = draw_wrapped_text(
         draw,

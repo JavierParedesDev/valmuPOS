@@ -18,7 +18,8 @@ const IPC_CHANNELS = {
     SAVE_XML: 'save-xml',
     LIST_INVOICES: 'list-invoices',
     OPEN_FILE: 'open-file',
-    DELETE_INVOICE_FILES: 'delete-invoice-files'
+    DELETE_INVOICE_FILES: 'delete-invoice-files',
+    UPLOAD_PUBLICIDAD: 'upload-publicidad'
 };
 
 module.exports = {

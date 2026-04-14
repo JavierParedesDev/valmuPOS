@@ -101,6 +101,12 @@ export function renderCartView({ cart, products }) {
         totalLabel.textContent = '$0';
         subtotalLabel.textContent = '$0';
         itemsLabel.textContent = '0';
+
+        const ivaLabel = document.getElementById('sale-tax') || document.getElementById('summary-iva');
+        const discountLabel = document.getElementById('summary-discount');
+        if (ivaLabel) ivaLabel.textContent = '$0';
+        if (discountLabel) discountLabel.textContent = '$0';
+
         return;
     }
 

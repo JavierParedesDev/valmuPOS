@@ -7,7 +7,7 @@ const path = require('path');
 const { createUpdateManager } = require('./updater/update-manager');
 
 let mainWindow = null;
-let customerDisplayWindow = null;
+let customerDisplayWindows = [];
 let updateManager = null;
 let lastCustomerDisplayPayload = {
     mode: 'idle',
@@ -63,14 +63,18 @@ function buildAppMenu() {
     Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
-const siiDataDir = path.join(process.cwd(), 'sii_data');
-const invoiceFolders = ['facturas', 'boletas'];
+let siiDataDir = '';
 
 function ensureSiiDataDir() {
+    if (!siiDataDir) {
+        siiDataDir = path.join(app.getPath('userData'), 'sii_data');
+    }
     if (!fsSync.existsSync(siiDataDir)) {
         fsSync.mkdirSync(siiDataDir, { recursive: true });
     }
 }
+
+const invoiceFolders = ['facturas', 'boletas'];
 
 function getSiiConfigPath() {
     ensureSiiDataDir();
@@ -94,7 +98,12 @@ function bufferFromBase64Payload(base64Data) {
 
 function getReceiptPrinterScriptPath() {
     if (app.isPackaged) {
-        return path.join(process.resourcesPath, 'scripts', 'receipt_printer.py');
+        return path.join(process.resourcesPath, 'scripts', 'receipt_printer.exe');
+    }
+
+    const exePath = path.join(__dirname, '../../scripts/receipt_printer.exe');
+    if (fsSync.existsSync(exePath)) {
+        return exePath;
     }
 
     return path.join(__dirname, '../../scripts/receipt_printer.py');
@@ -120,9 +129,13 @@ async function runPythonReceiptPrint(payload) {
 
     try {
         return await new Promise((resolve) => {
+            const isExe = scriptPath.endsWith('.exe');
+            const command = isExe ? scriptPath : 'python';
+            const args = isExe ? [tempPath] : [scriptPath, tempPath];
+
             execFile(
-                'python',
-                [scriptPath, tempPath],
+                command,
+                args,
                 {
                     windowsHide: true
                 },
@@ -167,7 +180,8 @@ function createMainWindow() {
             contextIsolation: true,
             nodeIntegration: false
         },
-        show: false
+        show: false,
+        fullscreen: true
     });
 
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
@@ -196,7 +210,7 @@ function getCustomerDisplayBounds() {
     }
 
     const primaryDisplay = screen.getPrimaryDisplay();
-    return displays.find((display) => display.id !== primaryDisplay.id) || null;
+    return displays.filter((display) => display.id !== primaryDisplay.id);
 }
 
 function sendCustomerDisplayState(payload) {
@@ -205,67 +219,89 @@ function sendCustomerDisplayState(payload) {
         ...(payload || {})
     };
 
-    if (!customerDisplayWindow || customerDisplayWindow.isDestroyed()) {
+    if (!Array.isArray(customerDisplayWindows) || customerDisplayWindows.length === 0) {
         return;
     }
 
-    customerDisplayWindow.webContents.send('display:customer-update', lastCustomerDisplayPayload);
+    customerDisplayWindows.forEach((win) => {
+        if (win && !win.isDestroyed()) {
+            win.webContents.send('display:customer-update', lastCustomerDisplayPayload);
+        }
+    });
 }
 
 function createCustomerDisplayWindow() {
-    if (customerDisplayWindow && !customerDisplayWindow.isDestroyed()) {
-        customerDisplayWindow.focus();
+    const externalDisplays = getCustomerDisplayBounds();
+
+    // Si ya hay ventanas abiertas, las enfocamos y actualizamos
+    if (customerDisplayWindows.length > 0) {
+        customerDisplayWindows.forEach((win) => {
+            if (win && !win.isDestroyed()) {
+                win.focus();
+            }
+        });
         sendCustomerDisplayState(lastCustomerDisplayPayload);
-        return customerDisplayWindow;
+        return;
     }
 
-    const externalDisplay = getCustomerDisplayBounds();
-    const baseOptions = {
-        width: 1024,
-        height: 768,
-        minWidth: 800,
-        minHeight: 600,
-        backgroundColor: '#241710',
-        autoHideMenuBar: false,
-        title: 'Valmu Cliente',
-        webPreferences: {
-            preload: path.join(__dirname, '../preload/preload.js'),
-            contextIsolation: true,
-            nodeIntegration: false
-        },
-        show: false
-    };
+    const displaysToUse = (externalDisplays && externalDisplays.length > 0)
+        ? externalDisplays
+        : [screen.getPrimaryDisplay()]; // Fallback a la principal si no hay externas
 
-    if (externalDisplay?.bounds) {
-        baseOptions.x = externalDisplay.bounds.x;
-        baseOptions.y = externalDisplay.bounds.y;
-        baseOptions.width = Math.max(externalDisplay.bounds.width, 800);
-        baseOptions.height = Math.max(externalDisplay.bounds.height, 600);
-    }
+    displaysToUse.forEach((display, index) => {
+        const baseOptions = {
+            width: 1024,
+            height: 768,
+            minWidth: 800,
+            minHeight: 600,
+            backgroundColor: '#241710',
+            autoHideMenuBar: false,
+            title: `Valmu Cliente ${index + 1}`,
+            webPreferences: {
+                preload: path.join(__dirname, '../preload/preload.js'),
+                contextIsolation: true,
+                nodeIntegration: false
+            },
+            show: false,
+            fullscreen: true,
+            x: display.bounds.x,
+            y: display.bounds.y,
+            width: display.bounds.width,
+            height: display.bounds.height
+        };
 
-    customerDisplayWindow = new BrowserWindow(baseOptions);
-    customerDisplayWindow.loadFile(getCustomerDisplayFilePath());
-    customerDisplayWindow.once('ready-to-show', () => {
-        customerDisplayWindow?.show();
-    });
-    customerDisplayWindow.webContents.on('did-finish-load', () => {
-        sendCustomerDisplayState(lastCustomerDisplayPayload);
-    });
-    customerDisplayWindow.on('closed', () => {
-        customerDisplayWindow = null;
-    });
+        const win = new BrowserWindow(baseOptions);
+        win.loadFile(getCustomerDisplayFilePath());
 
-    return customerDisplayWindow;
+        win.once('ready-to-show', () => {
+            win.show();
+        });
+
+        win.webContents.on('did-finish-load', () => {
+            win.webContents.send('display:customer-update', lastCustomerDisplayPayload);
+        });
+
+        win.on('closed', () => {
+            customerDisplayWindows = customerDisplayWindows.filter((w) => w !== win);
+        });
+
+        customerDisplayWindows.push(win);
+    });
 }
 
 function closeCustomerDisplayWindow() {
-    if (!customerDisplayWindow || customerDisplayWindow.isDestroyed()) {
-        customerDisplayWindow = null;
+    if (customerDisplayWindows.length === 0) {
         return false;
     }
 
-    customerDisplayWindow.close();
-    customerDisplayWindow = null;
+    const windowsToClose = [...customerDisplayWindows];
+    windowsToClose.forEach((win) => {
+        if (win && !win.isDestroyed()) {
+            win.close();
+        }
+    });
+
+    customerDisplayWindows = [];
     return true;
 }
 
@@ -352,13 +388,13 @@ function registerIpcHandlers() {
         sendCustomerDisplayState(payload || {});
         return {
             ok: true,
-            isOpen: Boolean(customerDisplayWindow && !customerDisplayWindow.isDestroyed())
+            isOpen: customerDisplayWindows.length > 0
         };
     });
 
     ipcMain.handle('display:get-customer-state', async () => ({
         ok: true,
-        isOpen: Boolean(customerDisplayWindow && !customerDisplayWindow.isDestroyed()),
+        isOpen: customerDisplayWindows.length > 0,
         payload: lastCustomerDisplayPayload
     }));
 
@@ -408,6 +444,7 @@ function registerIpcHandlers() {
 
     ipcMain.handle('sii:read-local-cert', async (_event, filename) => {
         try {
+            ensureSiiDataDir();
             const targetPath = path.join(siiDataDir, String(filename || '').trim());
             if (!fsSync.existsSync(targetPath)) {
                 return null;
@@ -423,6 +460,7 @@ function registerIpcHandlers() {
 
     ipcMain.handle('sii:read-local-text', async (_event, filename) => {
         try {
+            ensureSiiDataDir();
             const targetPath = path.join(siiDataDir, String(filename || '').trim());
             if (!fsSync.existsSync(targetPath)) {
                 return null;

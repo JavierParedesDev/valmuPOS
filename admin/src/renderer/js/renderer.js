@@ -1,6 +1,10 @@
 let currentPage = null;
 let updateStateCleanup = null;
 let lastUpdateStatus = null;
+const ROLE_PERMISSIONS = {
+    1: ['dashboard', 'users', 'customers', 'products', 'categories', 'suppliers', 'advertising', 'wastage', 'finances', 'invoicing', 'branches', 'settings', 'logistics'], // Admin
+    3: ['dashboard', 'products', 'categories', 'suppliers', 'wastage', 'logistics'] // Bodeguero
+};
 
 function getRoutes() {
     return window.AdminRoutes || {};
@@ -13,6 +17,7 @@ function getNavigation() {
 document.addEventListener('DOMContentLoaded', async () => {
     enforceSession();
     hydrateUserProfile();
+    applyRolePermissions();
     await hydrateSidebarVersion();
     const navigation = getNavigation();
     if (!navigation) {
@@ -71,6 +76,73 @@ function hydrateUserProfile() {
     }
 }
 
+function applyRolePermissions() {
+    const user = getCurrentUser();
+    if (!user) return;
+
+    // Debug para identificar que esta llegando en la sesion
+    console.log('[Permisos] Usuario actual:', {
+        id_rol: user.id_rol,
+        rol_id: user.rol_id,
+        idRol: user.idRol,
+        rol: user.rol,
+        nombre: user.nombreCompleto
+    });
+
+    const roleKey = user.id_rol || user.rol_id || user.idRol;
+    let allowedPages = ROLE_PERMISSIONS[roleKey];
+
+    // Fallback por nombre de rol
+    if (!allowedPages && user.rol) {
+        const normalRol = String(user.rol).toLowerCase();
+        if (normalRol === 'administrador') allowedPages = ROLE_PERMISSIONS[1];
+        if (normalRol === 'bodeguero') allowedPages = ROLE_PERMISSIONS[3];
+    }
+
+    if (!allowedPages) {
+        if (user.rol === 'Administrador' || Number(roleKey) === 1) {
+            console.log('[Permisos] Acceso total mantenido por rol Administrador');
+            return;
+        }
+        console.warn('[Permisos] Rol no reconocido, aplicando restricciones maximas.');
+        allowedPages = ['dashboard']; // Solo dashboard por seguridad
+    }
+
+    const navItems = document.querySelectorAll('.nav-item, .sidebar-settings-link');
+
+    navItems.forEach((item) => {
+        const page = item.dataset.page;
+        if (!allowedPages.includes(page)) {
+            item.style.display = 'none';
+        }
+    });
+
+    const sidebarNav = document.querySelector('.sidebar-nav');
+    if (!sidebarNav) return;
+
+    const sections = Array.from(sidebarNav.children);
+    let lastLabel = null;
+    let hasVisibleItems = false;
+
+    sections.forEach((el) => {
+        if (el.classList.contains('sidebar-section-label')) {
+            if (lastLabel && !hasVisibleItems) {
+                lastLabel.style.display = 'none';
+            }
+            lastLabel = el;
+            hasVisibleItems = false;
+        } else if (el.classList.contains('nav-item')) {
+            if (el.style.display !== 'none') {
+                hasVisibleItems = true;
+            }
+        }
+    });
+
+    if (lastLabel && !hasVisibleItems) {
+        lastLabel.style.display = 'none';
+    }
+}
+
 async function hydrateSidebarVersion() {
     const versionLabel = document.getElementById('sidebar-app-version');
     if (!versionLabel) return;
@@ -123,6 +195,18 @@ function bindUpdateStateListener() {
 async function loadPage(page) {
     const route = getRoutes()[page];
     const contentArea = document.getElementById('content-area');
+    const user = getCurrentUser();
+
+    // Verificacion de permisos
+    if (user) {
+        const roleId = Number(user.id_rol);
+        const allowedPages = ROLE_PERMISSIONS[roleId];
+        if (allowedPages && !allowedPages.includes(page)) {
+            console.error(`Acceso denegado a la pagina: ${page}`);
+            renderBootstrapError('No tienes permisos para acceder a este modulo.');
+            return;
+        }
+    }
 
     if (!route || !contentArea) {
         renderPlaceholderPage(page);
