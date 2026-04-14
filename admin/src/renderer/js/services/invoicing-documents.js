@@ -46,14 +46,13 @@ window.ValmuInvoicingDocuments = {
         }
     },
 
-    async openRemoteXml({ filename, folder, api, toast, createPdfFromXml } = {}) {
+    async openRemoteXml({ filename, folder, idXml, api, toast, createPdfFromXml } = {}) {
         try {
             toast?.show?.(`Descargando ${filename}...`, 'info');
-            const data = await api.downloadXml(filename);
-
-            if (data?.error) {
-                throw new Error(data.error);
+            if (!idXml) {
+                throw new Error('No se encontro el identificador del XML en servidor.');
             }
+            const data = await api.downloadXml(idXml);
 
             await createPdfFromXml?.(data, filename, folder);
             return true;
@@ -64,7 +63,7 @@ window.ValmuInvoicingDocuments = {
         }
     },
 
-    async createPdfFromXmlWrapper({ type, folio, filename, api, electronAPI, toast, createPdfFromXml } = {}) {
+    async createPdfFromXmlWrapper({ type, folio, filename, idXml, api, electronAPI, toast, createPdfFromXml } = {}) {
         try {
             toast?.show?.('Generando PDF...', 'info');
 
@@ -76,14 +75,15 @@ window.ValmuInvoicingDocuments = {
             let xmlContent = await electronAPI.readLocalText(`${folder}/${targetFilename}`);
 
             if (!xmlContent) {
-                console.log('Local not found, trying remote...', targetFilename);
-                if (!filename) {
-                    throw new Error('No se encontro el archivo local ni nombre remoto.');
+                console.log('Local not found, trying remote...', targetFilename, idXml);
+                if (!idXml) {
+                    throw new Error('No se encontro el XML local y el documento no tiene respaldo remoto.');
                 }
-                xmlContent = await api.downloadXml(filename);
+                xmlContent = await api.downloadXml(idXml);
+                await electronAPI.saveXml(targetFilename, xmlContent, folder);
             }
 
-            if (!xmlContent) {
+            if (typeof xmlContent !== 'string' || !xmlContent.trim() || !xmlContent.includes('<')) {
                 throw new Error('Contenido XML vacio.');
             }
 
@@ -141,10 +141,13 @@ window.ValmuInvoicingDocuments = {
         }
     },
 
-    async downloadAndSaveXml({ filename, folder, api, electronAPI, toast } = {}) {
+    async downloadAndSaveXml({ filename, folder, idXml, api, electronAPI, toast } = {}) {
         try {
             toast?.show?.('Descargando XML...', 'info');
-            const data = await api.downloadXml(filename);
+            if (!idXml) {
+                throw new Error('No se encontro el identificador del XML en servidor.');
+            }
+            const data = await api.downloadXml(idXml);
             if (!data) {
                 throw new Error('No se pudo descargar el XML');
             }
@@ -168,10 +171,18 @@ window.ValmuInvoicingDocuments = {
             throw new Error('jsPDF Library not loaded');
         }
 
+        if (typeof xmlContent !== 'string' || !xmlContent.trim() || !xmlContent.includes('<')) {
+            throw new Error('El contenido recibido no corresponde a un XML valido.');
+        }
+
         const { jsPDF } = window.jspdf;
         const doc = new jsPDF();
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xmlContent, 'text/xml');
+
+        if (xmlDoc.getElementsByTagName('parsererror').length > 0) {
+            throw new Error('No se pudo interpretar el XML del DTE.');
+        }
 
         const getTag = (tag, parent = xmlDoc) => {
             const el = parent.getElementsByTagName(tag)[0];

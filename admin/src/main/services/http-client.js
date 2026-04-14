@@ -16,9 +16,14 @@ function buildApiUrl(endpointOrUrl) {
 async function parseResponse(response) {
     const text = await response.text();
     const headers = Object.fromEntries(response.headers.entries());
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
 
     if (!text) {
         return { ok: response.ok, status: response.status, data: null, headers };
+    }
+
+    if (contentType.includes('xml') || contentType.startsWith('text/plain') || contentType.startsWith('text/xml')) {
+        return { ok: response.ok, status: response.status, data: text, headers };
     }
 
     try {

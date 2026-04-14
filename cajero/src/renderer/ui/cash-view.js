@@ -7,6 +7,7 @@ export function renderCashSessionView({ cashSessionState }) {
     const copy = document.getElementById('cash-session-copy');
     const button = document.getElementById('open-cash-session-btn');
     const closeButton = document.getElementById('close-cash-session-btn');
+    const withdrawalButton = document.getElementById('header-cash-withdrawal-btn');
     const cashViewStatus = document.getElementById('cash-view-status-label');
     const cashViewOpening = document.getElementById('cash-view-opening-label');
     const cashViewOpenedAt = document.getElementById('cash-view-opened-at-label');
@@ -35,6 +36,10 @@ export function renderCashSessionView({ cashSessionState }) {
     }
 
     closeButton?.classList.toggle('hidden', !cashSessionState.isOpen);
+    if (withdrawalButton) {
+        withdrawalButton.disabled = !cashSessionState.isOpen;
+        withdrawalButton.classList.toggle('hidden', !cashSessionState.isOpen);
+    }
 
     if (cashViewStatus) {
         cashViewStatus.textContent = cashSessionState.isOpen ? 'Caja abierta' : 'Caja cerrada';
@@ -68,6 +73,7 @@ export function renderTurnSummaryView({ turnSummaryState }) {
     const totalCard = document.getElementById('turn-total-card');
     const totalTransfer = document.getElementById('turn-total-transfer');
     const totalInternal = document.getElementById('turn-total-internal');
+    const totalWithdrawals = document.getElementById('turn-total-withdrawals');
     const expectedCash = document.getElementById('turn-expected-cash');
 
     if (salesCount) {
@@ -88,6 +94,10 @@ export function renderTurnSummaryView({ turnSummaryState }) {
 
     if (totalInternal) {
         totalInternal.textContent = `$${formatCurrency(turnSummaryState.totalInternal)}`;
+    }
+
+    if (totalWithdrawals) {
+        totalWithdrawals.textContent = `$${formatCurrency(turnSummaryState.totalWithdrawals || 0)}`;
     }
 
     if (expectedCash) {
@@ -126,6 +136,9 @@ export function renderSalesHistoryView({ salesHistoryState, openSaleCancellation
     const count = document.getElementById('sales-history-count');
     const activeTabButton = document.getElementById('sales-tab-active-btn');
     const cancelledTabButton = document.getElementById('sales-tab-cancelled-btn');
+    const title = document.getElementById('sale-history-title');
+    const subtitle = document.getElementById('sale-history-subtitle');
+    const header = document.getElementById('sale-history-header');
 
     if (!list || !count || !activeTabButton || !cancelledTabButton) {
         return;
@@ -133,6 +146,19 @@ export function renderSalesHistoryView({ salesHistoryState, openSaleCancellation
 
     const isCancelledTab = salesHistoryState.currentTab === 'cancelled';
     const selectedItems = isCancelledTab ? salesHistoryState.cancelledItems : salesHistoryState.items;
+    if (title) {
+        title.textContent = salesHistoryState.showAllDocuments
+            ? 'Historial de Ventas · Completo'
+            : 'Historial de Ventas · Fiscal';
+    }
+    if (subtitle) {
+        subtitle.textContent = salesHistoryState.showAllDocuments
+            ? 'Mostrando ventas fiscales e internas. Haz clic en una venta para ver opciones.'
+            : 'Mostrando solo documentos fiscales. Haz clic en una venta para ver opciones.';
+    }
+    if (header) {
+        header.classList.toggle('is-history-all', salesHistoryState.showAllDocuments);
+    }
     activeTabButton.classList.toggle('active', !isCancelledTab);
     cancelledTabButton.classList.toggle('active', isCancelledTab);
     count.textContent = String(selectedItems.length);
@@ -147,31 +173,27 @@ export function renderSalesHistoryView({ salesHistoryState, openSaleCancellation
 
     list.innerHTML = selectedItems.map((sale) => {
         const documentBadge = `<span class="sale-history-badge ${sale.isFiscal ? 'is-fiscal' : 'is-internal'}">${escapeHtml(sale.document)}</span>`;
-        const fiscalBadge = `<span class="sale-history-badge ${sale.isFiscal ? 'is-fiscal' : 'is-internal'}">${sale.isFiscal ? 'Fiscal' : 'No fiscal'}</span>`;
         const paymentBadge = `<span class="sale-history-badge is-payment">${escapeHtml(sale.paymentMethod)}</span>`;
-        const actionBlock = isCancelledTab
-            ? `<div class="turn-history-detail">Motivo: ${escapeHtml(sale.cancellationReason || 'Sin motivo registrado')}</div>
-               <div class="product-actions-cell" style="justify-content:flex-start; margin-top:0.35rem;">
-                   <button class="btn btn-ghost btn-sm product-action-btn" type="button" onclick="openSaleReceiptModal(${sale.id})">Comprobante</button>
-               </div>`
-            : `<div class="product-actions-cell" style="justify-content:flex-start; margin-top:0.35rem;">
-                <button class="btn btn-ghost btn-sm product-action-btn" type="button" onclick="openSaleReceiptModal(${sale.id})">Comprobante</button>
-                <button class="btn btn-ghost btn-sm product-action-btn" type="button" onclick="openSaleCancellationModal(${sale.id}, '${escapeHtml(sale.document)}', ${sale.total})">Anular</button>
-            </div>`;
+
+        const actionButtons = isCancelledTab
+            ? `<button class="btn btn-ghost btn-sm product-action-btn" type="button" onclick="event.stopPropagation(); window.openSaleReceiptModal(${sale.id})">Comprobante</button>`
+            : `<button class="btn btn-ghost btn-sm product-action-btn" type="button" onclick="event.stopPropagation(); window.openSaleReceiptModal(${sale.id})">Comprobante</button>
+               <button class="btn btn-ghost btn-sm product-action-btn" type="button" onclick="event.stopPropagation(); window.openSaleCancellationModal(${sale.id}, '${escapeHtml(sale.document)}', ${sale.total})">Anular</button>`;
 
         return `
-            <article class="turn-history-item">
+            <article class="turn-history-item" onclick="this.parentElement.querySelectorAll('.turn-history-item').forEach(el => el.classList.remove('is-active')); this.classList.add('is-active');">
                 <div class="turn-history-meta">
                     <strong>Venta #${escapeHtml(sale.id)}</strong>
                     <span>${escapeHtml(sale.dateLabel)}</span>
                 </div>
                 <div class="sale-history-badges">
                     ${documentBadge}
-                    ${fiscalBadge}
                     ${paymentBadge}
                 </div>
-                <div class="turn-history-detail">Total: $${formatCurrency(sale.total)}</div>
-                ${actionBlock}
+                <div class="turn-history-detail">$${formatCurrency(sale.total)}</div>
+                <div class="product-actions-cell">
+                    ${actionButtons}
+                </div>
             </article>
         `;
     }).join('');
@@ -192,10 +214,24 @@ export function renderCloseCashDifferenceView({ turnSummaryState, countedCash, c
         return;
     }
 
+    const setDiffClass = (el, diff) => {
+        el.classList.remove('diff-good', 'diff-neutral', 'diff-bad');
+        if (diff === 0) el.classList.add('diff-good');
+        else if (diff > 0) el.classList.add('diff-neutral');
+        else el.classList.add('diff-bad');
+    };
+
     cashDifferenceLabel.textContent = formatDifferenceLabel(cashDifference);
+    setDiffClass(cashDifferenceLabel, cashDifference);
+
     cardDifferenceLabel.textContent = formatDifferenceLabel(cardDifference);
+    setDiffClass(cardDifferenceLabel, cardDifference);
+
     transferDifferenceLabel.textContent = formatDifferenceLabel(transferDifference);
+    setDiffClass(transferDifferenceLabel, transferDifference);
+
     totalDifferenceLabel.textContent = formatDifferenceLabel(totalDifference);
+    setDiffClass(totalDifferenceLabel, totalDifference);
 }
 
 export function setBackendStatusView(message) {

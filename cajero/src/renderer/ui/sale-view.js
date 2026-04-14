@@ -19,6 +19,7 @@ export function renderSelectedBranchView({ branches, selectedBranchId }) {
 export function renderDocumentTypeView(documentType) {
     const label = document.getElementById('summary-document-label');
     const detail = document.getElementById('summary-document-detail');
+    const totalCard = document.getElementById('sale-total-card');
     if (label) label.textContent = documentType;
 
     if (detail) {
@@ -34,6 +35,7 @@ export function renderDocumentTypeView(documentType) {
 
     if (btnBoleta) btnBoleta.classList.toggle('active', documentType === 'Boleta');
     if (btnFactura) btnFactura.classList.toggle('active', documentType === 'Factura');
+    if (totalCard) totalCard.classList.toggle('is-internal-sale', documentType === 'Vale interno');
 }
 
 export function renderCustomerSummaryView(customer) {

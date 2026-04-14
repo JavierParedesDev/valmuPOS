@@ -20,8 +20,8 @@ export function showAppViewLayout(view) {
         cashierApp.dataset.view = view;
     }
 
-    saleView?.classList.toggle('hidden', !(isSaleView || isDispatchView));
-    dispatchView?.classList.add('hidden');
+    saleView?.classList.toggle('hidden', !isSaleView);
+    dispatchView?.classList.toggle('hidden', !isDispatchView);
     cashView?.classList.toggle('hidden', !isCashView);
     settingsView?.classList.toggle('hidden', !isSettingsView);
     saleButton?.classList.toggle('active', isSaleView);

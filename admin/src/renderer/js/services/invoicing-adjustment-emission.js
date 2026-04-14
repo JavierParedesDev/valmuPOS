@@ -83,9 +83,28 @@ window.ValmuInvoicingAdjustmentEmission = {
             const emisorRut = config.rutEmisor || config.rut;
             const rutEnvia = config.rutEnvia || config.rutFirmante || emisorRut;
 
+            let folio = parseInt(document.getElementById('nc-folio-display')?.value || config.folio_61 || 1, 10);
             const token = await adjustmentEmissionTransport.getBearerToken();
+            toast.show('Verificando folio...', 'info');
+            try {
+                const reserved = await api.requestNextFolio?.(61);
+                folio = parseInt(reserved?.folio, 10) || folio;
+                config.folio_61 = folio;
+                localStorage.setItem('sii_config', JSON.stringify(config));
 
-            const folio = parseInt(document.getElementById('nc-folio-display')?.value || 0, 10);
+                const folioDisplay = document.getElementById('nc-folio-display');
+                const folioHidden = document.getElementById('nc-folio');
+                if (folioDisplay && parseInt(folioDisplay.value, 10) !== folio) {
+                    folioDisplay.value = folio;
+                }
+                if (folioHidden) {
+                    folioHidden.value = folio;
+                }
+            } catch (error) {
+                console.error('Backend folio reservation failed for NC, using fallback:', error);
+                toast.show(`No se pudo reservar folio NC en backend: ${error.message}`, 'warning');
+            }
+
             if (!folio || folio <= 0) throw new Error('Debe ingresar un Folio válido (mayor a 0)');
 
             // ── Certificado y CAF ───────────────────────────────────────────
@@ -329,13 +348,20 @@ window.ValmuInvoicingAdjustmentEmission = {
             toast.show('Sincronizando folio...', 'info');
             let folio = 0;
             try {
-                const latestSettings = await api.getSiiSettings();
-                if (latestSettings) {
-                    folio = parseInt(latestSettings.folio_56, 10) || 1;
-                    const folioDisp = document.getElementById('nd-folio-display');
-                    if (folioDisp) folioDisp.value = folio;
+                const reserved = await api.requestNextFolio?.(56);
+                folio = parseInt(reserved?.folio, 10) || 0;
+                const folioDisp = document.getElementById('nd-folio-display');
+                if (folioDisp && folio > 0) {
+                    folioDisp.value = folio;
                 }
-            } catch (_) {
+                if (folio > 0) {
+                    const reservedConfig = JSON.parse(localStorage.getItem('sii_config') || '{}');
+                    reservedConfig.folio_56 = folio;
+                    localStorage.setItem('sii_config', JSON.stringify(reservedConfig));
+                }
+            } catch (error) {
+                console.error('Backend folio reservation failed for ND, using fallback:', error);
+                toast.show(`No se pudo reservar folio ND en backend: ${error.message}`, 'warning');
                 folio = parseInt(document.getElementById('nd-folio-display')?.value || 1, 10);
             }
             if (!folio || folio <= 0) throw new Error('No se pudo determinar un folio válido para ND');

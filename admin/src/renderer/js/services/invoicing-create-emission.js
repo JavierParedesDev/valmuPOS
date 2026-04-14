@@ -86,24 +86,23 @@ window.ValmuInvoicingCreateEmission = {
             toast.show('Verificando folio...', 'info');
             let folio = 0;
             try {
-                const latestSettings = await api.getSiiSettings();
-                if (latestSettings) {
-                    const dbNextFolio = parseInt(latestSettings[`folio_${tipoDTE}`], 10) || 0;
-                    const localNextFolio = parseInt(config[`folio_${tipoDTE}`], 10) || 1;
-                    folio = Math.max(dbNextFolio, localNextFolio);
+                const reserved = await api.requestNextFolio?.(tipoDTE);
+                folio = parseInt(reserved?.folio, 10) || 0;
 
+                if (folio > 0) {
                     config[`folio_${tipoDTE}`] = folio;
                     localStorage.setItem('sii_config', JSON.stringify(config));
 
                     const uiFolio = parseInt(document.getElementById('dte-folio').value, 10);
                     if (uiFolio !== folio) {
-                        console.warn(`Folio mismatch: UI showed ${uiFolio}, but next is ${folio}. Auto-correcting.`);
+                        console.warn(`Folio mismatch: UI showed ${uiFolio}, backend reserved ${folio}. Auto-correcting.`);
                         document.getElementById('dte-folio').value = folio;
-                        toast.show(`Folio actualizado a #${folio}`, 'info');
+                        toast.show(`Folio reservado: #${folio}`, 'info');
                     }
                 }
             } catch (error) {
-                console.error('Real-time sync failed, using fallback:', error);
+                console.error('Backend folio reservation failed, using fallback:', error);
+                toast.show(`No se pudo reservar folio en backend: ${error.message}`, 'warning');
                 folio = parseInt(config[`folio_${tipoDTE}`], 10) || 1;
             }
 

@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SimpleRutDesktop")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+913b2ff0b24f5654d4d0a69a9ba5da70a70eab18")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+e8fe1e7f9ec9a7c23c584461a215d5422723a5c9")]
 [assembly: System.Reflection.AssemblyProductAttribute("SimpleRutDesktop")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SimpleRutDesktop")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

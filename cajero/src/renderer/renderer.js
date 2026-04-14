@@ -109,7 +109,11 @@ import {
     renderDispatchCarrierSummary,
     renderDispatchSearchResults,
     renderDispatchCart,
-    renderDispatchRecords
+    renderDispatchRecords,
+    renderCarrierSelectionList,
+    updateCarrierTiles,
+    updateDispatchCustomerTile,
+    updateDispatchDocumentTypeUI
 } from './ui/dispatch-view.js';
 import {
     showAppViewLayout,
@@ -143,7 +147,10 @@ import {
     openCloseCashModalView,
     closeCloseCashModalView,
     openWeightedModalView,
-    closeWeightedModalView
+    closeWeightedModalView,
+    showCustomerModalStepView,
+    openConfirmModalView,
+    closeConfirmModalView
 } from './ui/modal-view.js';
 import {
     openPaymentModalView,
@@ -158,7 +165,7 @@ import {
     resolveCatalogInventory,
     resolveOtherBranchStock
 } from './services/catalog-runtime-service.js';
-import { fetchCashStatus, openCashTurn, closeCashTurn } from './services/cash-service.js';
+import { fetchCashStatus, openCashTurn, closeCashTurn, registerCashWithdrawal, fetchCashWithdrawals } from './services/cash-service.js';
 import { fetchSalesHistory, cancelSaleRequest, submitSaleRequest } from './services/sales-service.js';
 import { fetchClients, createQuickCustomer } from './services/clientes-service.js';
 import { loginCashier } from './services/auth-service.js';
@@ -172,8 +179,7 @@ import {
 import {
     getSettingsSnapshot,
     savePrinterSettingsSnapshot,
-    saveCustomerDisplaySettingsSnapshot,
-    saveUpdateSettingsSnapshot
+    saveCustomerDisplaySettingsSnapshot
 } from './services/settings-service.js';
 import {
     getSessionValue,
@@ -184,16 +190,29 @@ import {
 } from './services/session-service.js';
 
 let activeOperationMode = 'sale';
+let saleHistoryClickTimer = null;
+let updateStateCleanup = null;
+let latestUpdateState = null;
+let lastUpdatePromptStatus = null;
+const BOLETA_ENVELOPE_WINDOW_MS = 45 * 60 * 1000;
+const boletaEnvelopeState = {
+    startedAt: null,
+    items: []
+};
+let boletaEnvelopeFlushTimer = null;
+let boletaEnvelopeSendInFlight = false;
 
 document.addEventListener('DOMContentLoaded', async () => {
     hydrateVersion();
     hydrateLoginForm();
+    hydratePendingBoletaEnvelopeState();
     bindLogin();
     bindLogout();
     bindSettings();
     bindNavigation();
     bindWeightedModal();
     bindCashSessionModal();
+    bindCashWithdrawalModal();
     bindPaymentModal();
     bindCloseCashModal();
     bindInvoiceClientModal();
@@ -203,6 +222,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     bindDispatchHistoryModal();
     bindDispatchCarrierModal();
     bindSaleActionModal();
+    bindConfirmModal();
+    bindUpdateRuntime();
     bindBranchSelection();
     bindSalesHistoryTabs();
     bindDispatchView();
@@ -396,6 +417,7 @@ function bindNavigation() {
     const cashButton = document.getElementById('nav-cash-btn');
     const settingsButton = document.getElementById('nav-settings-btn');
     const headerCloseCashButton = document.getElementById('header-close-cash-btn');
+    const headerCashWithdrawalButton = document.getElementById('header-cash-withdrawal-btn');
     const headerCashButton = document.getElementById('header-cash-btn');
     const headerSettingsButton = document.getElementById('header-settings-btn');
     const headerFullscreenButton = document.getElementById('header-fullscreen-btn');
@@ -408,6 +430,7 @@ function bindNavigation() {
     cashButton?.addEventListener('click', () => showAppView('cash'));
     settingsButton?.addEventListener('click', () => showAppView('settings'));
     headerCloseCashButton?.addEventListener('click', openCloseCashModal);
+    headerCashWithdrawalButton?.addEventListener('click', openCashWithdrawalModal);
     headerCashButton?.addEventListener('click', () => showAppView('cash'));
     headerSettingsButton?.addEventListener('click', () => showAppView('settings'));
 
@@ -423,11 +446,36 @@ function bindNavigation() {
 
     saleDispatchButton?.addEventListener('click', () => showAppView('dispatch'));
     saleHistoryButton?.addEventListener('click', () => {
+        if (saleHistoryClickTimer) {
+            window.clearTimeout(saleHistoryClickTimer);
+            saleHistoryClickTimer = null;
+        }
+
+        saleHistoryClickTimer = window.setTimeout(() => {
+            saleHistoryClickTimer = null;
+
+            if (isDispatchMode()) {
+                openDispatchHistoryModal();
+                return;
+            }
+
+            salesHistoryState.showAllDocuments = false;
+            renderDocumentType();
+            openSaleHistoryModal();
+        }, 220);
+    });
+    saleHistoryButton?.addEventListener('dblclick', () => {
+        if (saleHistoryClickTimer) {
+            window.clearTimeout(saleHistoryClickTimer);
+            saleHistoryClickTimer = null;
+        }
+
         if (isDispatchMode()) {
-            openDispatchHistoryModal();
             return;
         }
-        showAppView('sale');
+        salesHistoryState.showAllDocuments = true;
+        renderDocumentType();
+        openSaleHistoryModal();
     });
 }
 
@@ -436,8 +484,231 @@ function bindSettings() {
     document.getElementById('save-customer-display-settings-btn')?.addEventListener('click', saveCustomerDisplaySettings);
     document.getElementById('open-customer-display-btn')?.addEventListener('click', openCustomerDisplayWindow);
     document.getElementById('close-customer-display-btn')?.addEventListener('click', closeCustomerDisplayWindow);
-    document.getElementById('save-update-settings-btn')?.addEventListener('click', saveUpdateSettings);
-    document.getElementById('check-updates-btn')?.addEventListener('click', checkGithubUpdates);
+    document.getElementById('check-updates-btn')?.addEventListener('click', checkForAppUpdates);
+    document.getElementById('download-update-btn')?.addEventListener('click', handleUpdatePrimaryAction);
+    document.getElementById('upload-cert-btn')?.addEventListener('click', () => uploadSiiSupportFile({ kind: 'cert' }));
+    document.getElementById('save-cert-password-btn')?.addEventListener('click', saveCertificatePassword);
+    document.getElementById('save-sii-credentials-btn')?.addEventListener('click', saveSiiCredentials);
+    document.getElementById('upload-caf39-btn')?.addEventListener('click', () => uploadCafFile({ type: 39 }));
+    document.getElementById('upload-caf33-btn')?.addEventListener('click', () => uploadCafFile({ type: 33 }));
+    document.getElementById('force-boleta-envelope-btn')?.addEventListener('click', async () => {
+        if (!boletaEnvelopeState.items.length) {
+            setSiiSettingsStatus('No hay boletas pendientes para enviar.');
+            return;
+        }
+
+        try {
+            await forceSendPendingBoletaEnvelope({
+                reason: 'Envio forzado desde ajustes',
+                notifyUser: true
+            });
+        } catch (_error) {
+            // El mensaje ya se reporta dentro del flujo de envio.
+        }
+    });
+
+    bindSettingsTabs();
+}
+
+function bindUpdateRuntime() {
+    if (typeof window.cajeroAPI?.onUpdateStateChanged === 'function') {
+        updateStateCleanup?.();
+        updateStateCleanup = window.cajeroAPI.onUpdateStateChanged((state) => {
+            applyUpdateState(state);
+        });
+    }
+
+    void hydrateUpdateState();
+}
+
+async function hydrateUpdateState() {
+    try {
+        if (typeof window.cajeroAPI?.getAppVersion === 'function') {
+            const version = await window.cajeroAPI.getAppVersion();
+            const versionLabel = document.getElementById('settings-version-label');
+            if (versionLabel) {
+                versionLabel.textContent = `v${version}`;
+            }
+        }
+
+        if (typeof window.cajeroAPI?.getUpdateState === 'function') {
+            const state = await window.cajeroAPI.getUpdateState();
+            applyUpdateState(state);
+        }
+    } catch (error) {
+        console.error('Update state hydrate error:', error);
+    }
+}
+
+function getUpdatePrimaryActionLabel(state) {
+    if (!state) {
+        return 'Buscar actualización';
+    }
+
+    if (state.downloadReady) {
+        return 'Instalar ahora';
+    }
+
+    if (state.status === 'available') {
+        return 'Descargar actualización';
+    }
+
+    if (state.status === 'downloading') {
+        return 'Descargando...';
+    }
+
+    if (state.status === 'checking') {
+        return 'Buscando...';
+    }
+
+    return 'Buscar actualización';
+}
+
+function updateSettingsUpdateCard(state) {
+    const statusLabel = document.getElementById('settings-update-status');
+    const latestVersionLabel = document.getElementById('settings-latest-version-label');
+    const checkedAtLabel = document.getElementById('settings-update-checked-at');
+    const actionButton = document.getElementById('download-update-btn');
+
+    if (statusLabel) {
+        statusLabel.textContent = state?.statusMessage || 'Aun no se ha comprobado si hay actualizaciones.';
+    }
+
+    if (latestVersionLabel) {
+        latestVersionLabel.textContent = state?.latestVersion ? `v${state.latestVersion}` : 'Sin registro';
+    }
+
+    if (checkedAtLabel) {
+        checkedAtLabel.textContent = state?.checkedAt ? formatDateTime(state.checkedAt) : 'Aun sin revision';
+    }
+
+    if (actionButton) {
+        actionButton.textContent = getUpdatePrimaryActionLabel(state);
+        actionButton.disabled = state?.status === 'checking' || state?.status === 'downloading';
+    }
+}
+
+function applyUpdateState(state) {
+    latestUpdateState = state || null;
+    updateSettingsUpdateCard(latestUpdateState);
+    maybePromptForUpdate(latestUpdateState);
+}
+
+function maybePromptForUpdate(state) {
+    const status = state?.status || null;
+
+    if (!status || status === lastUpdatePromptStatus) {
+        return;
+    }
+
+    lastUpdatePromptStatus = status;
+
+    if (status === 'available') {
+        void promptToDownloadUpdate(state);
+        return;
+    }
+
+    if (status === 'downloaded') {
+        void promptToInstallUpdate(state);
+    }
+}
+
+async function promptToDownloadUpdate(state) {
+    const shouldDownload = await openConfirm({
+        title: 'Nueva actualización disponible',
+        message: `Se encontró la versión ${state?.latestVersion || 'nueva'} de Valmu Cajero. ¿Quieres descargarla ahora?`
+    });
+
+    if (!shouldDownload) {
+        return;
+    }
+
+    await downloadAppUpdate();
+}
+
+async function promptToInstallUpdate(state) {
+    const shouldInstall = await openConfirm({
+        title: 'Actualización lista',
+        message: `La versión ${state?.latestVersion || 'nueva'} ya terminó de descargarse. ¿Quieres instalarla ahora?`
+    });
+
+    if (!shouldInstall) {
+        return;
+    }
+
+    await installAppUpdate();
+}
+
+async function checkForAppUpdates() {
+    try {
+        const state = await window.cajeroAPI?.checkForUpdates?.();
+        applyUpdateState(state);
+    } catch (error) {
+        updateSettingsUpdateCard({
+            ...latestUpdateState,
+            statusMessage: error?.message || 'No se pudo buscar actualizaciones.'
+        });
+    }
+}
+
+async function downloadAppUpdate() {
+    try {
+        const state = await window.cajeroAPI?.downloadUpdate?.();
+        applyUpdateState(state);
+    } catch (error) {
+        updateSettingsUpdateCard({
+            ...latestUpdateState,
+            statusMessage: error?.message || 'No se pudo descargar la actualización.'
+        });
+    }
+}
+
+async function installAppUpdate() {
+    try {
+        await window.cajeroAPI?.installUpdate?.();
+    } catch (error) {
+        updateSettingsUpdateCard({
+            ...latestUpdateState,
+            statusMessage: error?.message || 'No se pudo instalar la actualización.'
+        });
+    }
+}
+
+async function handleUpdatePrimaryAction() {
+    if (latestUpdateState?.downloadReady) {
+        await installAppUpdate();
+        return;
+    }
+
+    if (latestUpdateState?.status === 'available') {
+        await downloadAppUpdate();
+        return;
+    }
+
+    await checkForAppUpdates();
+}
+
+function bindSettingsTabs() {
+    const navItems = document.querySelectorAll('.settings-nav-item');
+    const tabContents = document.querySelectorAll('.settings-tab-content');
+
+    navItems.forEach(item => {
+        item.addEventListener('click', () => {
+            const targetTab = item.getAttribute('data-tab');
+
+            // Update Nav Items
+            navItems.forEach(nav => nav.classList.remove('active'));
+            item.classList.add('active');
+
+            // Update Tab Contents
+            tabContents.forEach(content => {
+                content.classList.remove('active');
+                if (content.id === `settings-tab-${targetTab}`) {
+                    content.classList.add('active');
+                }
+            });
+        });
+    });
 }
 
 function bindBranchSelection() {
@@ -445,10 +716,32 @@ function bindBranchSelection() {
 }
 
 function bindDispatchView() {
-    document.getElementById('dispatch-carrier-select')?.addEventListener('change', handleDispatchCarrierChange);
-    document.getElementById('dispatch-inline-carrier-select')?.addEventListener('change', handleDispatchCarrierChange);
+    document.getElementById('dispatch-carrier-tile')?.addEventListener('click', openCarrierSelectionModal);
+    document.getElementById('dispatch-manage-customer-btn')?.addEventListener('click', openDispatchCustomerModal);
+    document.getElementById('dispatch-clear-customer-btn')?.addEventListener('click', clearDispatchCustomer);
+
+    document.querySelectorAll('.doc-chip').forEach(chip => {
+        chip.addEventListener('click', handleDispatchDocumentTypeChange);
+    });
+
+    document.getElementById('carrier-selection-close-btn')?.addEventListener('click', closeCarrierSelectionModal);
+    document.getElementById('carrier-selection-add-new-btn')?.addEventListener('click', () => {
+        closeCarrierSelectionModal();
+        openDispatchCarrierModal();
+    });
+
+    const carrierSearchInput = document.getElementById('carrier-selection-search-input');
+    carrierSearchInput?.addEventListener('input', (event) => {
+        const query = event.target.value.toLowerCase();
+        const filtered = dispatchState.carriers.filter(c =>
+            c.name.toLowerCase().includes(query) || c.plate.toLowerCase().includes(query)
+        );
+        renderCarrierSelectionList(filtered, dispatchState.selectedCarrierId);
+    });
+
     const dispatchSearchInput = document.getElementById('dispatch-search-input');
     dispatchSearchInput?.addEventListener('input', handleDispatchSearchInput);
+    dispatchSearchInput?.addEventListener('keydown', handleSearchKeydown);
     dispatchSearchInput?.addEventListener('blur', () => {
         window.setTimeout(() => renderDispatchSearchResults([]), 120);
     });
@@ -488,6 +781,17 @@ function bindDispatchCarrierModal() {
 }
 
 function bindSalesHistoryTabs() {
+    document.getElementById('sale-history-close-btn')?.addEventListener('click', () => {
+        document.getElementById('sale-history-modal-backdrop')?.classList.add('hidden');
+    });
+
+    const historyHeader = document.getElementById('sale-history-header');
+    historyHeader?.addEventListener('dblclick', async () => {
+        salesHistoryState.showAllDocuments = !salesHistoryState.showAllDocuments;
+        renderDocumentType();
+        await loadSalesHistory();
+    });
+
     document.getElementById('sales-tab-active-btn')?.addEventListener('click', () => {
         salesHistoryState.currentTab = 'active';
         renderSalesHistory();
@@ -501,12 +805,35 @@ function bindSalesHistoryTabs() {
 
 function bindPaymentModal() {
     document.getElementById('charge-main-btn')?.addEventListener('click', handleMainChargeAction);
+    document.getElementById('sale-total-card')?.addEventListener('dblclick', () => {
+        if (isDispatchMode()) {
+            return;
+        }
+
+        if (saleState.documentType === 'Vale interno') {
+            saleState.documentType = 'Boleta';
+        } else {
+            saleState.documentType = 'Vale interno';
+            saleState.customer = null;
+            renderCustomerSummary();
+        }
+
+        renderDocumentType();
+        renderCart();
+        setBackendStatus(
+            saleState.documentType === 'Vale interno'
+                ? 'Modo vale interno activado. Esta venta no se enviara al SII.'
+                : 'Modo fiscal restaurado. La venta vuelve a boleta.'
+        );
+    });
     document.getElementById('doc-boleta-toggle')?.addEventListener('click', () => {
         if (isDispatchMode()) {
             showAppView('sale');
             return;
         }
         saleState.documentType = 'Boleta';
+        saleState.customer = null;
+        renderCustomerSummary();
         renderDocumentType();
     });
     document.getElementById('doc-factura-toggle')?.addEventListener('click', () => {
@@ -542,7 +869,12 @@ function handleMainChargeAction() {
         return;
     }
     if (saleState.documentType === 'Factura') {
-        openInvoiceClientFlow();
+        if (!saleState.customer?.id) {
+            openInvoiceClientFlow();
+            return;
+        }
+
+        openPaymentModal(saleState.documentType);
     } else {
         openPaymentModal(saleState.documentType);
     }
@@ -553,6 +885,26 @@ function bindInvoiceClientModal() {
     document.getElementById('invoice-client-confirm-btn')?.addEventListener('click', confirmInvoiceClient);
     document.getElementById('invoice-client-use-existing-btn')?.addEventListener('click', useSelectedInvoiceClient);
     document.getElementById('invoice-client-search-input')?.addEventListener('input', handleInvoiceClientSearch);
+
+    // Custom list selection
+    document.getElementById('invoice-client-select-list')?.addEventListener('click', (event) => {
+        const item = event.target.closest('.selection-item');
+        if (!item) return;
+
+        // Reset previous
+        document.querySelectorAll('.selection-item').forEach(el => el.classList.remove('selected'));
+
+        // Select new
+        item.classList.add('selected');
+        selectedClientId = Number(item.dataset.id);
+    });
+
+    // New step buttons
+    document.getElementById('btn-select-search-step')?.addEventListener('click', () => showCustomerModalStepView('search'));
+    document.getElementById('btn-select-register-step')?.addEventListener('click', () => showCustomerModalStepView('register'));
+    document.getElementById('btn-back-to-selection-search')?.addEventListener('click', () => showCustomerModalStepView('selection'));
+    document.getElementById('btn-back-to-selection-register')?.addEventListener('click', () => showCustomerModalStepView('selection'));
+
     document.getElementById('invoice-client-modal-backdrop')?.addEventListener('click', (event) => {
         if (event.target.id === 'invoice-client-modal-backdrop') {
             closeInvoiceClientModal();
@@ -566,6 +918,43 @@ function bindInfoModal() {
         if (event.target.id === 'info-modal-backdrop') {
             closeInfoModal();
         }
+    });
+}
+
+let currentConfirmResolve = null;
+
+function bindConfirmModal() {
+    document.getElementById('confirm-modal-confirm-btn')?.addEventListener('click', () => {
+        if (currentConfirmResolve) {
+            currentConfirmResolve(true);
+            currentConfirmResolve = null;
+        }
+        closeConfirmModalView();
+    });
+
+    document.getElementById('confirm-modal-cancel-btn')?.addEventListener('click', () => {
+        if (currentConfirmResolve) {
+            currentConfirmResolve(false);
+            currentConfirmResolve = null;
+        }
+        closeConfirmModalView();
+    });
+
+    document.getElementById('confirm-modal-backdrop')?.addEventListener('click', (event) => {
+        if (event.target.id === 'confirm-modal-backdrop') {
+            if (currentConfirmResolve) {
+                currentConfirmResolve(false);
+                currentConfirmResolve = null;
+            }
+            closeConfirmModalView();
+        }
+    });
+}
+
+function openConfirm({ title, message }) {
+    openConfirmModalView({ title, message });
+    return new Promise((resolve) => {
+        currentConfirmResolve = resolve;
     });
 }
 
@@ -629,6 +1018,16 @@ function bindCloseCashModal() {
     document.getElementById('close-cash-modal-backdrop')?.addEventListener('click', (event) => {
         if (event.target.id === 'close-cash-modal-backdrop') {
             closeCloseCashModal();
+        }
+    });
+}
+
+function bindCashWithdrawalModal() {
+    document.getElementById('cash-withdrawal-cancel-btn')?.addEventListener('click', closeCashWithdrawalModal);
+    document.getElementById('cash-withdrawal-confirm-btn')?.addEventListener('click', confirmCashWithdrawal);
+    document.getElementById('cash-withdrawal-modal-backdrop')?.addEventListener('click', (event) => {
+        if (event.target.id === 'cash-withdrawal-modal-backdrop') {
+            closeCashWithdrawalModal();
         }
     });
 }
@@ -717,7 +1116,11 @@ function renderOperationMode() {
     }
 
     if (totalCardLabel) {
-        totalCardLabel.textContent = dispatchMode ? 'Total referencial' : 'Total a pagar';
+        totalCardLabel.textContent = dispatchMode
+            ? 'Total referencial'
+            : saleState.documentType === 'Vale interno'
+                ? 'Vale interno activo'
+                : 'Total a pagar';
     }
 
     if (chargeButton) {
@@ -726,6 +1129,23 @@ function renderOperationMode() {
 
     if (clearButton) {
         clearButton.textContent = dispatchMode ? 'Vaciar carga' : 'Vaciar venta';
+    }
+
+    if (historyButton) {
+        historyButton.classList.toggle('is-history-all', !dispatchMode && salesHistoryState.showAllDocuments);
+        historyButton.title = dispatchMode
+            ? 'Historial de despachos'
+            : salesHistoryState.showAllDocuments
+                ? 'Modo completo activo · doble click para ver fiscales e internas'
+                : 'Modo fiscal activo · doble click para ver todas las ventas del turno';
+        const historyLabel = historyButton.querySelector('span');
+        if (historyLabel) {
+            historyLabel.textContent = dispatchMode
+                ? 'Historial de ventas'
+                : salesHistoryState.showAllDocuments
+                    ? 'Historial completo'
+                    : 'Historial fiscal';
+        }
     }
 
     if (dispatchMode) {
@@ -936,7 +1356,17 @@ async function loadDispatchData() {
             dispatchState.carriers = normalizedCarriers;
         }
 
-        dispatchState.records = normalizeDispatchHistory(history, formatDateTime);
+        const allDispatches = normalizeDispatchHistory(history, formatDateTime);
+
+        if (cashSessionState.isOpen && cashSessionState.openedAt) {
+            const openedAtDate = new Date(cashSessionState.openedAt);
+            dispatchState.records = allDispatches.filter((dispatch) => {
+                const dispatchDate = new Date(dispatch.rawDate || new Date().toISOString());
+                return dispatchDate.getTime() >= (openedAtDate.getTime() - 5000);
+            });
+        } else {
+            dispatchState.records = allDispatches;
+        }
     } catch (error) {
         console.error('Dispatch data load error:', error);
         setBackendStatus(error?.message || 'No se pudieron cargar los datos de despachos.');
@@ -1264,6 +1694,130 @@ function persistDispatchReceipts() {
     setScopedSessionData(SESSION_KEYS.dispatchReceipts, getCurrentTurnScope(), dispatchReceiptState.records);
 }
 
+function hydratePendingBoletaEnvelopeState() {
+    const saved = getJsonSessionValue(SESSION_KEYS.pendingBoletaEnvelope);
+    boletaEnvelopeState.startedAt = typeof saved?.startedAt === 'string' ? saved.startedAt : null;
+    boletaEnvelopeState.items = Array.isArray(saved?.items) ? saved.items : [];
+    updateBoletaEnvelopeStatusUI();
+    schedulePendingBoletaEnvelopeFlush();
+}
+
+function persistPendingBoletaEnvelopeState() {
+    if (!boletaEnvelopeState.items.length) {
+        setJsonSessionValue(SESSION_KEYS.pendingBoletaEnvelope, null);
+    } else {
+        setJsonSessionValue(SESSION_KEYS.pendingBoletaEnvelope, {
+            startedAt: boletaEnvelopeState.startedAt,
+            items: boletaEnvelopeState.items
+        });
+    }
+
+    updateBoletaEnvelopeStatusUI();
+    schedulePendingBoletaEnvelopeFlush();
+}
+
+function getPendingBoletaEnvelopeAgeMs() {
+    if (!boletaEnvelopeState.startedAt) {
+        return 0;
+    }
+
+    const startedAt = new Date(boletaEnvelopeState.startedAt).getTime();
+    if (!Number.isFinite(startedAt)) {
+        return 0;
+    }
+
+    return Math.max(0, Date.now() - startedAt);
+}
+
+function updateBoletaEnvelopeStatusUI() {
+    const badge = document.getElementById('boleta-envelope-status');
+    const countLabel = document.getElementById('boleta-envelope-count-label');
+    const forceButton = document.getElementById('force-boleta-envelope-btn');
+    const pendingCount = boletaEnvelopeState.items.length;
+
+    if (countLabel) {
+        if (!pendingCount) {
+            countLabel.textContent = '0 boletas';
+        } else {
+            const minutes = Math.floor(getPendingBoletaEnvelopeAgeMs() / 60000);
+            countLabel.textContent = `${pendingCount} boleta${pendingCount === 1 ? '' : 's'} · ${minutes} min en cola`;
+        }
+    }
+
+    if (badge) {
+        badge.textContent = pendingCount ? 'Pendiente' : 'Sin pendientes';
+        badge.classList.toggle('is-ready', !pendingCount);
+    }
+
+    if (forceButton) {
+        forceButton.disabled = pendingCount === 0 || boletaEnvelopeSendInFlight;
+        forceButton.textContent = boletaEnvelopeSendInFlight
+            ? 'Enviando sobre...'
+            : 'Forzar envio del sobre';
+    }
+}
+
+function schedulePendingBoletaEnvelopeFlush() {
+    if (boletaEnvelopeFlushTimer) {
+        window.clearTimeout(boletaEnvelopeFlushTimer);
+        boletaEnvelopeFlushTimer = null;
+    }
+
+    if (!boletaEnvelopeState.items.length || !boletaEnvelopeState.startedAt) {
+        return;
+    }
+
+    const elapsed = getPendingBoletaEnvelopeAgeMs();
+    const remaining = Math.max(0, BOLETA_ENVELOPE_WINDOW_MS - elapsed);
+
+    boletaEnvelopeFlushTimer = window.setTimeout(() => {
+        void forceSendPendingBoletaEnvelope({
+            reason: 'Ventana automatica de 45 minutos',
+            notifyUser: false
+        });
+    }, remaining);
+}
+
+function appendBoletaToPendingEnvelope({ folio, tipoDte, xmlContent }) {
+    if (!boletaEnvelopeState.items.length) {
+        boletaEnvelopeState.startedAt = new Date().toISOString();
+    }
+
+    boletaEnvelopeState.items.push({
+        folio: Number(folio),
+        tipoDte: Number(tipoDte),
+        xmlContent: String(xmlContent || ''),
+        queuedAt: new Date().toISOString()
+    });
+    persistPendingBoletaEnvelopeState();
+}
+
+function takePendingBoletaEnvelopeSnapshot() {
+    if (!boletaEnvelopeState.items.length) {
+        return null;
+    }
+
+    const snapshot = {
+        startedAt: boletaEnvelopeState.startedAt,
+        items: boletaEnvelopeState.items.slice()
+    };
+
+    boletaEnvelopeState.startedAt = null;
+    boletaEnvelopeState.items = [];
+    persistPendingBoletaEnvelopeState();
+    return snapshot;
+}
+
+function restorePendingBoletaEnvelopeSnapshot(snapshot) {
+    if (!snapshot?.items?.length) {
+        return;
+    }
+
+    boletaEnvelopeState.startedAt = snapshot.startedAt || snapshot.items[0]?.queuedAt || new Date().toISOString();
+    boletaEnvelopeState.items = [...snapshot.items, ...boletaEnvelopeState.items];
+    persistPendingBoletaEnvelopeState();
+}
+
 function renderCashSessionState() {
     renderCashSessionView({ cashSessionState });
 }
@@ -1347,7 +1901,22 @@ async function loadSalesHistory() {
 
     try {
         const payload = await fetchSalesHistory({ apiBaseUrl, token });
-        salesHistoryState.items = normalizeSalesHistory(payload, formatDateTime);
+        const allSales = normalizeSalesHistory(payload, formatDateTime);
+        const visibleSales = salesHistoryState.showAllDocuments
+            ? allSales
+            : allSales.filter((sale) => sale.isFiscal);
+
+        // Filter by current shift if open
+        if (cashSessionState.isOpen && cashSessionState.openedAt) {
+            const openedAtDate = new Date(cashSessionState.openedAt);
+            salesHistoryState.items = visibleSales.filter(sale => {
+                const saleDate = new Date(sale.rawDate);
+                // Allow a small buffer of 5 seconds for clock drift/processing delay
+                return saleDate.getTime() >= (openedAtDate.getTime() - 5000);
+            });
+        } else {
+            salesHistoryState.items = visibleSales;
+        }
     } catch (error) {
         console.error('Sales history error:', error);
         salesHistoryState.items = [];
@@ -1366,11 +1935,50 @@ function renderSalesHistory() {
     });
 }
 
-function buildReceiptRecord({ saleId, payload, snapshot, method, customer, documentType, cart }) {
+function openSaleHistoryModal() {
+    document.getElementById('sale-history-modal-backdrop')?.classList.remove('hidden');
+    loadSalesHistory();
+}
+
+
+
+function buildReceiptRecord({
+    saleId,
+    payload,
+    snapshot,
+    method,
+    customer,
+    documentType,
+    cart,
+    dteMetadata = null,
+    referenceLabel = null,
+    paymentLabel = null,
+    customerLabel = null,
+    footerMessage = null,
+    origin = 'sale'
+}) {
     const saleDate = new Date().toISOString();
+    const folioDocumento = payload?.folioDocumento || null;
+    const tipoDte = Number(dteMetadata?.tipoDte || (documentType === 'Factura' ? 33 : documentType === 'Boleta' ? 39 : 0)) || null;
+    const fechaDte = String(dteMetadata?.fechaDte || saleDate.slice(0, 10));
+    const rutReceptor = String(
+        dteMetadata?.rutReceptor
+        || (documentType === 'Factura' ? customer?.rut : '66666666-6')
+        || ''
+    ).trim() || null;
     const normalizedCustomer = customer?.name
         ? `${customer.name}${customer.rut ? ` · ${customer.rut}` : ''}`
         : 'General';
+    const resolvedCustomerLabel = customerLabel || normalizedCustomer;
+    const resolvedPaymentLabel = paymentLabel || capitalizePaymentMethod(method);
+    const resolvedReferenceLabel = referenceLabel || `Venta #${saleId}`;
+    const resolvedFooterMessage = footerMessage || (
+        documentType === 'Vale interno'
+            ? 'Documento no fiscal.'
+            : folioDocumento
+                ? 'Documento tributario emitido y respaldado para reimpresion.'
+                : 'Documento fiscal sin folio sincronizado en esta sesion.'
+    );
     const lineItems = Array.isArray(cart)
         ? cart.map((item) => {
             const product = findProductById(catalogState.products, item.productId);
@@ -1389,14 +1997,22 @@ function buildReceiptRecord({ saleId, payload, snapshot, method, customer, docum
         : [];
     const previewLines = [
         'VALMU CAJERO',
-        documentType === 'Vale interno' ? 'COMPROBANTE INTERNO REFERENCIAL' : 'BOLETA REFERENCIAL',
-        `Venta #${saleId}`,
+        documentType === 'Vale interno'
+            ? 'COMPROBANTE INTERNO REFERENCIAL'
+            : `${documentType.toUpperCase()}${folioDocumento ? ` ELECTRONICA ${folioDocumento}` : ' ELECTRONICA'}`,
+        resolvedReferenceLabel,
         `Fecha: ${formatDateTime(saleDate)}`,
-        `Cliente: ${normalizedCustomer}`,
-        `Pago: ${capitalizePaymentMethod(method)}`,
+        `Cliente: ${resolvedCustomerLabel}`,
+        `Pago: ${resolvedPaymentLabel}`,
         '--------------------------------',
         'DETALLE'
     ];
+
+    const emisor = dteMetadata?.emisor || null;
+
+    if (folioDocumento) {
+        previewLines.splice(3, 0, `Folio: ${folioDocumento}`);
+    }
 
     lineItems.forEach((item) => {
         previewLines.push(item.name);
@@ -1411,27 +2027,49 @@ function buildReceiptRecord({ saleId, payload, snapshot, method, customer, docum
     if (payload.descuento > 0) {
         previewLines.push(`Descuento: -$${formatCurrency(payload.descuento)}`);
     }
+    if (dteMetadata?.trackId) {
+        previewLines.push(`Track ID SII: ${dteMetadata.trackId}`);
+    }
     previewLines.push(
         `IVA: $${formatCurrency(payload.iva)}`,
         `Total: $${formatCurrency(payload.total)}`,
-        documentType === 'Vale interno' ? 'Documento no fiscal.' : 'Documento referencial, pendiente integracion fiscal.'
+        resolvedFooterMessage
     );
+
+    let ted = null;
+    if (dteMetadata?.xmlContent) {
+        const match = dteMetadata.xmlContent.match(/<TED[\s\S]*?<\/TED>/);
+        if (match) ted = match[0];
+    }
 
     return {
         saleId,
+        folioDocumento,
+        tipoDte,
+        fechaDte,
+        rutReceptor,
+        customerRut: customer?.rut || null,
+        estadoSii: dteMetadata?.estadoSii || null,
+        trackId: dteMetadata?.trackId || null,
         date: saleDate,
         dateLabel: formatDateTime(saleDate),
+        referenceLabel: resolvedReferenceLabel,
         documentType,
         isFiscal: documentType !== 'Vale interno',
-        customerLabel: normalizedCustomer,
-        paymentMethod: capitalizePaymentMethod(method),
+        customerLabel: resolvedCustomerLabel,
+        paymentMethod: resolvedPaymentLabel,
         subtotal: Number(payload.subtotal || 0),
         descuento: Number(payload.descuento || 0),
         iva: Number(payload.iva || 0),
         total: Number(payload.total || 0),
         items: Number(snapshot.items || 0),
         lineItems,
-        preview: previewLines.join('\n')
+        preview: previewLines.join('\n'),
+        footerMessage: resolvedFooterMessage,
+        origin,
+        emisor: dteMetadata?.emisor || null,
+        xmlContent: dteMetadata?.xmlContent || null,
+        ted: ted
     };
 }
 
@@ -1454,6 +2092,7 @@ function buildFallbackReceiptRecord(sale) {
     }
 
     const saleDate = sale.rawDate || sale.dateLabel || new Date().toISOString();
+    const folioDocumento = sale.folioDocumento || sale.folio || null;
     const previewLines = [
         'VALMU CAJERO',
         `Venta #${sale.id}`,
@@ -1467,8 +2106,19 @@ function buildFallbackReceiptRecord(sale) {
         'La base de reimpresion completa se genera al cobrar desde esta caja.'
     ];
 
+    if (folioDocumento) {
+        previewLines.splice(2, 0, `Folio: ${folioDocumento}`);
+    }
+
     return {
         saleId: sale.id,
+        folioDocumento,
+        tipoDte: Number(sale.tipoDte || (sale.document === 'Factura' ? 33 : sale.document === 'Boleta' ? 39 : 0)) || null,
+        fechaDte: sale.fechaDte || String(saleDate).slice(0, 10),
+        rutReceptor: sale.rutReceptor || (sale.document === 'Boleta' ? '66666666-6' : sale.customerRut || null),
+        customerRut: sale.customerRut || null,
+        estadoSii: sale.estadoSii || null,
+        trackId: sale.trackId || null,
         date: saleDate,
         documentType: sale.document,
         isFiscal: Boolean(sale.isFiscal),
@@ -1494,18 +2144,51 @@ function openSaleReceiptModal(saleId) {
     }
 
     saleReceiptState.saleId = Number(saleId);
-    document.getElementById('receipt-modal-title').textContent = `Comprobante venta #${record.saleId}`;
-    document.getElementById('receipt-modal-copy').textContent = record.isFiscal
-        ? 'Resumen listo para revision o futura reimpresion fiscal.'
-        : 'Resumen de documento no fiscal listo para revision interna.';
-    document.getElementById('receipt-sale-id-label').textContent = `#${record.saleId}`;
-    document.getElementById('receipt-document-label').textContent = record.documentType;
-    document.getElementById('receipt-customer-label').textContent = record.customerLabel;
-    document.getElementById('receipt-payment-label').textContent = record.paymentMethod;
-    document.getElementById('receipt-subtotal-label').textContent = `$${formatCurrency(record.subtotal)}`;
-    document.getElementById('receipt-iva-label').textContent = `$${formatCurrency(record.iva)}`;
-    document.getElementById('receipt-total-label').textContent = `$${formatCurrency(record.total)}`;
+
+    // Visual Receipt Metadata
+    const visualFolio = document.getElementById('visual-receipt-folio');
+    if (visualFolio) {
+        visualFolio.textContent = record.folioDocumento ? `FOLIO: ${record.folioDocumento}` : (record.isFiscal ? 'S/F' : 'VALE INTERNO');
+    }
+
+    const visualDate = document.getElementById('visual-receipt-date');
+    if (visualDate) {
+        visualDate.textContent = `Fecha: ${formatDateTime(record.date || record.saleDate || new Date().toISOString())}`;
+    }
+
+    const visualCustomer = document.getElementById('visual-receipt-customer');
+    if (visualCustomer) {
+        visualCustomer.textContent = `Cliente: ${record.customerLabel}`;
+    }
+
+    const visualPayment = document.getElementById('visual-receipt-payment');
+    if (visualPayment) {
+        visualPayment.textContent = `Pago: ${record.paymentMethod}`;
+    }
     document.getElementById('receipt-preview-output').value = record.preview;
+
+    const itemsBody = document.getElementById('receipt-items-body');
+    if (itemsBody) {
+        if (record.lineItems && record.lineItems.length > 0) {
+            itemsBody.innerHTML = record.lineItems.map(item => `
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; padding: 0.2rem 0;">
+                    <div style="max-width: 70%;">
+                        <div style="font-weight: 600;">${item.name}</div>
+                        <div style="font-size: 0.75rem; color: #666;">${item.quantityLabel} x $${formatCurrency(item.unitPrice)}</div>
+                    </div>
+                    <strong>$${formatCurrency(item.subtotal)}</strong>
+                </div>
+            `).join('');
+        } else {
+            itemsBody.innerHTML = '<div style="text-align: center; color: #999; padding: 1rem;">No hay detalles de productos disponibles</div>';
+        }
+    }
+
+    const visualType = document.getElementById('visual-receipt-type');
+    if (visualType) visualType.textContent = record.documentType;
+
+    const visualTotal = document.getElementById('visual-receipt-total');
+    if (visualTotal) visualTotal.textContent = `$${formatCurrency(record.total)}`;
     const status = document.getElementById('receipt-status');
     if (status) {
         status.textContent = '';
@@ -1599,6 +2282,7 @@ function buildDispatchReceiptRecord({ dispatchId, saleId, carrier, snapshot, bra
         saleId: Number(saleId || 0),
         date: createdAt,
         dateLabel: formatDateTime(createdAt),
+        referenceLabel: `Despacho #DSP-${dispatchId}`,
         documentType: 'Vale de despacho',
         isFiscal: false,
         customerLabel: `${carrier.name} · ${carrier.plate}`,
@@ -1609,6 +2293,7 @@ function buildDispatchReceiptRecord({ dispatchId, saleId, carrier, snapshot, bra
         items: Number(snapshot.items || 0),
         lineItems,
         preview: previewLines.join('\n'),
+        footerMessage: 'Mercaderia cargada a ruta. La rendicion se revisa fuera del arqueo de caja.',
         branchName
     };
 }
@@ -1649,6 +2334,7 @@ function buildFallbackDispatchReceiptRecord(record) {
         dispatchId: String(record.id),
         saleId: 0,
         date: saleDate,
+        referenceLabel: `Despacho #DSP-${record.id}`,
         documentType: 'Vale de despacho',
         isFiscal: false,
         customerLabel: record.carrierName || 'Transportista',
@@ -1658,6 +2344,7 @@ function buildFallbackDispatchReceiptRecord(record) {
         total: Number(record.total || 0),
         items: Number(record.items || 0),
         preview: previewLines.join('\n'),
+        footerMessage: 'Mercaderia cargada a ruta. La rendicion se revisa fuera del arqueo de caja.',
         branchName: record.branchName || 'Sucursal'
     };
 }
@@ -1672,13 +2359,31 @@ function openDispatchReceiptModal(dispatchId) {
     }
 
     dispatchReceiptState.dispatchId = String(dispatchId);
-    document.getElementById('dispatch-receipt-modal-title').textContent = `Vale despacho #DSP-${record.dispatchId}`;
     document.getElementById('dispatch-receipt-id-label').textContent = `#DSP-${record.dispatchId}`;
-    document.getElementById('dispatch-receipt-carrier-label').textContent = record.customerLabel;
-    document.getElementById('dispatch-receipt-branch-label').textContent = record.branchName || 'Sucursal';
     document.getElementById('dispatch-receipt-document-label').textContent = record.documentType;
+    document.getElementById('dispatch-receipt-date-label').textContent = `Fecha: ${formatDateTime(record.date || new Date().toISOString())}`;
+    document.getElementById('dispatch-receipt-carrier-label').textContent = `Transportista: ${record.customerLabel || 'Transportista'}`;
+    document.getElementById('dispatch-receipt-branch-label').textContent = `Sucursal: ${record.branchName || 'Sucursal'}`;
     document.getElementById('dispatch-receipt-total-label').textContent = `$${formatCurrency(record.total)}`;
     document.getElementById('dispatch-receipt-preview-output').value = record.preview;
+
+    const itemsBody = document.getElementById('dispatch-receipt-items-body');
+    if (itemsBody) {
+        if (record.lineItems && record.lineItems.length > 0) {
+            itemsBody.innerHTML = record.lineItems.map(item => `
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; padding: 0.2rem 0;">
+                    <div style="max-width: 70%;">
+                        <div style="font-weight: 600;">${item.name}</div>
+                        <div style="font-size: 0.75rem; color: #666;">${item.quantityLabel} x $${formatCurrency(item.unitPrice)}</div>
+                    </div>
+                    <strong>$${formatCurrency(item.subtotal)}</strong>
+                </div>
+            `).join('');
+        } else {
+            itemsBody.innerHTML = '<div style="text-align: center; color: #999; padding: 1rem;">No hay detalles de productos disponibles</div>';
+        }
+    }
+
     const status = document.getElementById('dispatch-receipt-status');
     if (status) {
         status.textContent = '';
@@ -1928,6 +2633,7 @@ async function verificarEstadoCaja({ cashStatus = null, throwOnError = false } =
             setSessionValue('cajaAbierta', 'true');
             closeCashSessionModal();
             hydrateTurnScopedRuntimeState();
+            await syncCashWithdrawalsFromBackend();
             if (!turnHistoryState.entries.length) {
                 addTurnHistoryEntry({
                     title: 'Caja abierta',
@@ -2062,15 +2768,11 @@ function openPaymentModal(documentType = 'Boleta') {
 }
 
 function openInvoiceClientFlow() {
-    if (!cashSessionState.isOpen || !saleState.cart.length) {
+    if (!cashSessionState.isOpen) {
         return;
     }
 
-    if (saleState.customer?.id) {
-        openPaymentModal('Factura');
-        return;
-    }
-
+    selectedClientId = null;
     invoiceClientState.pendingDocumentType = 'Factura';
     setInvoiceClientStatus('');
     openInvoiceClientModalView(saleState.customer);
@@ -2130,16 +2832,25 @@ function handleInvoiceClientSearch(event) {
     renderInvoiceClientOptions(event.target?.value || '');
 }
 
+let selectedClientId = null;
+
 function useSelectedInvoiceClient() {
-    const selectedId = Number(document.getElementById('invoice-client-select')?.value || 0);
+    const selectedId = selectedClientId;
     if (!selectedId) {
-        setInvoiceClientStatus('Selecciona un cliente para continuar con la factura.');
+        setInvoiceClientStatus('Selecciona un cliente para continuar.');
         return;
     }
 
     const selectedCustomer = invoiceClientState.customers.find((customer) => customer.id === selectedId);
     if (!selectedCustomer) {
         setInvoiceClientStatus('No se pudo cargar el cliente seleccionado.');
+        return;
+    }
+
+    if (isDispatchMode()) {
+        dispatchState.selectedCustomerId = selectedCustomer.id;
+        renderDispatchSection();
+        closeInvoiceClientModal();
         return;
     }
 
@@ -2155,9 +2866,13 @@ async function confirmInvoiceClient() {
     const rut = String(document.getElementById('invoice-rut-input')?.value || '').trim();
     const name = String(document.getElementById('invoice-name-input')?.value || '').trim();
     const business = String(document.getElementById('invoice-business-input')?.value || '').trim();
+    const address = String(document.getElementById('invoice-address-input')?.value || '').trim();
+    const comuna = String(document.getElementById('invoice-comuna-input')?.value || '').trim();
+    const phone = String(document.getElementById('invoice-phone-input')?.value || '').trim();
+    const email = String(document.getElementById('invoice-email-input')?.value || '').trim();
 
-    if (!rut || !name || !business) {
-        setInvoiceClientStatus('Completa RUT, nombre y giro para emitir factura.');
+    if (!rut || !name || !business || !address || !comuna) {
+        setInvoiceClientStatus('Completa RUT, nombre, giro, direccion y comuna para factura.');
         return;
     }
 
@@ -2178,7 +2893,12 @@ async function confirmInvoiceClient() {
             customer: {
                 rut,
                 name,
-                business
+                business,
+                address,
+                comuna,
+                city: comuna, // Default city to comuna if not provided
+                phone,
+                email
             }
         });
 
@@ -2187,23 +2907,45 @@ async function confirmInvoiceClient() {
             throw new Error('La API no devolvio id_cliente.');
         }
 
-        saleState.customer = buildSaleCustomer({
+        const customerData = {
             id: Number(customerId),
             name,
-            rut
-        });
+            rut,
+            business,
+            address,
+            comuna,
+            city: comuna,
+            phone,
+            email
+        };
+
+        if (isDispatchMode()) {
+            dispatchState.selectedCustomerId = Number(customerId);
+        } else {
+            saleState.customer = buildSaleCustomer(customerData);
+        }
 
         invoiceClientState.customers.unshift({
             id: Number(customerId),
             rut,
             name,
-            business
+            business,
+            address,
+            comuna,
+            city: comuna,
+            phone,
+            email
         });
 
-        renderCustomerSummary();
-        const pendingDocumentType = invoiceClientState.pendingDocumentType || 'Factura';
-        closeInvoiceClientModal();
-        openPaymentModal(pendingDocumentType);
+        if (isDispatchMode()) {
+            renderDispatchSection();
+            closeInvoiceClientModal();
+        } else {
+            renderCustomerSummary();
+            const pendingDocType = invoiceClientState.pendingDocumentType || 'Factura';
+            closeInvoiceClientModal();
+            openPaymentModal(pendingDocType);
+        }
     } catch (error) {
         console.error('Invoice client error:', error);
         setInvoiceClientStatus(error?.message || 'No se pudo guardar el cliente.');
@@ -2311,19 +3053,59 @@ async function confirmPaymentFlow() {
     document.getElementById('payment-cancel-btn')?.setAttribute('disabled', 'disabled');
 
     try {
+        let dteResult = null;
+        if (saleState.documentType === 'Boleta' || saleState.documentType === 'Factura') {
+            setBackendStatus(`Emitiendo ${saleState.documentType.toLowerCase()} al SII...`);
+            dteResult = await generateAndSendDte({
+                cart: saleState.cart,
+                customer: saleState.customer,
+                documentType: saleState.documentType,
+                snapshot: getCartSnapshot()
+            });
+        }
+
         const result = await submitSaleToBackend({
             method,
             snapshot,
-            received
+            received,
+            folioDocumento: dteResult?.folio || null
         });
+
+        if (dteResult?.xmlContent) {
+            try {
+                await requestBackendJson({
+                    endpoint: '/dte/guardar',
+                    method: 'POST',
+                    body: {
+                        id_venta: result.saleId || null,
+                        tipoDte: Number(dteResult.tipoDte),
+                        folio: Number(dteResult.folio),
+                        xmlContenido: dteResult.xmlContent,
+                        trackId: dteResult.trackId || null,
+                        estadoSii: dteResult.estadoSii || 'GENERADO'
+                    }
+                });
+            } catch (dteSaveError) {
+                console.error('DTE backup error:', dteSaveError);
+                addAuditEntry({
+                    type: 'warning',
+                    title: 'Respaldo DTE pendiente',
+                    detail: dteSaveError?.message || 'No se pudo guardar el XML del DTE en backend.'
+                });
+            }
+        }
         const receiptRecord = buildReceiptRecord({
             saleId: result.saleId,
-            payload: result.payload,
+            payload: {
+                ...result.payload,
+                folioDocumento: dteResult?.folio || result.payload?.folioDocumento || null
+            },
             snapshot,
             method,
             customer: saleState.customer,
             documentType: saleState.documentType,
-            cart: saleState.cart
+            cart: saleState.cart,
+            dteMetadata: dteResult
         });
 
         if (method === 'efectivo') {
@@ -2351,7 +3133,7 @@ async function confirmPaymentFlow() {
         addAuditEntry({
             type: 'success',
             title: 'Venta registrada',
-            detail: `Venta #${result.saleId} registrada como ${saleState.documentType} por $${formatCurrency(snapshot.total)}.`
+            detail: `Venta #${result.saleId} registrada como ${saleState.documentType} por $${formatCurrency(snapshot.total)}.${dteResult?.folio ? ` Folio ${dteResult.folio}.` : ''}${dteResult?.trackId ? ` Track ID SII: ${dteResult.trackId}.` : ''}${dteResult?.estadoSii ? ` Estado SII: ${dteResult.estadoSii}.` : ''}${dteResult?.reparos ? ` Reparo: ${dteResult.reparos}.` : ''}${dteResult?.estadoDetalle && !dteResult?.reparos ? ` ${dteResult.estadoDetalle}` : ''}`
         });
         saveReceiptRecord(receiptRecord);
         try {
@@ -2378,7 +3160,9 @@ async function confirmPaymentFlow() {
         renderCart();
         closePaymentModal();
         await loadSalesHistory();
-        setBackendStatus(`Venta #${result.saleId} registrada correctamente.`);
+        setBackendStatus(dteResult?.folio
+            ? `Venta #${result.saleId} registrada. DTE ${dteResult.tipoDte}-${dteResult.folio} ${dteResult.estadoSii === 'PENDIENTE_SOBRE' ? 'agregado al sobre pendiente de envio' : dteResult.estadoSii === 'REPARO' ? `con reparo${dteResult.reparos ? `: ${dteResult.reparos}` : ''}` : dteResult.estadoSii === 'ACEPTADO' ? 'aceptado' : 'emitido correctamente'}.`
+            : `Venta #${result.saleId} registrada correctamente.`);
     } catch (error) {
         console.error('Sale submit error:', error);
         setBackendStatus(error?.message || 'No se pudo registrar la venta.');
@@ -2410,13 +3194,14 @@ function buildSalePayload(method, received) {
         customer: saleState.customer,
         method,
         received,
+        folioDocumento: null,
         documentTypeIds: DOCUMENT_TYPE_IDS,
         paymentMethodMap: PAYMENT_METHOD_MAP,
         getPricingForProduct
     });
 }
 
-async function submitSaleToBackend({ method, received }) {
+async function submitSaleToBackend({ method, received, folioDocumento = null }) {
     const apiBaseUrl = normalizeApiBaseUrl(getApiBaseUrl());
     const token = getAuthToken();
 
@@ -2424,7 +3209,18 @@ async function submitSaleToBackend({ method, received }) {
         throw new Error('No hay conexion activa con la API.');
     }
 
-    const payload = buildSalePayload(method, received);
+    const payload = buildSalePayloadDomain({
+        cart: saleState.cart,
+        products: catalogState.products,
+        documentType: saleState.documentType,
+        customer: saleState.customer,
+        method,
+        received,
+        folioDocumento,
+        documentTypeIds: DOCUMENT_TYPE_IDS,
+        paymentMethodMap: PAYMENT_METHOD_MAP,
+        getPricingForProduct
+    });
     const result = await submitSaleRequest({ apiBaseUrl, token, payload });
 
     return {
@@ -2444,6 +3240,53 @@ function setBackendStatus(message) {
     setBackendStatusView(message);
 }
 
+function setCashWithdrawalStatus(message = '') {
+    const status = document.getElementById('cash-withdrawal-status');
+    if (!status) {
+        return;
+    }
+
+    status.textContent = message;
+    status.classList.toggle('hidden', !message);
+}
+
+function openCashWithdrawalModal() {
+    if (!cashSessionState.isOpen) {
+        setBackendStatus('Debes tener una caja abierta para registrar un retiro.');
+        return;
+    }
+
+    const availableCash = getExpectedCashAmount();
+    const amountInput = document.getElementById('cash-withdrawal-amount-input');
+    const reasonInput = document.getElementById('cash-withdrawal-reason-input');
+    const availableLabel = document.getElementById('cash-withdrawal-available-label');
+    const totalLabel = document.getElementById('cash-withdrawal-total-label');
+
+    if (availableLabel) {
+        availableLabel.textContent = `$${formatCurrency(availableCash)}`;
+    }
+
+    if (totalLabel) {
+        totalLabel.textContent = `$${formatCurrency(turnSummaryState.totalWithdrawals || 0)}`;
+    }
+
+    if (amountInput) {
+        amountInput.value = '';
+    }
+
+    if (reasonInput) {
+        reasonInput.value = '';
+    }
+
+    setCashWithdrawalStatus('');
+    document.getElementById('cash-withdrawal-modal-backdrop')?.classList.remove('hidden');
+    amountInput?.focus();
+}
+
+function closeCashWithdrawalModal() {
+    document.getElementById('cash-withdrawal-modal-backdrop')?.classList.add('hidden');
+}
+
 function openCloseCashModal() {
     if (!cashSessionState.isOpen) {
         return;
@@ -2455,6 +3298,7 @@ function openCloseCashModal() {
         totalCard: turnSummaryState.totalCard,
         totalTransfer: turnSummaryState.totalTransfer,
         totalInternal: turnSummaryState.totalInternal,
+        totalWithdrawals: turnSummaryState.totalWithdrawals,
         totalSales: getTurnSalesTotal(),
         expectedCash: getExpectedCashAmount()
     });
@@ -2475,19 +3319,186 @@ function renderCloseCashDifference() {
     });
 }
 
+async function syncCashWithdrawalsFromBackend() {
+    const token = getAuthToken();
+    const apiBaseUrl = normalizeApiBaseUrl(getApiBaseUrl());
+
+    if (!cashSessionState.isOpen || !token || !apiBaseUrl) {
+        return;
+    }
+
+    try {
+        const payload = await fetchCashWithdrawals({ apiBaseUrl, token });
+        turnSummaryState.totalWithdrawals = Number(payload?.totalRetirado || 0);
+        persistTurnSummary();
+    } catch (error) {
+        console.warn('Cash withdrawals sync warning:', error);
+    }
+}
+
+async function printCashWithdrawalReceipt({ amount, reason, beforeCash, afterCash, withdrawalId }) {
+    const printerName = getSessionValue(SESSION_KEYS.printerName);
+    const printerPaper = getSessionValue(SESSION_KEYS.printerPaper) || '80mm';
+    const userObject = getCurrentUser();
+    const cashierName = userObject?.nombreCompleto || userObject?.nombreUsuario || 'Cajero';
+    const now = new Date();
+
+    if (typeof window.cajeroAPI?.printReceipt !== 'function') {
+        return;
+    }
+
+    const preview = `
+RETIRO DE CAJA - VALMU POS
+================================
+Retiro: ${withdrawalId ? `#${withdrawalId}` : 'SIN ID'}
+Fecha:  ${now.toLocaleDateString()}
+Hora:   ${now.toLocaleTimeString()}
+Cajero: ${cashierName}
+Turno:  ${cashSessionState.turnId || '-'}
+================================
+Disponible antes: $${formatCurrency(beforeCash)}
+Monto retirado:   $${formatCurrency(amount)}
+Disponible luego: $${formatCurrency(afterCash)}
+--------------------------------
+Motivo:
+${reason}
+================================
+Firma: ________________________
+    `.trim();
+
+    await window.cajeroAPI.printReceipt({
+        printerName,
+        printerPaper,
+        receipt: {
+            preview,
+            documentType: 'RETIRO DE CAJA',
+            saleId: `R-${withdrawalId || Date.now()}`
+        }
+    });
+}
+
+async function confirmCashWithdrawal() {
+    if (!cashSessionState.isOpen) {
+        closeCashWithdrawalModal();
+        return;
+    }
+
+    const amountInput = document.getElementById('cash-withdrawal-amount-input');
+    const reasonInput = document.getElementById('cash-withdrawal-reason-input');
+    const confirmButton = document.getElementById('cash-withdrawal-confirm-btn');
+    const amount = Number(amountInput?.value || 0);
+    const reason = String(reasonInput?.value || '').trim();
+    const availableCash = getExpectedCashAmount();
+    const token = getAuthToken();
+    const apiBaseUrl = normalizeApiBaseUrl(getApiBaseUrl());
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+        setCashWithdrawalStatus('Ingresa un monto valido para el retiro.');
+        amountInput?.focus();
+        return;
+    }
+
+    if (!reason) {
+        setCashWithdrawalStatus('Debes indicar el motivo del retiro.');
+        reasonInput?.focus();
+        return;
+    }
+
+    if (amount > availableCash) {
+        setCashWithdrawalStatus(`No puedes retirar mas de lo disponible en caja ($${formatCurrency(availableCash)}).`);
+        amountInput?.focus();
+        return;
+    }
+
+    if (!token || !apiBaseUrl) {
+        setCashWithdrawalStatus('No hay conexion activa para registrar el retiro.');
+        return;
+    }
+
+    if (confirmButton) {
+        confirmButton.disabled = true;
+        confirmButton.textContent = 'Registrando...';
+    }
+
+    try {
+        const result = await registerCashWithdrawal({
+            apiBaseUrl,
+            token,
+            amount,
+            reason
+        });
+        const beforeCash = availableCash;
+        turnSummaryState.totalWithdrawals += amount;
+        persistTurnSummary();
+        renderTurnSummary();
+        const afterCash = getExpectedCashAmount();
+
+        addTurnHistoryEntry({
+            title: 'Retiro de caja',
+            detail: `$${formatCurrency(amount)} retirados. Motivo: ${reason}`
+        });
+        addAuditEntry({
+            type: 'warning',
+            title: 'Retiro registrado',
+            detail: `Retiro ${result?.id_retiro ? `#${result.id_retiro} ` : ''}por $${formatCurrency(amount)}. Motivo: ${reason}`
+        });
+
+        try {
+            await printCashWithdrawalReceipt({
+                amount,
+                reason,
+                beforeCash,
+                afterCash,
+                withdrawalId: result?.id_retiro || null
+            });
+        } catch (printError) {
+            console.error('Cash withdrawal print error:', printError);
+            addAuditEntry({
+                type: 'warning',
+                title: 'Ticket de retiro pendiente',
+                detail: printError?.message || 'No se pudo imprimir el ticket del retiro.'
+            });
+        }
+
+        closeCashWithdrawalModal();
+        setBackendStatus(`Retiro por $${formatCurrency(amount)} registrado correctamente.`);
+    } catch (error) {
+        console.error('Cash withdrawal error:', error);
+        setCashWithdrawalStatus(error?.message || 'No se pudo registrar el retiro.');
+        addAuditEntry({
+            type: 'error',
+            title: 'Error en retiro de caja',
+            detail: error?.message || 'No se pudo registrar el retiro.'
+        });
+    } finally {
+        if (confirmButton) {
+            confirmButton.disabled = false;
+            confirmButton.textContent = 'Registrar retiro';
+        }
+    }
+}
+
 async function confirmCloseCashSession() {
     if (!cashSessionState.isOpen) {
         closeCloseCashModal();
         return;
     }
 
-    const apiBaseUrl = normalizeApiBaseUrl(getApiBaseUrl());
-    const token = getAuthToken();
     const confirmButton = document.getElementById('close-cash-confirm-btn');
     const countedCash = Number(document.getElementById('close-counted-cash-input')?.value || 0);
-    const expectedCash = getExpectedCashAmount();
     const countedCard = Number(document.getElementById('close-counted-card-input')?.value || 0);
     const countedTransfer = Number(document.getElementById('close-counted-transfer-input')?.value || 0);
+
+    // Confirmación para evitar cierres accidentales
+    const isConfirmed = await openConfirm({
+        title: 'Cerrar Turno',
+        message: '¿Estás seguro que deseas cerrar el turno y finalizar la jornada? Esta acción no se puede deshacer.'
+    });
+    if (!isConfirmed) return;
+
+    const apiBaseUrl = normalizeApiBaseUrl(getApiBaseUrl());
+    const token = getAuthToken();
+    const expectedCash = getExpectedCashAmount();
     const cashDifference = countedCash - expectedCash;
     const cardDifference = countedCard - Number(turnSummaryState.totalCard || 0);
     const transferDifference = countedTransfer - Number(turnSummaryState.totalTransfer || 0);
@@ -2496,6 +3507,25 @@ async function confirmCloseCashSession() {
     if (!apiBaseUrl || !token) {
         setBackendStatus('No hay conexion activa para cerrar la caja.');
         return;
+    }
+
+    if (boletaEnvelopeState.items.length) {
+        const shouldForceSend = await openConfirm({
+            title: 'Boletas pendientes',
+            message: `Hay ${boletaEnvelopeState.items.length} boleta${boletaEnvelopeState.items.length === 1 ? '' : 's'} pendiente${boletaEnvelopeState.items.length === 1 ? '' : 's'} de envio en el sobre SII. Quieres forzar el envio antes de cerrar caja?`
+        });
+
+        if (shouldForceSend) {
+            try {
+                await forceSendPendingBoletaEnvelope({
+                    reason: 'Envio forzado antes del cierre de caja',
+                    notifyUser: false
+                });
+            } catch (error) {
+                setBackendStatus(error?.message || 'No se pudo enviar el sobre de boletas pendiente.');
+                return;
+            }
+        }
     }
 
     if (confirmButton) {
@@ -2516,13 +3546,39 @@ async function confirmCloseCashSession() {
 
         addTurnHistoryEntry({
             title: 'Turno cerrado',
-            detail: `Efectivo contado $${formatCurrency(countedCash)} (${formatDifferenceLabel(cashDifference)}), tarjeta $${formatCurrency(countedCard)} (${formatDifferenceLabel(cardDifference)}), transferencias $${formatCurrency(countedTransfer)} (${formatDifferenceLabel(transferDifference)}). Diferencia total ${formatDifferenceLabel(totalDifference)}.`
+            detail: `Efectivo contado $${formatCurrency(countedCash)} (${formatDifferenceLabel(cashDifference)}), tarjeta $${formatCurrency(countedCard)} (${formatDifferenceLabel(cardDifference)}), transferencias $${formatCurrency(countedTransfer)} (${formatDifferenceLabel(transferDifference)}), retiros $${formatCurrency(turnSummaryState.totalWithdrawals || 0)}. Diferencia total ${formatDifferenceLabel(totalDifference)}.`
         });
         addAuditEntry({
             type: totalDifference === 0 ? 'success' : 'warning',
             title: 'Caja cerrada',
             detail: `Turno cerrado con diferencia total ${formatDifferenceLabel(totalDifference)}.`
         });
+
+        // Impresión automática del resumen de cierre
+        try {
+            await printTurnSummaryReceipt({
+                totals: {
+                    cash: countedCash,
+                    card: countedCard,
+                    transfer: countedTransfer
+                },
+                expected: {
+                    cash: expectedCash,
+                    card: Number(turnSummaryState.totalCard || 0),
+                    transfer: Number(turnSummaryState.totalTransfer || 0),
+                    internal: Number(turnSummaryState.totalInternal || 0),
+                    withdrawals: Number(turnSummaryState.totalWithdrawals || 0)
+                },
+                differences: {
+                    cash: cashDifference,
+                    card: cardDifference,
+                    transfer: transferDifference,
+                    total: totalDifference
+                }
+            });
+        } catch (printError) {
+            console.error('Error al imprimir resumen:', printError);
+        }
 
         closeCloseCashModal();
         resetCashierRuntimeState();
@@ -2545,6 +3601,62 @@ async function confirmCloseCashSession() {
     }
 }
 
+async function printTurnSummaryReceipt({ totals, expected, differences }) {
+    const printerName = getSessionValue(SESSION_KEYS.printerName);
+    const printerPaper = getSessionValue(SESSION_KEYS.printerPaper) || '80mm';
+    const userObject = getCurrentUser();
+    const cashierName = userObject?.nombreCompleto || userObject?.nombreUsuario || 'Cajero';
+    const now = new Date();
+
+    if (typeof window.cajeroAPI?.printReceipt !== 'function') return;
+
+    const summaryText = `
+CIERRE DE CAJA - VALMU POS
+================================
+Fecha:  ${now.toLocaleDateString()}
+Hora:   ${now.toLocaleTimeString()}
+Cajero: ${cashierName}
+================================
+
+RESUMEN ESPERADO:
+Fondo Inicial: $${formatCurrency(cashSessionState.openingAmount)}
+Efectivo:      $${formatCurrency(expected.cash - cashSessionState.openingAmount)}
+Tarjeta:       $${formatCurrency(expected.card)}
+Transferencia: $${formatCurrency(expected.transfer)}
+Retiros:       $${formatCurrency(expected.withdrawals || 0)}
+Vale Interno:  $${formatCurrency(expected.internal)}
+--------------------------------
+TOTAL ESPERADO: $${formatCurrency(expected.cash + expected.card + expected.transfer)}
+
+DETALLE CONTADO:
+Efectivo:      $${formatCurrency(totals.cash)}
+Vouchers:      $${formatCurrency(totals.card)}
+Conf. Transf:  $${formatCurrency(totals.transfer)}
+--------------------------------
+TOTAL CONTADO:  $${formatCurrency(totals.cash + totals.card + totals.transfer)}
+
+DIFERENCIAS:
+Efectivo:      ${formatDifferenceLabel(differences.cash)}
+Tarjeta:       ${formatDifferenceLabel(differences.card)}
+Transferencia: ${formatDifferenceLabel(differences.transfer)}
+================================
+DIFERENCIA TOTAL: ${formatDifferenceLabel(differences.total)}
+================================
+
+Firma Cajero: __________________
+    `.trim();
+
+    await window.cajeroAPI.printReceipt({
+        printerName,
+        printerPaper,
+        receipt: {
+            preview: summaryText,
+            documentType: 'CIERRE DE CAJA',
+            saleId: `C-${Date.now()}`
+        }
+    });
+}
+
 function setLoginStatus(message) {
     setLoginStatusView(message);
 }
@@ -2557,7 +3669,6 @@ function hydrateSettingsForm() {
     const printerSelect = document.getElementById('printer-select');
     const printerPaperSelect = document.getElementById('printer-paper-select');
     const customerDisplayEnabledInput = document.getElementById('customer-display-enabled-input');
-    const releaseRepoInput = document.getElementById('release-repo-input');
 
     if (printerSelect) {
         printerSelect.value = settings.printerName;
@@ -2571,11 +3682,907 @@ function hydrateSettingsForm() {
         customerDisplayEnabledInput.checked = settings.customerDisplayEnabled;
     }
 
-    if (releaseRepoInput) {
-        releaseRepoInput.value = settings.releaseRepo;
+    updateCustomerDisplayStatusLabel(settings.customerDisplayEnabled ? 'Activacion automatica lista' : 'Desactivada');
+    void hydrateSiiSettingsCard();
+    void hydrateUpdateState();
+}
+
+const DEFAULT_SII_EMISOR = {
+    rutEmisor: '77292701-0',
+    rutEnvia: '17445030-7',
+    razonSocial: 'DISTRIBUIDORA Y COMERCIAL EDUARDO VALDEBENITO MORALES SPA',
+    direccion: 'YOBILO LT 1 MZ 1 1001 FRANK MARDONES NULL CORONEL',
+    comuna: 'CORONEL',
+    ciudad: 'CORONEL',
+    giro: 'COMERCIALIZACION Y DISTRIBUCION POR MAYOR Y MENOR DE PRODUCTOS VARIOS',
+    acteco: 463019,
+    email: 'contacto@valmu.cl',
+    resolucionNumero: 80,
+    resolucionFecha: '2014-08-22',
+    indicadorServicio: '3',
+    siiAmbiente: '2'
+};
+
+function setSiiSettingsStatus(message) {
+    const statusLabel = document.getElementById('sii-settings-status');
+    if (statusLabel) {
+        statusLabel.textContent = message;
+    }
+}
+
+function updateSiiCredentialsStatus(config = {}) {
+    const badge = document.getElementById('sii-credentials-status');
+    if (!badge) {
+        return;
     }
 
-    updateCustomerDisplayStatusLabel(settings.customerDisplayEnabled ? 'Activacion automatica lista' : 'Desactivada');
+    const isReady = Boolean(
+        String(config.apiKey || '').trim()
+        && String(config.rutEmisor || '').trim()
+        && String(config.rutEnvia || '').trim()
+    );
+
+    badge.textContent = isReady ? 'Listo' : 'Pendiente';
+    badge.classList.toggle('is-ready', isReady);
+}
+
+async function hydrateSiiSettingsCard() {
+    if (typeof window.cajeroAPI?.getSiiConfig !== 'function') {
+        setSiiSettingsStatus('Configuracion SII no disponible en este equipo.');
+        return;
+    }
+
+    try {
+        const config = await window.cajeroAPI.getSiiConfig();
+        updateSupportFileCard({
+            prefix: 'cert',
+            filename: config?.certFilename || ''
+        });
+        updateCafCard({
+            type: 39,
+            filename: config?.caf_39_filename || ''
+        });
+        updateCafCard({
+            type: 33,
+            filename: config?.caf_33_filename || ''
+        });
+        const certPasswordInput = document.getElementById('cert-password-input');
+        if (certPasswordInput) {
+            certPasswordInput.value = config?.certPassword || '';
+        }
+        const apiKeyInput = document.getElementById('sii-api-key-input');
+        if (apiKeyInput) {
+            apiKeyInput.value = config?.apiKey || '';
+        }
+        const rutEmisorInput = document.getElementById('sii-rut-emisor-input');
+        if (rutEmisorInput) {
+            rutEmisorInput.value = config?.rutEmisor || DEFAULT_SII_EMISOR.rutEmisor;
+        }
+        const rutEnviaInput = document.getElementById('sii-rut-envia-input');
+        if (rutEnviaInput) {
+            rutEnviaInput.value = config?.rutEnvia || DEFAULT_SII_EMISOR.rutEnvia;
+        }
+
+        updateSiiCredentialsStatus(config);
+        setSiiSettingsStatus('Archivos SII listos para boleta y factura.');
+    } catch (error) {
+        console.error('SII settings hydrate error:', error);
+        setSiiSettingsStatus(error?.message || 'No se pudo leer la configuracion SII local.');
+    }
+}
+
+function updateSupportFileCard({ prefix, filename }) {
+    const safeFilename = String(filename || '').trim();
+    const filenameLabel = document.getElementById(`${prefix}-filename`);
+    const statusBadge = document.getElementById(`${prefix}-status`);
+
+    if (filenameLabel) {
+        filenameLabel.textContent = safeFilename || 'No cargado';
+    }
+
+    if (statusBadge) {
+        statusBadge.textContent = safeFilename ? 'Instalado' : 'Sin archivo';
+        statusBadge.classList.toggle('is-ready', Boolean(safeFilename));
+    }
+}
+
+function updateCafCard({ type, filename }) {
+    updateSupportFileCard({
+        prefix: `caf${type}`,
+        filename
+    });
+}
+
+async function saveCertificatePassword() {
+    if (typeof window.cajeroAPI?.getSiiConfig !== 'function' || typeof window.cajeroAPI?.saveSiiConfig !== 'function') {
+        setSiiSettingsStatus('No se pudo guardar la contrasena del certificado.');
+        return;
+    }
+
+    try {
+        const currentConfig = await window.cajeroAPI.getSiiConfig();
+        const nextConfig = {
+            ...(currentConfig || {}),
+            certPassword: String(document.getElementById('cert-password-input')?.value || '').trim()
+        };
+
+        const saveResult = await window.cajeroAPI.saveSiiConfig(nextConfig);
+        if (!saveResult?.success) {
+            throw new Error(saveResult?.error || 'No se pudo guardar la contrasena.');
+        }
+
+        setSiiSettingsStatus('Contrasena del certificado guardada.');
+    } catch (error) {
+        console.error('Certificate password save error:', error);
+        setSiiSettingsStatus(error?.message || 'No se pudo guardar la contrasena del certificado.');
+    }
+}
+
+async function saveSiiCredentials() {
+    if (typeof window.cajeroAPI?.getSiiConfig !== 'function' || typeof window.cajeroAPI?.saveSiiConfig !== 'function') {
+        setSiiSettingsStatus('No se pudieron guardar las credenciales SII.');
+        return;
+    }
+
+    try {
+        const currentConfig = await window.cajeroAPI.getSiiConfig();
+        const nextConfig = {
+            ...(currentConfig || {}),
+            apiKey: String(document.getElementById('sii-api-key-input')?.value || '').trim(),
+            rutEmisor: String(document.getElementById('sii-rut-emisor-input')?.value || '').trim() || DEFAULT_SII_EMISOR.rutEmisor,
+            rutEnvia: String(document.getElementById('sii-rut-envia-input')?.value || '').trim() || DEFAULT_SII_EMISOR.rutEnvia,
+            numeroResolucion: DEFAULT_SII_EMISOR.resolucionNumero,
+            fechaResolucion: DEFAULT_SII_EMISOR.resolucionFecha,
+            indicadorServicio: DEFAULT_SII_EMISOR.indicadorServicio,
+            siiAmbiente: DEFAULT_SII_EMISOR.siiAmbiente
+        };
+
+        const saveResult = await window.cajeroAPI.saveSiiConfig(nextConfig);
+        if (!saveResult?.success) {
+            throw new Error(saveResult?.error || 'No se pudieron guardar las credenciales.');
+        }
+
+        updateSiiCredentialsStatus(nextConfig);
+        setSiiSettingsStatus('Credenciales SII guardadas.');
+    } catch (error) {
+        console.error('SII credentials save error:', error);
+        setSiiSettingsStatus(error?.message || 'No se pudieron guardar las credenciales SII.');
+    }
+}
+
+async function uploadSiiSupportFile({ kind, type = null }) {
+    if (typeof window.cajeroAPI?.uploadSiiFile !== 'function' || typeof window.cajeroAPI?.getSiiConfig !== 'function') {
+        setSiiSettingsStatus('La carga SII no esta disponible en este equipo.');
+        return;
+    }
+
+    const isCert = kind === 'cert';
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = isCert ? '.p12,.pfx' : '.xml';
+
+    input.onchange = async (event) => {
+        const file = event.target.files?.[0];
+        if (!file) {
+            return;
+        }
+
+        const buttonId = isCert ? 'upload-cert-btn' : `upload-caf${type}-btn`;
+        const button = document.getElementById(buttonId);
+        const originalText = button?.textContent || '';
+        if (button) {
+            button.disabled = true;
+            button.textContent = 'Cargando...';
+        }
+
+        try {
+            const base64Data = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(reader.error || new Error('No se pudo leer el archivo.'));
+                reader.readAsDataURL(file);
+            });
+
+            const filename = isCert ? 'certificado.pfx' : `CAF_${type}.xml`;
+            const uploadResult = await window.cajeroAPI.uploadSiiFile({ filename, base64Data });
+            if (!uploadResult?.success) {
+                throw new Error(uploadResult?.error || 'No se pudo guardar el archivo SII.');
+            }
+
+            const currentConfig = await window.cajeroAPI.getSiiConfig();
+            const nextConfig = { ...(currentConfig || {}) };
+
+            if (isCert) {
+                nextConfig.certFilename = filename;
+            } else {
+                nextConfig[`caf_${type}_filename`] = filename;
+            }
+
+            const saveResult = await window.cajeroAPI.saveSiiConfig(nextConfig);
+            if (!saveResult?.success) {
+                throw new Error(saveResult?.error || 'No se pudo actualizar la configuracion SII.');
+            }
+
+            if (isCert) {
+                updateSupportFileCard({ prefix: 'cert', filename });
+                setSiiSettingsStatus('Certificado cargado correctamente.');
+            } else {
+                updateCafCard({ type, filename });
+                setSiiSettingsStatus(`CAF ${type} cargado correctamente.`);
+            }
+        } catch (error) {
+            console.error(`SII ${isCert ? 'certificate' : `CAF ${type}`} upload error:`, error);
+            setSiiSettingsStatus(error?.message || 'No se pudo cargar el archivo SII.');
+        } finally {
+            if (button) {
+                button.disabled = false;
+                button.textContent = originalText;
+            }
+        }
+    };
+
+    input.click();
+}
+
+async function uploadCafFile({ type }) {
+    return uploadSiiSupportFile({ kind: 'caf', type });
+}
+
+function normalizeSiiString(str) {
+    if (!str) return '';
+
+    return String(str)
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toUpperCase()
+        .replace(/[^A-Z0-9\s\.\,\-]/g, '')
+        .trim();
+}
+
+function b64toBlob(base64, type = 'application/octet-stream') {
+    const raw = window.atob(base64);
+    const bytes = new Uint8Array(raw.length);
+    for (let index = 0; index < raw.length; index += 1) {
+        bytes[index] = raw.charCodeAt(index);
+    }
+    return new Blob([bytes], { type });
+}
+
+async function parseJsonResponse(response) {
+    const rawText = await response.text();
+    if (!rawText) {
+        return {};
+    }
+
+    try {
+        return JSON.parse(rawText);
+    } catch (_error) {
+        return { message: rawText };
+    }
+}
+
+async function requestBackendJson({ endpoint, method = 'GET', body, token = getAuthToken() }) {
+    const apiBaseUrl = normalizeApiBaseUrl(getApiBaseUrl());
+    if (!apiBaseUrl || !token) {
+        throw new Error('No hay conexion activa con la API.');
+    }
+
+    const response = await fetch(`${apiBaseUrl}${endpoint}`, {
+        method,
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+        },
+        body: body ? JSON.stringify(body) : undefined
+    });
+
+    const payload = await parseJsonResponse(response);
+    if (!response.ok) {
+        throw new Error(payload?.error || payload?.message || `Error ${response.status} en ${endpoint}`);
+    }
+
+    return payload;
+}
+
+function resolveTipoDteFromControlRow(row = {}) {
+    const label = String(row.tipoDoc || row.tipo_doc || row.nombre || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
+    const idTipoDoc = Number(row.id_tipoDoc || row.idTipoDoc || row.id || 0);
+
+    if (label.includes('boleta') || idTipoDoc === 1) return 39;
+    if (label.includes('factura') || idTipoDoc === 2) return 33;
+    return null;
+}
+
+async function requestNextDteFolio(tipoDte) {
+    const controls = await requestBackendJson({ endpoint: '/folios' });
+    const control = (Array.isArray(controls) ? controls : []).find((row) => Number(resolveTipoDteFromControlRow(row)) === Number(tipoDte));
+
+    if (!control) {
+        throw new Error(`No existe configuracion de CONTROL_FOLIO para DTE ${tipoDte}.`);
+    }
+
+    const payload = await requestBackendJson({
+        endpoint: '/folios/solicitar',
+        method: 'POST',
+        body: {
+            id_tipoDoc: Number(control.id_tipoDoc || control.idTipoDoc || control.id || 0)
+        }
+    });
+
+    return Number(payload?.folio || 0);
+}
+
+async function getSimpleApiToken(apiKey) {
+    const response = await fetch('https://api.simpleapi.cl/api/auth/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apikey: apiKey })
+    });
+
+    if (!response.ok) {
+        throw new Error(`No se pudo obtener token SimpleAPI (${response.status}).`);
+    }
+
+    return response.text();
+}
+
+async function sendBoletaEnvelopeBatch({ batch, config, reason = 'manual' }) {
+    if (!batch?.items?.length) {
+        return null;
+    }
+
+    if (!config.apiKey) throw new Error('Falta API Key en Ajustes > SII.');
+    if (!config.certFilename) throw new Error('Falta certificado digital en Ajustes > SII.');
+    if (!config.certPassword) throw new Error('Falta contrasena del certificado en Ajustes > SII.');
+    if (!config.rutEmisor) throw new Error('Falta RUT emisor en Ajustes > SII.');
+    if (!config.rutEnvia) throw new Error('Falta RUT firmante en Ajustes > SII.');
+
+    const certBase64 = await window.cajeroAPI.readLocalCert(config.certFilename || 'certificado.pfx');
+    if (!certBase64) throw new Error('No se pudo leer el certificado digital local.');
+
+    const certBlob = b64toBlob(certBase64, 'application/x-pkcs12');
+    const token = await getSimpleApiToken(config.apiKey);
+    const rutEnvia = config.rutEnvia || config.rutEmisor;
+
+    const wrapPayload = {
+        Certificado: {
+            Rut: rutEnvia,
+            Password: config.certPassword
+        },
+        Caratula: {
+            RutEnvia: rutEnvia,
+            RutEmisor: config.rutEmisor,
+            RutReceptor: '60803000-K',
+            NumeroResolucion: Number(config.resolucionNumero || config.numeroResolucion || DEFAULT_SII_EMISOR.resolucionNumero),
+            FechaResolucion: config.resolucionFecha || config.fechaResolucion || DEFAULT_SII_EMISOR.resolucionFecha
+        }
+    };
+
+    const wrapFormData = new FormData();
+    wrapFormData.append('input', JSON.stringify(wrapPayload));
+    wrapFormData.append('files', certBlob, 'certificado.pfx');
+    batch.items.forEach((item) => {
+        wrapFormData.append(
+            'files',
+            new Blob([item.xmlContent], { type: 'text/xml' }),
+            `DTE_39_Folio_${item.folio}.xml`
+        );
+    });
+
+    const wrapResponse = await fetch('https://api.simpleapi.cl/api/v1/envio/generar', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: wrapFormData
+    });
+
+    const envelopeXml = await wrapResponse.text();
+    if (!wrapResponse.ok) {
+        throw new Error(`Error generando sobre de boletas: ${envelopeXml}`);
+    }
+
+    await window.cajeroAPI.saveXml({
+        filename: `ENVIO_BOLETAS_${Date.now()}.xml`,
+        data: envelopeXml,
+        folder: 'boletas'
+    });
+
+    const sendFormData = new FormData();
+    sendFormData.append('input', JSON.stringify({
+        Tipo: 2,
+        Ambiente: config.siiAmbiente === '2' ? 1 : 0,
+        Certificado: {
+            Rut: rutEnvia,
+            Password: config.certPassword
+        }
+    }));
+    sendFormData.append('files', certBlob, 'certificado.pfx');
+    sendFormData.append('files', new Blob([envelopeXml], { type: 'text/xml' }), 'envio.xml');
+
+    const sendResponse = await fetch('https://api.simpleapi.cl/api/v1/envio/enviar', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: sendFormData
+    });
+
+    const sendText = await sendResponse.text();
+    if (!sendResponse.ok) {
+        throw new Error(`Error enviando sobre de boletas: ${sendText}`);
+    }
+
+    let sendPayload = null;
+    try {
+        sendPayload = JSON.parse(sendText);
+    } catch (_error) {
+        sendPayload = null;
+    }
+
+    addAuditEntry({
+        type: 'success',
+        title: 'Sobre de boletas enviado',
+        detail: `${batch.items.length} boleta${batch.items.length === 1 ? '' : 's'} enviadas al SII${sendPayload?.TrackId || sendPayload?.trackId ? ` · Track ID ${sendPayload.TrackId || sendPayload.trackId}` : ''}${reason ? ` · ${reason}` : ''}.`
+    });
+
+    return sendPayload;
+}
+
+async function forceSendPendingBoletaEnvelope({ reason = 'manual', notifyUser = true } = {}) {
+    if (boletaEnvelopeSendInFlight || !boletaEnvelopeState.items.length) {
+        return null;
+    }
+
+    boletaEnvelopeSendInFlight = true;
+    updateBoletaEnvelopeStatusUI();
+    const snapshot = takePendingBoletaEnvelopeSnapshot();
+
+    try {
+        const config = {
+            ...DEFAULT_SII_EMISOR,
+            ...(await window.cajeroAPI.getSiiConfig())
+        };
+        const payload = await sendBoletaEnvelopeBatch({ batch: snapshot, config, reason });
+        if (notifyUser) {
+            setSiiSettingsStatus(`Sobre de boletas enviado correctamente${payload?.TrackId || payload?.trackId ? ` · Track ID ${payload.TrackId || payload.trackId}` : ''}.`);
+        }
+        return payload;
+    } catch (error) {
+        restorePendingBoletaEnvelopeSnapshot(snapshot);
+        console.error('Boleta envelope send error:', error);
+        addAuditEntry({
+            type: 'error',
+            title: 'Error al enviar sobre de boletas',
+            detail: error?.message || 'No se pudo enviar el sobre de boletas pendientes.'
+        });
+        if (notifyUser) {
+            setSiiSettingsStatus(error?.message || 'No se pudo enviar el sobre de boletas pendientes.');
+        }
+        throw error;
+    } finally {
+        boletaEnvelopeSendInFlight = false;
+        updateBoletaEnvelopeStatusUI();
+    }
+}
+
+function findFirstValueDeep(source, keys = []) {
+    if (!source || typeof source !== 'object') {
+        return null;
+    }
+
+    const normalizedKeys = keys.map((key) => String(key).toLowerCase());
+
+    const visit = (node) => {
+        if (Array.isArray(node)) {
+            for (const item of node) {
+                const found = visit(item);
+                if (found !== null && found !== undefined && found !== '') {
+                    return found;
+                }
+            }
+            return null;
+        }
+
+        if (!node || typeof node !== 'object') {
+            return null;
+        }
+
+        for (const [key, value] of Object.entries(node)) {
+            if (normalizedKeys.includes(String(key).toLowerCase())) {
+                if (value !== null && value !== undefined && value !== '') {
+                    return value;
+                }
+            }
+
+            if (value && typeof value === 'object') {
+                const found = visit(value);
+                if (found !== null && found !== undefined && found !== '') {
+                    return found;
+                }
+            }
+        }
+
+        return null;
+    };
+
+    return visit(source);
+}
+
+function normalizeDetailedDteStatus(payload = {}) {
+    const estado = String(
+        findFirstValueDeep(payload, ['Estado', 'estado', 'EstadoDTE', 'estadoDte', 'Resultado', 'resultado']) || ''
+    ).trim();
+    const detalle = String(
+        findFirstValueDeep(payload, ['Glosa', 'glosa', 'Detalle', 'detalle', 'Mensaje', 'message', 'Descripcion', 'descripcion']) || ''
+    ).trim();
+    const reparos = String(
+        findFirstValueDeep(payload, ['Reparo', 'reparo', 'Reparos', 'reparos', 'Observaciones', 'observaciones']) || ''
+    ).trim();
+    const trackId = String(
+        findFirstValueDeep(payload, ['TrackId', 'trackId', 'track_id']) || ''
+    ).trim();
+
+    const upperEstado = estado.toUpperCase();
+    let estadoSii = 'ENVIADO_SII';
+
+    if (upperEstado.includes('ACEPT')) {
+        estadoSii = 'ACEPTADO';
+    } else if (upperEstado.includes('RECHAZ')) {
+        estadoSii = 'RECHAZADO';
+    } else if (reparos || upperEstado === 'EPR') {
+        estadoSii = 'REPARO';
+    }
+
+    return {
+        trackId: trackId || null,
+        estado: estado || null,
+        detalle: detalle || null,
+        reparos: reparos || null,
+        estadoSii
+    };
+}
+
+function buildDteItems(cart, { isBoleta = false } = {}) {
+    return cart.map((item) => {
+        const product = findProductById(catalogState.products, item.productId);
+        if (!product) {
+            return null;
+        }
+
+        const pricing = getPricingForProduct(product, item.quantity, cart);
+        const grossUnitPrice = Number(pricing.unitPrice);
+        const unitPrice = isBoleta
+            ? grossUnitPrice
+            : Number((grossUnitPrice / 1.19).toFixed(4));
+        const lineTotal = Math.round(unitPrice * item.quantity);
+
+        return {
+            name: normalizeSiiString(product.name || `ITEM ${product.id}`),
+            quantity: Number(item.quantity),
+            unitPrice,
+            lineTotal
+        };
+    }).filter(Boolean);
+}
+
+function resolveReceiverForDte(tipoDte, config, customer = null) {
+    if (Number(tipoDte) === 39) {
+        return {
+            rut: '66666666-6',
+            razonSocial: 'CLIENTE',
+            giro: 'PARTICULAR',
+            direccion: normalizeSiiString(config.direccion || DEFAULT_SII_EMISOR.direccion),
+            comuna: normalizeSiiString(config.comuna || DEFAULT_SII_EMISOR.comuna),
+            ciudad: normalizeSiiString(config.ciudad || config.comuna || DEFAULT_SII_EMISOR.ciudad)
+        };
+    }
+
+    if (!customer?.rut || !customer?.name) {
+        throw new Error('La factura requiere un cliente valido.');
+    }
+
+    const address = String(customer.address || '').trim();
+    const comuna = String(customer.comuna || '').trim();
+    const city = String(customer.city || customer.comuna || '').trim();
+    const business = String(customer.business || '').trim();
+
+    if (!address || !comuna) {
+        throw new Error('La factura requiere direccion y comuna del cliente.');
+    }
+
+    if (!city) {
+        throw new Error('La factura requiere ciudad del cliente.');
+    }
+
+    return {
+        rut: customer.rut,
+        razonSocial: customer.name,
+        direccion: address,
+        comuna,
+        ciudad: city,
+        giro: business || 'COMERCIO'
+    };
+}
+
+async function generateAndSendDte({ cart, customer, documentType, snapshot }) {
+    const config = {
+        ...DEFAULT_SII_EMISOR,
+        ...(await window.cajeroAPI.getSiiConfig())
+    };
+
+    const isFactura = documentType === 'Factura' || Number(documentType) === 2;
+    const tipoDte = isFactura ? 33 : 39;
+    const cafFilename = tipoDte === 33 ? 'CAF_33.xml' : 'CAF_39.xml';
+
+    if (!config.apiKey) throw new Error('Falta API Key en Ajustes > SII.');
+    if (!config.certFilename) throw new Error('Falta certificado digital en Ajustes > SII.');
+    if (!config.certPassword) throw new Error('Falta contrasena del certificado en Ajustes > SII.');
+    if (!config.rutEmisor) throw new Error('Falta RUT emisor en Ajustes > SII.');
+    if (!config.rutEnvia) throw new Error('Falta RUT firmante en Ajustes > SII.');
+
+    const certBase64 = await window.cajeroAPI.readLocalCert(config.certFilename || 'certificado.pfx');
+    if (!certBase64) throw new Error('No se pudo leer el certificado digital local.');
+
+    const cafText = await window.cajeroAPI.readLocalText(cafFilename);
+    if (!cafText) throw new Error(`No se encontro ${cafFilename} en Ajustes > SII.`);
+
+    const folio = await requestNextDteFolio(tipoDte);
+    if (!folio) {
+        throw new Error('No se pudo reservar folio en CONTROL_FOLIO.');
+    }
+
+    const isBoleta = Number(tipoDte) === 39 || Number(tipoDte) === 41;
+    const items = buildDteItems(cart, { isBoleta });
+    if (!items.length) {
+        throw new Error('No hay items validos para emitir.');
+    }
+
+    const subtotal = Math.round(snapshot.total / 1.19);
+    const iva = snapshot.total - subtotal;
+    const receiver = resolveReceiverForDte(tipoDte, config, customer);
+    const certBlob = b64toBlob(certBase64, 'application/x-pkcs12');
+    const cafBlob = new Blob([cafText], { type: 'text/xml' });
+
+    const identificacionDte = {
+        TipoDTE: tipoDte,
+        Folio: folio,
+        FechaEmision: new Date().toISOString().slice(0, 10),
+        ...(isBoleta ? {
+            IndicadorServicio: Number(config.indicadorServicio || DEFAULT_SII_EMISOR.indicadorServicio)
+        } : {
+            FormaPago: 1,
+            FechaVencimiento: new Date().toISOString().slice(0, 10)
+        })
+    };
+
+    const inputPayload = {
+        Documento: {
+            Encabezado: {
+                IdentificacionDTE: identificacionDte,
+                Emisor: {
+                    Rut: config.rutEmisor,
+                    ...(isBoleta ? {
+                        RazonSocialBoleta: normalizeSiiString(config.razonSocial),
+                        GiroBoleta: normalizeSiiString(config.giro).substring(0, 80)
+                    } : {
+                        RazonSocial: normalizeSiiString(config.razonSocial),
+                        Giro: normalizeSiiString(config.giro).substring(0, 80),
+                        ActividadEconomica: [Number(config.acteco || 0)]
+                    }),
+                    DireccionOrigen: normalizeSiiString(config.direccion),
+                    ComunaOrigen: normalizeSiiString(config.comuna),
+                    CiudadOrigen: normalizeSiiString(config.ciudad)
+                },
+                Receptor: {
+                    Rut: receiver.rut,
+                    RazonSocial: normalizeSiiString(receiver.razonSocial),
+                    Direccion: normalizeSiiString(receiver.direccion),
+                    Comuna: normalizeSiiString(receiver.comuna),
+                    Ciudad: normalizeSiiString(receiver.ciudad || receiver.comuna),
+                    ...(!isBoleta ? {
+                        Giro: normalizeSiiString(receiver.giro || 'PARTICULAR').substring(0, 40)
+                    } : {})
+                },
+                Totales: {
+                    MontoNeto: subtotal,
+                    ...(!isBoleta ? { TasaIVA: 19 } : {}),
+                    IVA: iva,
+                    MontoTotal: snapshot.total
+                }
+            },
+            Detalles: items.map((item) => ({
+                IndicadorExento: 0,
+                Nombre: item.name,
+                Descripcion: item.name,
+                Cantidad: item.quantity,
+                UnidadMedida: 'un',
+                Precio: Number(item.unitPrice.toFixed(4)),
+                Descuento: 0,
+                Recargo: 0,
+                MontoItem: item.lineTotal
+            })),
+            Referencias: [],
+            DescuentosRecargos: []
+        },
+        Certificado: {
+            Rut: config.rutEmisor,
+            Password: config.certPassword
+        },
+        Ambiente: config.siiAmbiente === '2' ? 1 : 0,
+        Tipo: 1
+    };
+
+    const formData = new FormData();
+    formData.append('file', certBlob, 'certificado.pfx');
+    formData.append('password', config.certPassword);
+    formData.append('caf', cafBlob, cafFilename);
+    formData.append('input', JSON.stringify(inputPayload));
+
+    const token = await getSimpleApiToken(config.apiKey);
+    const generateResponse = await fetch('https://api.simpleapi.cl/api/v1/dte/generar', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+    });
+
+    const generateClone = generateResponse.clone();
+    const generateText = await generateResponse.text();
+    if (!generateResponse.ok) {
+        throw new Error(`Error generando DTE (${generateResponse.status}): ${generateText}`);
+    }
+
+    const bufferDte = await generateClone.arrayBuffer();
+    const xmlContentString = new TextDecoder('utf-8').decode(bufferDte);
+
+    await window.cajeroAPI.saveXml({
+        filename: `DTE_${tipoDte}_Folio_${folio}.xml`,
+        data: xmlContentString,
+        folder: tipoDte === 39 ? 'boletas' : 'facturas'
+    });
+
+    if (isBoleta) {
+        const shouldFlushPreviousBatch = boletaEnvelopeState.items.length
+            && getPendingBoletaEnvelopeAgeMs() >= BOLETA_ENVELOPE_WINDOW_MS;
+
+        if (shouldFlushPreviousBatch) {
+            void forceSendPendingBoletaEnvelope({
+                reason: 'Cierre automatico de ventana de 45 minutos',
+                notifyUser: false
+            });
+        }
+
+        appendBoletaToPendingEnvelope({
+            folio,
+            tipoDte,
+            xmlContent: xmlContentString
+        });
+
+        addAuditEntry({
+            type: 'info',
+            title: 'Boleta pendiente de sobre',
+            detail: `Boleta 39-${folio} agregada a la cola del sobre SII. Pendientes actuales: ${boletaEnvelopeState.items.length}.`
+        });
+
+        return {
+            folio,
+            tipoDte,
+            fechaDte: new Date().toISOString().slice(0, 10),
+            rutReceptor: receiver.rut,
+            xmlContent: xmlContentString,
+            trackId: null,
+            estadoSii: 'PENDIENTE_SOBRE',
+            estadoDetalle: 'Boleta agregada al sobre pendiente de envio.',
+            reparos: null,
+            emisor: {
+                rut: config.rutEmisor,
+                razonSocial: config.razonSocial,
+                giro: config.giro,
+                direccion: config.direccion,
+                comuna: config.comuna,
+                ciudad: config.ciudad,
+                acteco: config.acteco,
+                resolucionNumero: config.numeroResolucion || 80,
+                resolucionFecha: config.fechaResolucion || '2014-08-22'
+            }
+        };
+    }
+
+    const rutEnvia = config.rutEnvia || config.rutEmisor;
+
+    const wrapPayload = {
+        Certificado: {
+            Rut: rutEnvia,
+            Password: config.certPassword
+        },
+        Caratula: {
+            RutEnvia: rutEnvia,
+            RutEmisor: config.rutEmisor,
+            RutReceptor: '60803000-K',
+            NumeroResolucion: Number(config.resolucionNumero || DEFAULT_SII_EMISOR.resolucionNumero),
+            FechaResolucion: config.resolucionFecha || DEFAULT_SII_EMISOR.resolucionFecha
+        }
+    };
+
+    const wrapFormData = new FormData();
+    wrapFormData.append('input', JSON.stringify(wrapPayload));
+    wrapFormData.append('files', certBlob, 'certificado.pfx');
+    wrapFormData.append('files', new Blob([bufferDte], { type: 'text/xml' }), 'dte.xml');
+
+    const wrapResponse = await fetch('https://api.simpleapi.cl/api/v1/envio/generar', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: wrapFormData
+    });
+
+    const wrapBuffer = await wrapResponse.arrayBuffer();
+    if (!wrapResponse.ok) {
+        throw new Error(`Error generando sobre SII: ${new TextDecoder('utf-8').decode(wrapBuffer)}`);
+    }
+
+    try {
+        await window.cajeroAPI.saveXml({
+            filename: `DEBUG_ENVELOPE_FOLIO_${folio}.xml`,
+            data: new TextDecoder('utf-8').decode(wrapBuffer),
+            folder: 'boletas'
+        });
+        console.log("DEBUG ENVELOPE SAVED.");
+    } catch (e) {
+        console.log("Error saving debug", e);
+    }
+
+    const sendFormData = new FormData();
+    sendFormData.append('input', JSON.stringify({
+        Tipo: Number(tipoDte) === 39 || Number(tipoDte) === 41 ? 2 : 1,
+        Ambiente: config.siiAmbiente === '2' ? 1 : 0,
+        Certificado: {
+            Rut: rutEnvia,
+            Password: config.certPassword
+        }
+    }));
+    sendFormData.append('files', certBlob, 'certificado.pfx');
+    sendFormData.append('files', new Blob([wrapBuffer], { type: 'text/xml' }), 'envio.xml');
+
+    const sendResponse = await fetch('https://api.simpleapi.cl/api/v1/envio/enviar', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: sendFormData
+    });
+
+    const sendText = await sendResponse.text();
+    if (!sendResponse.ok) {
+        throw new Error(`Error enviando al SII: ${sendText}`);
+    }
+
+    let sendPayload = null;
+    try {
+        sendPayload = JSON.parse(sendText);
+    } catch (_) {
+        sendPayload = null;
+    }
+
+    return {
+        folio,
+        tipoDte,
+        fechaDte: new Date().toISOString().slice(0, 10),
+        rutReceptor: receiver.rut,
+        xmlContent: xmlContentString,
+        trackId: sendPayload?.TrackId || sendPayload?.trackId || null,
+        estadoSii: sendPayload?.TrackId || sendPayload?.trackId ? 'ENVIADO_SII' : 'GENERADO',
+        estadoDetalle: sendPayload?.glosa || sendPayload?.GLOSA || null,
+        reparos: null,
+        emisor: {
+            rut: config.rutEmisor,
+            razonSocial: config.razonSocial,
+            giro: config.giro,
+            direccion: config.direccion,
+            comuna: config.comuna,
+            ciudad: config.ciudad,
+            acteco: config.acteco,
+            resolucionNumero: config.numeroResolucion || 80,
+            resolucionFecha: config.fechaResolucion || '2014-08-22'
+        }
+    };
 }
 
 async function loadPrinterOptions() {
@@ -2741,54 +4748,6 @@ async function syncCustomerDisplay() {
         await window.cajeroAPI.updateCustomerDisplay(buildCustomerDisplayPayload());
     } catch (error) {
         console.error('Customer display sync error:', error);
-    }
-}
-
-function saveUpdateSettings() {
-    const releaseRepoInput = document.getElementById('release-repo-input');
-    const updateStatusLabel = document.getElementById('settings-update-status');
-    const repo = saveUpdateSettingsSnapshot({
-        releaseRepo: releaseRepoInput?.value,
-        setSessionValue,
-        sessionKeys: SESSION_KEYS
-    });
-
-    if (updateStatusLabel) {
-        updateStatusLabel.textContent = `Repo configurado: ${repo}`;
-    }
-}
-
-async function checkGithubUpdates() {
-    const updateStatusLabel = document.getElementById('settings-update-status');
-    const repo = getSessionValue(SESSION_KEYS.releaseRepo) || 'JavierParedesDev/valmuPOS';
-
-    if (!updateStatusLabel) {
-        return;
-    }
-
-    updateStatusLabel.textContent = 'Buscando actualizaciones...';
-
-    if (typeof window.cajeroAPI?.checkGithubRelease !== 'function') {
-        updateStatusLabel.textContent = 'La consulta de releases no esta disponible.';
-        return;
-    }
-
-    try {
-        const result = await window.cajeroAPI.checkGithubRelease(repo);
-
-        if (!result?.ok) {
-            updateStatusLabel.textContent = result?.error || 'No se pudo consultar la ultima release.';
-            return;
-        }
-
-        if (result.hasUpdate) {
-            updateStatusLabel.textContent = `Nueva version disponible: ${result.latestVersion}`;
-            return;
-        }
-
-        updateStatusLabel.textContent = `Sin actualizaciones. Version actual: ${result.currentVersion}`;
-    } catch (error) {
-        updateStatusLabel.textContent = error?.message || 'No se pudo consultar GitHub Releases.';
     }
 }
 
@@ -2990,11 +4949,13 @@ function toggleCartItemOffer(productId) {
     }
 }
 
+// Redundant functions removed (using consolidated official definitions below)
+
 function renderSearchResults(products) {
     if (isDispatchMode()) {
         renderDispatchSearchResults(products, {
-            listId: 'product-search-results',
-            overlayId: 'product-search-overlay',
+            listId: 'dispatch-search-results',
+            overlayId: 'dispatch-search-overlay',
             onSelectFunction: 'selectProductForDispatch'
         });
         return;
@@ -3008,17 +4969,17 @@ function renderCart() {
         renderDispatchCart({
             cart: dispatchState.cart,
             products: catalogState.products,
-            listId: 'cart-list',
-            totalLabelId: 'sale-total',
-            itemsLabelId: 'dispatch-inline-items-label',
+            listId: 'dispatch-cart-list',
+            totalLabelId: 'dispatch-total-label',
+            itemsLabelId: 'dispatch-items-label',
             quantityUpdateFunction: 'updateDispatchItemQuantity',
             removeFunction: 'removeDispatchItem'
         });
 
         const snapshot = buildDispatchSnapshot(dispatchState.cart, catalogState.products, getPricingForProduct);
-        const saleTotal = document.getElementById('sale-total');
-        if (saleTotal) {
-            saleTotal.textContent = `$${formatCurrency(snapshot.total)}`;
+        const dispatchTotal = document.getElementById('dispatch-total-label');
+        if (dispatchTotal) {
+            dispatchTotal.textContent = `$${formatCurrency(snapshot.total)}`;
         }
     } else {
         renderCartView({
@@ -3036,15 +4997,12 @@ function getSelectedDispatchCarrier() {
 }
 
 function renderDispatchSection() {
-    renderDispatchCarrierOptions({
-        carriers: dispatchState.carriers,
-        selectedCarrierId: dispatchState.selectedCarrierId
-    });
-    renderDispatchCarrierOptions({
-        carriers: dispatchState.carriers,
-        selectedCarrierId: dispatchState.selectedCarrierId,
-        selectId: 'dispatch-inline-carrier-select'
-    });
+    updateCarrierTiles(getSelectedDispatchCarrier());
+
+    const customer = invoiceClientState.customers.find(c => String(c.id) === String(dispatchState.selectedCustomerId));
+    updateDispatchCustomerTile(customer);
+    updateDispatchDocumentTypeUI(dispatchState.selectedDocumentTypeId);
+
     renderDispatchCarrierSummary(getSelectedDispatchCarrier());
     renderDispatchCarrierSummary(getSelectedDispatchCarrier(), 'dispatch-inline-carrier-summary');
     renderDispatchSearchResults(
@@ -3059,6 +5017,53 @@ function renderDispatchSection() {
     }
     renderDispatchRecords(dispatchState.records, openDispatchReceiptModal);
 }
+
+function handleDispatchDocumentTypeChange(event) {
+    const node = event.target.closest('.doc-chip');
+    if (!node) return;
+
+    const typeId = Number(node.getAttribute('data-type'));
+    if (typeId) {
+        dispatchState.selectedDocumentTypeId = typeId;
+        renderDispatchSection();
+    }
+}
+
+
+function openCarrierSelectionModal() {
+    const backdrop = document.getElementById('carrier-selection-modal-backdrop');
+    if (backdrop) {
+        backdrop.classList.remove('hidden');
+        renderCarrierSelectionList(dispatchState.carriers, dispatchState.selectedCarrierId);
+
+        const searchInput = document.getElementById('carrier-selection-search-input');
+        if (searchInput) {
+            searchInput.value = '';
+            searchInput.focus();
+        }
+    }
+}
+
+function openDispatchCustomerModal() {
+    const customer = invoiceClientState.customers.find(c => String(c.id) === String(dispatchState.selectedCustomerId));
+    openInvoiceClientModalView(customer);
+}
+
+function clearDispatchCustomer() {
+    dispatchState.selectedCustomerId = null;
+    renderDispatchSection();
+}
+
+function closeCarrierSelectionModal() {
+    document.getElementById('carrier-selection-modal-backdrop')?.classList.add('hidden');
+}
+
+window.selectCarrierFromModal = function (carrierId) {
+    dispatchState.selectedCarrierId = String(carrierId);
+    renderDispatchSection();
+    closeCarrierSelectionModal();
+};
+
 
 function handleDispatchCarrierChange(event) {
     dispatchState.selectedCarrierId = String(event.target?.value || '').trim() || null;
@@ -3119,10 +5124,26 @@ function removeDispatchItem(productId) {
     renderDispatchSection();
 }
 
+function toggleDispatchItemOffer(productId) {
+    const item = dispatchState.cart.find((i) => String(i.productId) === String(productId));
+    if (item) {
+        item.applyOffer = !item.applyOffer;
+        renderDispatchSection();
+    }
+}
+
 async function generateDispatchRecord() {
     const carrier = getSelectedDispatchCarrier();
     if (!carrier) {
         setBackendStatus('Selecciona un transportista antes de emitir el vale de despacho.');
+        return;
+    }
+
+    const documentType = dispatchState.selectedDocumentTypeId;
+    const customerId = dispatchState.selectedCustomerId;
+
+    if (Number(documentType) === 2 && !customerId) {
+        setBackendStatus('Debes seleccionar un cliente para emitir una Factura.');
         return;
     }
 
@@ -3140,11 +5161,9 @@ async function generateDispatchRecord() {
 
     const confirmButton = document.getElementById('dispatch-generate-btn');
     const snapshot = buildDispatchSnapshot(dispatchState.cart, catalogState.products, getPricingForProduct);
-    const payload = buildDispatchPayload({
-        snapshot,
-        carrierId: carrier.id,
-        documentTypeId: DOCUMENT_TYPE_IDS['Vale interno']
-    });
+
+    const docTypeLabel = Number(documentType) === 2 ? 'Factura' : (Number(documentType) === 1 ? 'Boleta' : 'Vale interno');
+    const customer = (Number(documentType) === 1 || Number(documentType) === 2) ? (invoiceClientState.customers.find(c => String(c.id) === String(customerId)) || null) : null;
 
     if (confirmButton) {
         confirmButton.disabled = true;
@@ -3152,11 +5171,78 @@ async function generateDispatchRecord() {
     }
 
     try {
+        let dteResult = null;
+        if (Number(documentType) === 1 || Number(documentType) === 2) {
+            setBackendStatus(`Emitiendo ${docTypeLabel.toLowerCase()} al SII...`);
+            dteResult = await generateAndSendDte({
+                cart: dispatchState.cart,
+                customer: customer,
+                documentType: docTypeLabel,
+                snapshot: snapshot
+            });
+        }
+
+        const payload = buildDispatchPayload({
+            snapshot,
+            carrierId: carrier.id,
+            documentTypeId: documentType,
+            customerId: customerId,
+            folioDocumento: dteResult?.folio || null
+        });
+
         const result = await generateDispatchRequest({
             apiBaseUrl,
             token,
             payload
         });
+
+        if (dteResult?.xmlContent) {
+            try {
+                await requestBackendJson({
+                    endpoint: '/dte/guardar',
+                    method: 'POST',
+                    body: {
+                        id_venta: result.id_venta || null,
+                        tipoDte: Number(dteResult.tipoDte),
+                        folio: Number(dteResult.folio),
+                        xmlContenido: dteResult.xmlContent,
+                        trackId: dteResult.trackId || null,
+                        estadoSii: dteResult.estadoSii || 'GENERADO'
+                    }
+                });
+            } catch (dteSaveError) {
+                console.error('DTE backup error:', dteSaveError);
+                addAuditEntry({
+                    type: 'warning',
+                    title: 'Respaldo DTE pendiente',
+                    detail: dteSaveError?.message || 'No se pudo guardar el XML del DTE en backend.'
+                });
+            }
+        }
+
+        let saleReceiptRecord = null;
+        if (dteResult && dteResult.folio) {
+            saleReceiptRecord = buildReceiptRecord({
+                saleId: result.id_venta,
+                payload: {
+                    subtotal: payload.subtotal,
+                    descuento: snapshot.discount,
+                    iva: payload.iva,
+                    total: payload.total,
+                    folioDocumento: dteResult.folio
+                },
+                snapshot,
+                method: 'efectivo',
+                customer: docTypeLabel === 'Factura' ? customer : null,
+                documentType: docTypeLabel,
+                cart: dispatchState.cart,
+                dteMetadata: dteResult,
+                paymentLabel: 'En ruta',
+                footerMessage: 'Documento emitido para despacho en ruta. No se considera en el arqueo de caja.',
+                origin: 'dispatch'
+            });
+            saveReceiptRecord(saleReceiptRecord);
+        }
 
         const record = buildDispatchRecord({
             carrier,
@@ -3167,7 +5253,7 @@ async function generateDispatchRecord() {
 
         record.id = String(result.id_despacho || record.id);
         record.saleReference = `Venta en ruta ${result.id_venta || ''}`.trim();
-        const receiptRecord = buildDispatchReceiptRecord({
+        const dispatchReceiptRecord = buildDispatchReceiptRecord({
             dispatchId: record.id,
             saleId: result.id_venta,
             carrier,
@@ -3180,7 +5266,7 @@ async function generateDispatchRecord() {
         catalogState.products = decreaseLocalStockFromDispatchCart(catalogState.products, dispatchState.cart);
         dispatchState.cart = [];
         dispatchState.searchQuery = '';
-        saveDispatchReceiptRecord(receiptRecord);
+        saveDispatchReceiptRecord(dispatchReceiptRecord);
 
         const searchInput = document.getElementById('dispatch-search-input');
         if (searchInput) {
@@ -3190,7 +5276,7 @@ async function generateDispatchRecord() {
         addAuditEntry({
             type: 'success',
             title: 'Despacho generado',
-            detail: `DSP-${record.id} generado para ${carrier.name}. La venta quedo en ruta sin afectar la caja del cajero.`
+            detail: `DSP-${record.id} generado para ${carrier.name}. La venta quedo en ruta sin afectar la caja del cajero.${dteResult?.estadoSii ? ` Estado SII: ${dteResult.estadoSii}.` : ''}${dteResult?.reparos ? ` Reparo: ${dteResult.reparos}.` : ''}`
         });
         addTurnHistoryEntry({
             title: 'Despacho preparado',
@@ -3202,23 +5288,42 @@ async function generateDispatchRecord() {
         renderDispatchSection();
         renderSearchResults([]);
         renderCart();
-        openDispatchReceiptModal(record.id);
-        try {
-            await printReceiptRecord({
-                record: receiptRecord,
-                printerName: getSessionValue(SESSION_KEYS.printerName) || 'Predeterminada del sistema',
-                printerPaper: getSessionValue(SESSION_KEYS.printerPaper) || '80mm',
-                printReceipt: window.cajeroAPI?.printReceipt
-            });
-        } catch (printError) {
-            console.error('Dispatch auto print error:', printError);
-            addAuditEntry({
-                type: 'warning',
-                title: 'Vale pendiente de impresion',
-                detail: printError?.message || `El despacho DSP-${record.id} se genero, pero no se pudo imprimir el vale.`
-            });
+        if (saleReceiptRecord) {
+            openDispatchReceiptModal(record.id);
+            try {
+                await printReceiptRecord({
+                    record: saleReceiptRecord,
+                    printerName: getSessionValue(SESSION_KEYS.printerName) || 'Predeterminada del sistema',
+                    printerPaper: getSessionValue(SESSION_KEYS.printerPaper) || '80mm',
+                    printReceipt: window.cajeroAPI?.printReceipt
+                });
+            } catch (printError) {
+                console.error('Sale DTE auto print error:', printError);
+                addAuditEntry({
+                    type: 'warning',
+                    title: 'Boleta pendiente de impresion',
+                    detail: printError?.message || `El documento ${docTypeLabel} se genero, pero no se pudo imprimir.`
+                });
+            }
+        } else {
+            openDispatchReceiptModal(record.id);
+            try {
+                await printReceiptRecord({
+                    record: dispatchReceiptRecord,
+                    printerName: getSessionValue(SESSION_KEYS.printerName) || 'Predeterminada del sistema',
+                    printerPaper: getSessionValue(SESSION_KEYS.printerPaper) || '80mm',
+                    printReceipt: window.cajeroAPI?.printReceipt
+                });
+            } catch (printError) {
+                console.error('Dispatch auto print error:', printError);
+                addAuditEntry({
+                    type: 'warning',
+                    title: 'Vale pendiente de impresion',
+                    detail: printError?.message || `El despacho DSP-${record.id} se genero, pero no se pudo imprimir el vale.`
+                });
+            }
         }
-        setBackendStatus(`Despacho DSP-${record.id} generado correctamente. Stock descontado y ruta asignada.`);
+        setBackendStatus(`Despacho DSP-${record.id} generado correctamente. Stock descontado y ruta asignada.${dteResult?.estadoSii === 'REPARO' ? ` DTE con reparo${dteResult.reparos ? `: ${dteResult.reparos}` : ''}.` : ''}`);
     } catch (error) {
         console.error('Dispatch generate error:', error);
         setBackendStatus(error?.message || 'No se pudo generar el despacho.');
@@ -3358,9 +5463,10 @@ window.selectProductForDispatch = selectProductForDispatch;
 window.updateCartItemQuantity = updateCartItemQuantity;
 window.updateDispatchItemQuantity = updateDispatchItemQuantity;
 window.removeCartItem = removeCartItem;
-window.toggleCartItemOffer = toggleCartItemOffer;
-window.clearCurrentSale = clearCurrentSale;
 window.removeDispatchItem = removeDispatchItem;
+window.toggleCartItemOffer = toggleCartItemOffer;
+window.toggleDispatchItemOffer = toggleDispatchItemOffer;
+window.clearCurrentSale = clearCurrentSale;
 window.openWeightedEditModal = openWeightedEditModal;
 window.openSaleCancellationModal = openSaleCancellationModal;
 window.openDispatchReceiptModal = openDispatchReceiptModal;

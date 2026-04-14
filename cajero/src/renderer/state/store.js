@@ -12,7 +12,8 @@ export const SESSION_KEYS = {
     turnSummary: 'valmu_cajero_turn_summary',
     saleReceipts: 'valmu_cajero_sale_receipts',
     dispatchReceipts: 'valmu_cajero_dispatch_receipts',
-    saleDraft: 'valmu_cajero_sale_draft'
+    saleDraft: 'valmu_cajero_sale_draft',
+    pendingBoletaEnvelope: 'valmu_cajero_pending_boleta_envelope'
 };
 
 export const fallbackProducts = [
@@ -149,13 +150,15 @@ export const turnSummaryState = {
     totalCash: 0,
     totalCard: 0,
     totalTransfer: 0,
-    totalInternal: 0
+    totalInternal: 0,
+    totalWithdrawals: 0
 };
 
 export const salesHistoryState = {
     items: [],
     cancelledItems: [],
-    currentTab: 'active'
+    currentTab: 'active',
+    showAllDocuments: false
 };
 
 export const saleReceiptState = {
@@ -180,6 +183,8 @@ export const saleActionState = {
 export const dispatchState = {
     carriers: fallbackDispatchCarriers.slice(),
     selectedCarrierId: null,
+    selectedDocumentTypeId: 3, // Vale interno por defecto
+    selectedCustomerId: null,
     searchQuery: '',
     cart: [],
     records: []

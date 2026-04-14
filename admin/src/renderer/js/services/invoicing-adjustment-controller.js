@@ -146,6 +146,22 @@ window.ValmuInvoicingAdjustmentController = {
             }
         });
 
+        itemsContainer?.addEventListener('click', (event) => {
+            if (!event.target.matches(`.${prefix}-remove-item`)) {
+                return;
+            }
+
+            const rows = itemsContainer.querySelectorAll(`.${prefix}-item-row`);
+            if (rows.length <= 1) {
+                showToast('No se puede eliminar la unica fila', 'warning');
+                return;
+            }
+
+            event.target.closest(`.${prefix}-item-row`)?.remove();
+            toggleRemoveBtn();
+            calcTotals();
+        });
+
         globalDiscountInput?.addEventListener('input', calcTotals);
 
         document.getElementById(removeButtonId)?.addEventListener('click', () => {

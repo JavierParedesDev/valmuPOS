@@ -5,6 +5,13 @@ export function normalizeSalesHistory(payload, formatDateTime) {
         document: String(sale.tipoDoc || 'Venta'),
         paymentMethod: String(sale.metodoPago || 'Sin pago'),
         isFiscal: Boolean(sale.esFiscal),
+        folioDocumento: sale.folioDocumento || sale.folio || sale.numeroFolio || null,
+        tipoDte: Number(sale.tipoDte || sale.tipo_dte || sale.dteType || 0) || null,
+        rutReceptor: sale.rutReceptor || sale.rut_receptor || sale.rutCliente || null,
+        customerRut: sale.rutCliente || sale.rut_receptor || null,
+        estadoSii: sale.estadoSii || sale.estado_sii || null,
+        trackId: sale.trackId || sale.track_id || null,
+        fechaDte: sale.fechaDte || sale.fecha_dte || (sale.fechaVenta ? String(sale.fechaVenta).slice(0, 10) : null),
         rawDate: sale.fechaVenta,
         dateLabel: formatDateTime(sale.fechaVenta)
     })).filter((sale) => sale.id > 0);

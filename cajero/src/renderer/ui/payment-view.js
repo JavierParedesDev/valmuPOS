@@ -9,6 +9,17 @@ export function openPaymentModalView({ documentType, total, customer }) {
     const documentNote = document.getElementById('payment-document-note');
     const methodSelect = document.getElementById('payment-method-select');
     const receivedInput = document.getElementById('payment-received-input');
+    const facturaRequiredFields = [
+        ['rut', 'RUT'],
+        ['name', 'razon social'],
+        ['business', 'giro'],
+        ['address', 'direccion'],
+        ['comuna', 'comuna'],
+        ['city', 'ciudad']
+    ];
+    const missingFacturaFields = facturaRequiredFields
+        .filter(([key]) => !String(customer?.[key] || '').trim())
+        .map(([, label]) => label);
 
     if (totalLabel) {
         totalLabel.textContent = `$${formatCurrency(total)}`;
@@ -41,12 +52,12 @@ export function openPaymentModalView({ documentType, total, customer }) {
             documentNote.textContent = 'Vale interno: no se envia al SII, pero igual debes cobrarlo en efectivo, tarjeta o transferencia.';
             documentNote.classList.remove('hidden');
         } else if (documentType === 'Factura') {
-            documentNote.textContent = customer?.rut
-                ? `Factura preparada para ${customer.name} (${customer.rut}). La integracion con SII se conectara en la fase final.`
-                : 'La factura requiere un cliente valido.';
+            documentNote.textContent = missingFacturaFields.length
+                ? `Factura incompleta: faltan ${missingFacturaFields.join(', ')}. Completa la ficha del cliente antes de emitir al SII.`
+                : `Factura lista para emitir al SII para ${customer.name} (${customer.rut}).`;
             documentNote.classList.remove('hidden');
         } else {
-            documentNote.textContent = 'Boleta fiscal lista para cobro. La emision SII se integrara en la fase final.';
+            documentNote.textContent = 'Boleta fiscal lista para emitir al SII al confirmar el cobro.';
             documentNote.classList.remove('hidden');
         }
     }

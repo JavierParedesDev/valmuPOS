@@ -56,3 +56,39 @@ export async function closeCashTurn({ apiBaseUrl, token, totals }) {
 
     return payload;
 }
+
+export async function registerCashWithdrawal({ apiBaseUrl, token, amount, reason }) {
+    const response = await fetch(`${normalizeApiBaseUrl(apiBaseUrl)}/caja/retiro`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+            monto: Math.round(amount || 0),
+            motivo: String(reason || '').trim()
+        })
+    });
+
+    const payload = await parseJsonResponse(response);
+    if (!response.ok) {
+        throw new Error(payload?.error || 'No se pudo registrar el retiro de caja.');
+    }
+
+    return payload;
+}
+
+export async function fetchCashWithdrawals({ apiBaseUrl, token }) {
+    const response = await fetch(`${normalizeApiBaseUrl(apiBaseUrl)}/caja/retiros`, {
+        headers: {
+            Authorization: `Bearer ${token}`
+        }
+    });
+
+    const payload = await parseJsonResponse(response);
+    if (!response.ok) {
+        throw new Error(payload?.error || 'No se pudo consultar los retiros de caja.');
+    }
+
+    return payload;
+}

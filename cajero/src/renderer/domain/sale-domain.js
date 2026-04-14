@@ -47,6 +47,7 @@ export function buildSalePayload({
     customer,
     method,
     received,
+    folioDocumento,
     documentTypeIds,
     paymentMethodMap,
     getPricingForProduct
@@ -64,7 +65,7 @@ export function buildSalePayload({
     return {
         id_cliente: customerId,
         id_tipoDoc: idTipoDoc,
-        folioDocumento: null,
+        folioDocumento: folioDocumento || null,
         subtotal,
         descuento: snapshot.discount || 0,
         iva,

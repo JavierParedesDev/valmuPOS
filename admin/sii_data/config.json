@@ -8,15 +8,16 @@
   "apiKey": "2185-W290-6394-7047-1038",
   "certPassword": "Eduardo3004",
   "folio_33": 3377,
-  "folio_39": 1,
+  "folio_39": 76037,
   "folio_61": 19,
   "folio_56": 2,
   "folio_final_33": 3392,
-  "folio_final_39": 0,
+  "folio_final_39": 116035,
   "folio_final_61": 21,
   "folio_final_56": 4,
   "caf_33_filename": "CAF_33.xml",
   "caf_61_filename": "CAF_61.xml",
   "caf_56_filename": "CAF_56.xml",
-  "rutEnvia": "17445030-7"
+  "rutEnvia": "17445030-7",
+  "caf_39_filename": "CAF_39.xml"
 }

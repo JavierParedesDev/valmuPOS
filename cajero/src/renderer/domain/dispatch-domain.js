@@ -11,12 +11,12 @@ export function filterDispatchProducts(products, query, normalizeCatalogText) {
 }
 
 export function addProductToDispatchCart(cart, productId, products) {
-    const product = products.find((entry) => entry.id === productId);
+    const product = products.find((entry) => String(entry.id) === String(productId));
     if (!product) {
         return { cart, error: 'Producto no encontrado.' };
     }
 
-    const currentLine = cart.find((entry) => entry.productId === productId);
+    const currentLine = cart.find((entry) => String(entry.productId) === String(productId));
     const nextQuantity = (currentLine?.quantity || 0) + 1;
     const stockActual = Number(product.stockActual || 0);
 
@@ -29,7 +29,7 @@ export function addProductToDispatchCart(cart, productId, products) {
 
     if (currentLine) {
         return {
-            cart: cart.map((entry) => entry.productId === productId
+            cart: cart.map((entry) => String(entry.productId) === String(productId)
                 ? { ...entry, quantity: product.isWeighted ? nextQuantity : Math.max(1, Math.round(nextQuantity)) }
                 : entry)
         };
@@ -47,8 +47,8 @@ export function addProductToDispatchCart(cart, productId, products) {
 }
 
 export function updateDispatchCartQuantity(cart, productId, delta, products) {
-    const product = products.find((entry) => entry.id === productId);
-    const currentLine = cart.find((entry) => entry.productId === productId);
+    const product = products.find((entry) => String(entry.id) === String(productId));
+    const currentLine = cart.find((entry) => String(entry.productId) === String(productId));
 
     if (!product || !currentLine) {
         return { cart };
@@ -57,7 +57,7 @@ export function updateDispatchCartQuantity(cart, productId, delta, products) {
     const nextQuantity = currentLine.quantity + delta;
     if (nextQuantity <= 0) {
         return {
-            cart: cart.filter((entry) => entry.productId !== productId)
+            cart: cart.filter((entry) => String(entry.productId) !== String(productId))
         };
     }
 
@@ -119,7 +119,9 @@ export function buildDispatchSnapshot(cart, products, getPricingForProduct) {
 export function buildDispatchPayload({
     snapshot,
     carrierId,
-    documentTypeId
+    documentTypeId,
+    customerId,
+    folioDocumento
 }) {
     const subtotal = Math.round(snapshot.total / 1.19);
     const iva = snapshot.total - subtotal;
@@ -127,6 +129,8 @@ export function buildDispatchPayload({
     return {
         id_transporte: Number(carrierId),
         id_tipoDoc: Number(documentTypeId),
+        id_cliente: customerId ? Number(customerId) : null,
+        folio_documento: folioDocumento || null,
         subtotal,
         iva,
         total: snapshot.total,
@@ -182,6 +186,8 @@ export function normalizeDispatchHistory(history, formatDateTime) {
         plate: dispatch.patenteTransporte || '',
         status: dispatch.estadoDespacho || 'PENDIENTE',
         saleReference: dispatch.folioDocumento || `Venta ${dispatch.id_venta || ''}`.trim(),
+        branchName: dispatch.nombreSucursal || dispatch.sucursal || '',
+        rawDate: dispatch.fechaVenta || dispatch.fechaCreacion || new Date().toISOString(),
         total: Number(dispatch.total || 0),
         createdAtLabel: formatDateTime(dispatch.fechaVenta || dispatch.fechaCreacion || new Date().toISOString())
     })).filter((dispatch) => dispatch.id);

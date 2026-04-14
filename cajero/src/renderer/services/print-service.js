@@ -19,6 +19,7 @@ export async function printReceiptRecord({
             saleId: record.saleId,
             date: record.date,
             dateLabel: record.dateLabel,
+            referenceLabel: record.referenceLabel,
             documentType: record.documentType,
             isFiscal: record.isFiscal,
             customerLabel: record.customerLabel,
@@ -28,7 +29,17 @@ export async function printReceiptRecord({
             total: record.total,
             items: record.items,
             lineItems: Array.isArray(record.lineItems) ? record.lineItems : [],
-            preview: record.preview
+            preview: record.preview,
+            footerMessage: record.footerMessage,
+            origin: record.origin,
+            emisor: record.emisor,
+            dte: {
+                tipo: record.tipoDte,
+                folio: record.folioDocumento,
+                fecha: record.fechaDte,
+                ted: record.ted,
+                xml: record.xmlContent
+            }
         }
     });
 
