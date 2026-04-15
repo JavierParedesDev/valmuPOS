@@ -178,6 +178,51 @@ window.ValmuInvoicingConfigController = {
                     currentConfig.certFilename = fixedName;
                 } else {
                     currentConfig[`caf_${type}_filename`] = fixedName;
+
+                    // --- CAF XML parsing and folio sync ---
+                    try {
+                        // Read the file again as text (not base64)
+                        const textReader = new FileReader();
+                        textReader.onload = async () => {
+                            try {
+                                const parser = new DOMParser();
+                                const xmlDoc = parser.parseFromString(textReader.result, 'text/xml');
+                                const dNode = xmlDoc.querySelector('DA > RNG > D');
+                                const hNode = xmlDoc.querySelector('DA > RNG > H');
+                                if (dNode && hNode) {
+                                    const folioInicial = parseInt(dNode.textContent, 10);
+                                    const folioFinal = parseInt(hNode.textContent, 10);
+                                    if (!isNaN(folioInicial) && !isNaN(folioFinal)) {
+                                        currentConfig[`folio_${type}`] = folioInicial;
+                                        currentConfig[`folio_final_${type}`] = folioFinal;
+                                        await electronAPI.saveSiiConfig(currentConfig);
+                                        localStorage.setItem('sii_config', JSON.stringify(currentConfig));
+                                        // --- Sync with backend/database ---
+                                        if (typeof api?.saveSiiSettings === 'function') {
+                                            try {
+                                                await api.saveSiiSettings(currentConfig);
+                                            } catch (err) {
+                                                console.warn('No se pudo sincronizar folios con backend:', err);
+                                            }
+                                        }
+                                        this.applyFoliosToDom(currentConfig);
+                                        onConfigUpdated?.(currentConfig);
+                                        SwalRef?.fire('Exito', `Archivo ${fixedName} guardado y folios sincronizados (${folioInicial} - ${folioFinal})`, 'success');
+                                        await this.refreshStatuses({ electronAPI });
+                                        return;
+                                    }
+                                }
+                                // If parsing fails, show warning but continue
+                                SwalRef?.fire('Advertencia', 'Archivo CAF guardado, pero no se pudo leer el rango de folios.', 'warning');
+                            } catch (err) {
+                                SwalRef?.fire('Advertencia', 'Archivo CAF guardado, pero no se pudo leer el rango de folios.', 'warning');
+                            }
+                        };
+                        textReader.readAsText(file);
+                        return; // Don't continue below, wait for textReader
+                    } catch (err) {
+                        SwalRef?.fire('Advertencia', 'Archivo CAF guardado, pero no se pudo leer el rango de folios.', 'warning');
+                    }
                 }
 
                 await electronAPI.saveSiiConfig(currentConfig);
@@ -199,7 +244,8 @@ window.ValmuInvoicingConfigController = {
 
         [33, 39, 61, 56].forEach((type) => {
             document.getElementById(`btn-update-caf${type}`)?.addEventListener('click', () => {
-                this.installFile({ type, electronAPI, onConfigUpdated, SwalRef });
+                // Pass api from window if available
+                this.installFile({ type, electronAPI, onConfigUpdated, SwalRef, api: window.ValmuInvoicingApi });
             });
         });
     },

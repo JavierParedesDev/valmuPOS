@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { CameraView, useCameraPermissions } from 'expo-camera';
 import { apiRequest } from '../services/api';
 import {
     Card,
@@ -12,7 +13,7 @@ import {
     SecondaryButton,
     SectionHeader
 } from '../components/UI';
-import { toNumber } from '../utils/format';
+import { toNumber, filterProductsLocally } from '../utils/format';
 import { brandColors } from '../theme';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -30,6 +31,10 @@ export default function BranchesScreen({ token }) {
     const [adjustVisible, setAdjustVisible] = useState(false);
     const [currentItem, setCurrentItem] = useState(null);
     const [adjustForm, setAdjustForm] = useState({ nuevaCantidad: '', motivoAjuste: 'INVENTARIO_MANUAL' });
+    const [searchText, setSearchText] = useState('');
+    const [scannerVisible, setScannerVisible] = useState(false);
+    const [hasScanned, setHasScanned] = useState(false);
+    const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
     const loadBranches = async () => {
         setLoading(true);
@@ -86,6 +91,28 @@ export default function BranchesScreen({ token }) {
         loadInventory(selectedBranch);
     };
 
+    const openScanner = async () => {
+        if (!cameraPermission?.granted) {
+            const permissionResponse = await requestCameraPermission();
+            if (!permissionResponse.granted) {
+                Alert.alert('Permiso requerido', 'Debes permitir el uso de camara para escanear codigos.');
+                return;
+            }
+        }
+
+        setHasScanned(false);
+        setScannerVisible(true);
+    };
+
+    const handleScanned = ({ data }) => {
+        if (hasScanned) return;
+        setHasScanned(true);
+        setSearchText(data);
+        setScannerVisible(false);
+    };
+
+    const filteredInventory = filterProductsLocally(searchText, inventory);
+
     return (
         <Screen>
             <SectionHeader
@@ -104,53 +131,72 @@ export default function BranchesScreen({ token }) {
                     <Text style={styles.loaderText}>Sincronizando datos...</Text>
                 </View>
             ) : selectedBranch ? (
-                <FlatList
-                    data={inventory}
-                    keyExtractor={(item) => `${selectedBranch.id_sucursal}-${item.id_producto}`}
-                    contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 4 }}
-                    showsVerticalScrollIndicator={false}
-                    renderItem={({ item }) => (
-                        <Card style={styles.inventoryCard}>
-                            {(() => {
-                                const quantity = resolveBranchItemQuantity(item);
-                                return (
-                                    <View style={styles.inventoryTop}>
-                                <View style={styles.inventoryInfo}>
-                                    <Text style={styles.inventoryTitle} numberOfLines={1}>{item.nombreProducto}</Text>
-                                    <View style={styles.codeRow}>
-                                        <Ionicons name="barcode-outline" size={14} color={brandColors.textMuted} />
-                                        <Text style={styles.inventoryCode}>{item.codigoBarras}</Text>
-                                    </View>
-                                </View>
-                                <View style={styles.stockColumn}>
-                                    <Text style={styles.stockLabel}>DISPONIBLE</Text>
-                                    <Text style={[styles.stockValue, quantity <= 5 && styles.lowStock]}>
-                                        {item.esPesable ? `${quantity.toFixed(3)} Kg` : Math.floor(quantity)}
-                                    </Text>
-                                </View>
-                            </View>
-                                );
-                            })()}
-
-                            <TouchableOpacity
-                                style={styles.adjustButton}
-                                onPress={() => {
-                                    const quantity = resolveBranchItemQuantity(item);
-                                    setCurrentItem(item);
-                                    setAdjustForm({
-                                        nuevaCantidad: String(item.esPesable ? quantity : Math.floor(quantity)),
-                                        motivoAjuste: 'INVENTARIO_MANUAL'
-                                    });
-                                    setAdjustVisible(true);
-                                }}
-                            >
-                                <Ionicons name="options-outline" size={18} color={brandColors.accentStrong} />
-                                <Text style={styles.adjustText}>Ajustar Stock</Text>
+                <>
+                    <View style={styles.searchShell}>
+                        <View style={styles.searchContainer}>
+                            <Ionicons name="search-outline" size={20} color={brandColors.textMuted} style={styles.searchIcon} />
+                            <TextInput
+                                value={searchText}
+                                onChangeText={setSearchText}
+                                placeholder="Nombre o código de barras..."
+                                placeholderTextColor={brandColors.textMuted}
+                                selectionColor={brandColors.accent}
+                                style={styles.searchInput}
+                            />
+                            <TouchableOpacity style={styles.scanButton} onPress={openScanner}>
+                                <Ionicons name="barcode-outline" size={22} color={brandColors.accent} />
                             </TouchableOpacity>
-                        </Card>
-                    )}
-                    ListEmptyComponent={<EmptyState text="No hay productos registrados en esta sucursal." />}
-                />
+                        </View>
+                    </View>
+
+                    <FlatList
+                        data={filteredInventory}
+                        keyExtractor={(item) => `${selectedBranch.id_sucursal}-${item.id_producto}`}
+                        contentContainerStyle={{ paddingBottom: 100, paddingHorizontal: 4 }}
+                        showsVerticalScrollIndicator={false}
+                        renderItem={({ item }) => (
+                            <Card style={styles.inventoryCard}>
+                                {(() => {
+                                    const quantity = resolveBranchItemQuantity(item);
+                                    return (
+                                        <View style={styles.inventoryTop}>
+                                            <View style={styles.inventoryInfo}>
+                                                <Text style={styles.inventoryTitle} numberOfLines={1}>{item.nombreProducto}</Text>
+                                                <View style={styles.codeRow}>
+                                                    <Ionicons name="barcode-outline" size={14} color={brandColors.textMuted} />
+                                                    <Text style={styles.inventoryCode}>{item.codigoBarras}</Text>
+                                                </View>
+                                            </View>
+                                            <View style={styles.stockColumn}>
+                                                <Text style={styles.stockLabel}>DISPONIBLE</Text>
+                                                <Text style={[styles.stockValue, quantity <= 5 && styles.lowStock]}>
+                                                    {item.esPesable ? `${quantity.toFixed(3)} Kg` : Math.floor(quantity)}
+                                                </Text>
+                                            </View>
+                                        </View>
+                                    );
+                                })()}
+
+                                <TouchableOpacity
+                                    style={styles.adjustButton}
+                                    onPress={() => {
+                                        const quantity = resolveBranchItemQuantity(item);
+                                        setCurrentItem(item);
+                                        setAdjustForm({
+                                            nuevaCantidad: String(item.esPesable ? quantity : Math.floor(quantity)),
+                                            motivoAjuste: 'INVENTARIO_MANUAL'
+                                        });
+                                        setAdjustVisible(true);
+                                    }}
+                                >
+                                    <Ionicons name="options-outline" size={18} color={brandColors.accentStrong} />
+                                    <Text style={styles.adjustText}>Ajustar Stock</Text>
+                                </TouchableOpacity>
+                            </Card>
+                        )}
+                        ListEmptyComponent={<EmptyState text="No hay productos registrados en esta sucursal." />}
+                    />
+                </>
             ) : (
                 <FlatList
                     data={branches}
@@ -211,6 +257,24 @@ export default function BranchesScreen({ token }) {
                     ]}
                 />
             </FormModal>
+
+            <Modal visible={scannerVisible} animationType="slide">
+                <CameraView
+                    style={StyleSheet.absoluteFill}
+                    facing="back"
+                    onBarcodeScanned={handleScanned}
+                >
+                    <View style={styles.scannerOverlay}>
+                        <View style={styles.scannerTop}>
+                            <TouchableOpacity style={styles.closeScanner} onPress={() => setScannerVisible(false)}>
+                                <Ionicons name="close" size={28} color="#ffffff" />
+                            </TouchableOpacity>
+                        </View>
+                        <View style={styles.scannerFrame} />
+                        <Text style={styles.scannerHint}>Enfoca el código de barras</Text>
+                    </View>
+                </CameraView>
+            </Modal>
         </Screen>
     );
 }
@@ -358,5 +422,73 @@ const styles = StyleSheet.create({
         color: brandColors.textMuted,
         fontWeight: '600',
         marginTop: 4
+    },
+    searchShell: {
+        paddingHorizontal: 16,
+        marginBottom: 16
+    },
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: brandColors.surface,
+        borderRadius: 18,
+        paddingHorizontal: 14,
+        height: 52,
+        borderWidth: 1,
+        borderColor: 'rgba(226, 232, 240, 0.7)'
+    },
+    searchIcon: {
+        marginRight: 10
+    },
+    searchInput: {
+        flex: 1,
+        fontSize: 15,
+        fontWeight: '600',
+        color: brandColors.text,
+        height: '100%'
+    },
+    scanButton: {
+        width: 40,
+        height: 40,
+        borderRadius: 12,
+        backgroundColor: brandColors.accentSoft,
+        alignItems: 'center',
+        justifyContent: 'center'
+    },
+    scannerOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        alignItems: 'center',
+        justifyContent: 'center'
+    },
+    scannerTop: {
+        position: 'absolute',
+        top: 60,
+        right: 20
+    },
+    closeScanner: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        alignItems: 'center',
+        justifyContent: 'center'
+    },
+    scannerFrame: {
+        width: 280,
+        height: 200,
+        borderWidth: 2,
+        borderColor: brandColors.accent,
+        borderRadius: 20,
+        backgroundColor: 'transparent'
+    },
+    scannerHint: {
+        color: '#ffffff',
+        fontSize: 16,
+        fontWeight: '700',
+        marginTop: 24,
+        textShadowColor: 'rgba(0,0,0,0.5)',
+        textShadowOffset: { width: 0, height: 2 },
+        textShadowRadius: 4
     }
 });

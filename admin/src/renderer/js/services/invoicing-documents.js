@@ -448,17 +448,47 @@ window.ValmuInvoicingDocuments = {
             toast?.show?.(`Buscando Folio ${folio}...`, 'info');
             const folders = ['facturas', 'notas_de_credito', 'notas_de_debito'];
             let xmlContent = null;
+            let loadedFrom = 'local';
 
+            // 1. Busqueda Local
             for (const folder of folders) {
-                const content = await electronAPI.readLocalText(`${folder}/DTE_${type}_Folio_${folio}.xml`);
-                if (content) {
-                    xmlContent = content;
-                    break;
+                try {
+                    const content = await electronAPI.readLocalText(`${folder}/DTE_${type}_Folio_${folio}.xml`);
+                    if (content) {
+                        xmlContent = content;
+                        break;
+                    }
+                } catch (e) {
+                    // Ignore local read errors
+                }
+            }
+
+            // 2. Busqueda Remota si no se encontro local
+            if (!xmlContent && window.ValmuInvoicingApi) {
+                toast?.show?.(`Folio ${folio} no encontrado localmente. Buscando en servidor...`, 'info');
+                try {
+                    const listResponse = await window.ValmuInvoicingApi.getXmlList();
+                    const list = Array.isArray(listResponse) ? listResponse : (listResponse?.data || []);
+                    const remoteDte = list.find(d => String(d.tipo_dte || d.tipoDte) === String(type) && String(d.folio) === String(folio));
+
+                    if (remoteDte) {
+                        const idXml = remoteDte.id_xml || remoteDte.id;
+                        xmlContent = await window.ValmuInvoicingApi.downloadXml(idXml);
+                        loadedFrom = 'remote';
+                        toast?.show?.(`DTE descargado del servidor.`, 'success');
+
+                        // Opcional: Guardar localmente para la proxima
+                        const folderTarget = String(type) === '61' ? 'notas_de_credito' : (String(type) === '56' ? 'notas_de_debito' : 'facturas');
+                        const filename = `DTE_${type}_Folio_${folio}.xml`;
+                        await electronAPI.saveXml(filename, xmlContent, folderTarget);
+                    }
+                } catch (remoteError) {
+                    console.error('Remote DTE search failed:', remoteError);
                 }
             }
 
             if (!xmlContent) {
-                throw new Error(`No se encontro el archivo DTE_${type}_Folio_${folio}.xml en ninguna carpeta local.`);
+                throw new Error(`No se encontro el DTE ${type} Folio ${folio} en local ni en el servidor.`);
             }
 
             const parser = new DOMParser();
@@ -490,6 +520,13 @@ window.ValmuInvoicingDocuments = {
             if (detalles.length > 0) {
                 const prefix = activeTab === 'note' ? 'nc' : 'nd';
                 const container = document.getElementById(`${prefix}-items-container`);
+
+                // Normalizacion de Precios (Boleta 39, Factura Exenta 34 y Factura 33)
+                // En el creador de Valmu, el motor calcula Neto + 19%.
+                // Si el usuario quiere que el total coincida con el precio cargado del XML (sin duplicar IVA)
+                // debemos dividir por 1.19 para que el motor al recalcular llegue al total original.
+                const shouldNormalize = String(type) === '39' || String(type) === '34' || String(type) === '33';
+
                 if (container) {
                     const firstRow = container.querySelector(`.${prefix}-item-row`);
                     const isFirstEmpty = firstRow && !firstRow.querySelector(`.${prefix}-item-nombre`).value;
@@ -498,7 +535,11 @@ window.ValmuInvoicingDocuments = {
                         const det = detalles[i];
                         const name = det.getElementsByTagName('NmbItem')[0]?.textContent;
                         const qty = det.getElementsByTagName('QtyItem')[0]?.textContent;
-                        const prc = det.getElementsByTagName('PrcItem')[0]?.textContent;
+                        let prc = parseFloat(det.getElementsByTagName('PrcItem')[0]?.textContent || 0);
+
+                        if (shouldNormalize) {
+                            prc = prc / 1.19;
+                        }
 
                         let targetRow;
                         if (i === 0 && isFirstEmpty) {
@@ -515,7 +556,7 @@ window.ValmuInvoicingDocuments = {
                         if (targetRow) {
                             targetRow.querySelector(`.${prefix}-item-nombre`).value = name || '';
                             targetRow.querySelector(`.${prefix}-item-qty`).value = qty || 1;
-                            targetRow.querySelector(`.${prefix}-item-price`).value = Math.round(parseFloat(prc || 0));
+                            targetRow.querySelector(`.${prefix}-item-price`).value = Math.round(prc);
 
                             const qtyInput = targetRow.querySelector(`.${prefix}-item-qty`);
                             if (activeTab === 'note') {

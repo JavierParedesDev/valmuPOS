@@ -4,6 +4,7 @@ let adminProductSearchTimer = null;
 let adminProductRequestId = 0;
 let adminProductsCache = [];
 let adminExpandedProductId = null;
+let adminInboundRowSequence = 0;
 const adminProductPagination = {
     page: 1,
     hasMore: false,
@@ -108,6 +109,11 @@ async function fetchAdminProductFormReferences(token) {
 }
 
 async function renderProducts() {
+    if (isBodeguero()) {
+        await renderWarehouseProducts();
+        return;
+    }
+
     const contentArea = document.getElementById('content-area');
 
     contentArea.innerHTML = `
@@ -129,6 +135,98 @@ async function renderProducts() {
             </div>
             <p class="text-muted" style="margin-top: 0.75rem; font-size: 0.85rem;">
                 Vista paginada de ${ADMIN_PRODUCT_LIMIT} productos por pagina para mantener el modulo mas rapido.
+            </p>
+            <div id="products-search-status" class="text-muted" style="margin-top: 0.35rem; font-size: 0.8rem;"></div>
+        </div>
+        <div class="glass-panel mt-4">
+            <div class="table-shell product-table-shell">
+                <table class="data-table product-data-table">
+                    <thead>
+                        <tr>
+                            <th>Codigo</th>
+                            <th>Producto</th>
+                            <th>Categoria</th>
+                            <th>Precios</th>
+                            <th>Proveedor</th>
+                        </tr>
+                    </thead>
+                    <tbody id="products-list">
+                        <tr><td colspan="5">Cargando productos...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="pagination-bar">
+                <div class="pagination-summary" id="products-pagination-summary">Preparando paginacion...</div>
+                <div class="pagination-actions">
+                    <button class="btn btn-ghost btn-sm" id="products-prev-page">Anterior</button>
+                    <button class="btn btn-ghost btn-sm" id="products-next-page">Siguiente</button>
+                </div>
+            </div>
+        </div>
+    `;
+
+    const searchInput = document.getElementById('products-search');
+    const clearButton = document.getElementById('products-search-clear');
+    const prevButton = document.getElementById('products-prev-page');
+    const nextButton = document.getElementById('products-next-page');
+
+    searchInput.addEventListener('input', () => {
+        adminProductPagination.page = 1;
+        renderAdminProductRows(filterAdminProductsLocally(searchInput.value));
+        clearTimeout(adminProductSearchTimer);
+        adminProductSearchTimer = setTimeout(() => {
+            loadAdminProductTable(searchInput.value, 1);
+        }, 350);
+    });
+
+    clearButton.addEventListener('click', () => {
+        searchInput.value = '';
+        adminProductPagination.page = 1;
+        loadAdminProductTable('', 1);
+    });
+
+    prevButton.addEventListener('click', () => {
+        if (adminProductPagination.page <= 1) return;
+        adminProductPagination.page -= 1;
+        loadAdminProductTable(searchInput.value, adminProductPagination.page);
+    });
+
+    nextButton.addEventListener('click', () => {
+        if (!adminProductPagination.hasMore) return;
+        adminProductPagination.page += 1;
+        loadAdminProductTable(searchInput.value, adminProductPagination.page);
+    });
+
+    await loadAdminProductTable('', 1);
+}
+
+async function renderWarehouseProducts() {
+    const contentArea = document.getElementById('content-area');
+    const activeBranchName = getActiveBranchName();
+
+    contentArea.innerHTML = `
+        <div class="action-bar">
+            <div>
+                <h2><span class="icon">📦</span> Ingreso de Stock</h2>
+                <p class="text-muted" style="margin-top: 0.35rem;">
+                    ${activeBranchName ? `Ingreso y traslado de mercaderia con foco en ${activeBranchName}.` : 'Ingreso y traslado de mercaderia para bodega.'}
+                </p>
+            </div>
+            <div class="btn-group">
+                <button class="btn btn-primary" onclick="openStockInboundForm()">📥 Registrar ingreso</button>
+                <button class="btn btn-ghost" onclick="openTransferForm()">🔄 Trasladar stock</button>
+            </div>
+        </div>
+        <div class="glass-panel mt-4" style="padding: 1rem;">
+            <div style="display: flex; gap: 0.75rem; align-items: end; flex-wrap: wrap;">
+                <div class="form-group" style="flex: 1; min-width: 260px; margin: 0;">
+                    <label>Buscar producto</label>
+                    <input type="text" id="products-search" class="form-control" placeholder="Nombre o codigo de barras">
+                </div>
+                <button class="btn btn-ghost" id="products-search-clear">Limpiar</button>
+            </div>
+            <p class="text-muted" style="margin-top: 0.75rem; font-size: 0.85rem;">
+                Esta vista permite revisar productos, ingresar stock y trasladar entre sucursales. La creacion y edicion de productos quedan reservadas al administrador.
             </p>
             <div id="products-search-status" class="text-muted" style="margin-top: 0.35rem; font-size: 0.8rem;"></div>
         </div>
@@ -326,6 +424,20 @@ function renderAdminProductRows(products) {
 
     list.innerHTML = products.map((product, index) => {
         const isExpanded = adminExpandedProductId === product.id_producto;
+        const bodegueroMode = isBodeguero();
+        const actionDescription = bodegueroMode
+            ? 'Selecciona una accion para revisar el producto o registrar ingreso de stock.'
+            : 'Selecciona una accion para ver, editar o eliminar este producto.';
+        const actionButtons = bodegueroMode
+            ? `
+                        <button class="btn btn-ghost btn-sm product-action-btn" type="button" onclick="previewProductByIndex(${index}, event)">Ver</button>
+                        <button class="btn btn-primary btn-sm product-action-btn" type="button" onclick="openStockInboundFormByIndex(${index}, event)">Ingresar stock</button>
+                    `
+            : `
+                        <button class="btn btn-ghost btn-sm product-action-btn" type="button" onclick="previewProductByIndex(${index}, event)">Ver</button>
+                        <button class="btn btn-ghost btn-sm product-action-btn" type="button" onclick="openProductFormByIndex(${index}, event)">Editar</button>
+                        <button class="btn btn-ghost btn-sm text-error product-action-btn" type="button" onclick="deleteProduct(${product.id_producto}, event)">Borrar</button>
+                    `;
 
         return `
         <tr
@@ -357,12 +469,10 @@ function renderAdminProductRows(products) {
                 <div class="product-actions-panel">
                     <div class="product-actions-panel-copy">
                         <strong>Opciones para ${product.nombreProducto}</strong>
-                        <span>Selecciona una accion para ver, editar o eliminar este producto.</span>
+                        <span>${actionDescription}</span>
                     </div>
                     <div class="product-actions-cell">
-                        <button class="btn btn-ghost btn-sm product-action-btn" type="button" onclick="previewProductByIndex(${index}, event)">Ver</button>
-                        <button class="btn btn-ghost btn-sm product-action-btn" type="button" onclick="openProductFormByIndex(${index}, event)">Editar</button>
-                        <button class="btn btn-ghost btn-sm text-error product-action-btn" type="button" onclick="deleteProduct(${product.id_producto}, event)">Borrar</button>
+                        ${actionButtons}
                     </div>
                 </div>
             </td>    
@@ -401,6 +511,12 @@ function openProductFormByIndex(index, event) {
     event?.stopPropagation?.();
     const product = window.allProducts[index];
     openProductForm(product);
+}
+
+function openStockInboundFormByIndex(index, event) {
+    event?.stopPropagation?.();
+    const product = window.allProducts[index];
+    openStockInboundForm(product);
 }
 
 function previewProductByIndex(index, event) {
@@ -610,100 +726,153 @@ async function deleteProduct(id, event) {
     }
 }
 
-async function openStockInboundForm() {
+async function openStockInboundForm(initialProduct = null) {
     const token = getAuthToken();
+    const activeBranchId = getActiveBranchId();
+    const activeBranchName = getActiveBranchName();
     const branchRes = await apiRequest({ endpoint: '/sucursales', token });
-    const branches = branchRes.ok ? branchRes.data : [];
+    const allBranches = branchRes.ok ? branchRes.data : [];
+    const branches = allBranches;
+
+    if (!branches.length) {
+        Swal.fire('Sucursal requerida', 'No hay una sucursal disponible para registrar el ingreso de stock.', 'warning');
+        return;
+    }
+
+    const selectedBranchId = activeBranchId || Number(branches[0]?.id_sucursal) || null;
+    const selectedBranchName = activeBranchName || branches.find((branch) => Number(branch.id_sucursal) === Number(selectedBranchId))?.nombreSucursal || branches[0]?.nombreSucursal || 'Sucursal seleccionada';
 
     const content = `
         <div class="form-group">
-            <label>Buscar Producto</label>
-            <input type="text" id="mov-product-search" class="form-control" placeholder="Escribe nombre o codigo">
-            <input type="hidden" id="mov-product-id">
-        </div>
-        <div id="mov-product-results" style="display:grid; gap:0.5rem; margin-bottom:1rem;"></div>
-        <div id="mov-product-selected" class="text-muted" style="margin-bottom:1rem;">Sin producto seleccionado</div>
-        <div class="form-group">
-            <label>Sucursal de Destino</label>
-            <select id="mov-branch" class="form-control">
-                ${branches.map((b) => `<option value="${b.id_sucursal}">${b.nombreSucursal}</option>`).join('')}
-            </select>
-        </div>
-        <div class="form-group">
-            <label>Cantidad a Ingresar</label>
-            <input type="number" id="mov-qty" class="form-control" placeholder="0" step="1">
+            <label>Sucursal Activa</label>
+            <input type="text" class="form-control" value="${selectedBranchName}" disabled>
         </div>
         <div class="form-group">
             <label>Numero de Factura / Guia</label>
             <input type="text" id="mov-invoice" class="form-control" placeholder="Ej: FAC-1234">
         </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; margin-bottom:1rem;">
+            <div>
+                <strong style="display:block; color:var(--text-main);">Detalle de productos</strong>
+                <span class="text-muted" style="font-size:0.82rem;">Agrega varias lineas para registrar una factura completa.</span>
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" id="mov-add-line-btn">+ Agregar producto</button>
+        </div>
+        <div id="mov-lines" style="display:grid; gap:0.9rem; max-height:50vh; overflow:auto; padding-right:0.25rem;"></div>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 1rem;">
+            El ingreso se acumula por producto y se registra en <strong>${selectedBranchName}</strong>.
+        </p>
     `;
 
     showModal('Ingreso de Mercaderia (Compras)', content, async () => {
-        const selectedId = parseInt(document.getElementById('mov-product-id').value, 10);
-        const data = {
-            id_producto: selectedId,
-            id_sucursal: parseInt(document.getElementById('mov-branch').value, 10),
-            cantidadIngreso: parseFloat(document.getElementById('mov-qty').value),
-            numeroFactura: document.getElementById('mov-invoice').value
-        };
+        const targetBranchId = Number(selectedBranchId);
+        const invoiceNumber = document.getElementById('mov-invoice').value.trim();
+        const lineRows = Array.from(document.querySelectorAll('.mov-line-row'));
 
-        if (isNaN(data.id_producto)) {
-            Swal.fire('Error', 'Debes seleccionar un producto', 'error');
+        if (Number.isNaN(targetBranchId)) {
+            Swal.fire('Error', 'Debes seleccionar una sucursal valida.', 'error');
             return;
         }
 
-        if (isNaN(data.cantidadIngreso) || data.cantidadIngreso <= 0) {
-            Swal.fire('Error', 'Cantidad invalida', 'error');
+        const parsedLines = lineRows.map((row) => ({
+            productId: parseInt(row.querySelector('.mov-line-product-id')?.value, 10),
+            productName: row.querySelector('.mov-line-search')?.value?.trim() || 'Producto',
+            quantity: parseFloat(row.querySelector('.mov-line-qty')?.value),
+            isPesable: row.querySelector('.mov-line-search')?.dataset?.pesable === '1'
+        })).filter((line) => !Number.isNaN(line.productId) || !Number.isNaN(line.quantity));
+
+        if (!parsedLines.length) {
+            Swal.fire('Error', 'Debes agregar al menos un producto al ingreso.', 'error');
             return;
         }
 
-        const response = await apiRequest({
-            endpoint: '/productos/ingreso',
-            method: 'POST',
-            body: data,
-            token
-        });
-
-        if (response.ok) {
-            Toast.fire({ icon: 'success', title: 'Ingreso registrado con exito' });
-            closeModal();
-            loadAdminProductTable(document.getElementById('products-search')?.value || '', adminProductPagination.page);
-        } else {
-            showMovementError(response.data?.error || response.error || 'Error');
+        const invalidLine = parsedLines.find((line) => Number.isNaN(line.productId) || Number.isNaN(line.quantity) || line.quantity <= 0);
+        if (invalidLine) {
+            Swal.fire('Error', 'Todas las lineas deben tener producto y cantidad valida.', 'error');
+            return;
         }
+
+        const aggregatedLines = Array.from(parsedLines.reduce((map, line) => {
+            const current = map.get(line.productId) || { ...line, quantity: 0 };
+            current.quantity += line.quantity;
+            map.set(line.productId, current);
+            return map;
+        }, new Map()).values());
+
+        for (const line of aggregatedLines) {
+            const response = await apiRequest({
+                endpoint: '/productos/ingreso',
+                method: 'POST',
+                body: {
+                    id_producto: line.productId,
+                    id_sucursal: targetBranchId,
+                    cantidadIngreso: line.quantity,
+                    numeroFactura: invoiceNumber
+                },
+                token
+            });
+
+            if (!response.ok) {
+                showMovementError(`${line.productName}: ${response.data?.error || response.error || 'Error'}`);
+                return;
+            }
+        }
+
+        Toast.fire({ icon: 'success', title: `Ingreso registrado con ${aggregatedLines.length} producto(s)` });
+        closeModal();
+        loadAdminProductTable(document.getElementById('products-search')?.value || '', adminProductPagination.page);
     });
 
-    initAdminProductPicker({
-        searchInputId: 'mov-product-search',
-        resultsId: 'mov-product-results',
-        hiddenId: 'mov-product-id',
-        selectedLabelId: 'mov-product-selected',
-        quantityInputId: 'mov-qty'
+    document.getElementById('modal-save-btn').textContent = 'Registrar ingreso';
+    document.getElementById('mov-add-line-btn')?.addEventListener('click', () => {
+        appendInboundLineRow();
     });
+
+    appendInboundLineRow(initialProduct);
+    if (!initialProduct) {
+        appendInboundLineRow();
+    }
 }
 
 async function openTransferForm() {
     const token = getAuthToken();
+    const activeBranchId = getActiveBranchId();
+    const activeBranchName = getActiveBranchName();
     const branchRes = await apiRequest({ endpoint: '/sucursales', token });
-    const branches = branchRes.ok ? branchRes.data : [];
+    const allBranches = branchRes.ok ? branchRes.data : [];
+    const branches = allBranches;
+
+    if (!branches.length) {
+        Swal.fire('Sucursal requerida', 'No hay sucursales disponibles para registrar traslados.', 'warning');
+        return;
+    }
+
+    const defaultSourceId = activeBranchId || Number(branches[0]?.id_sucursal) || null;
+    const defaultSourceName = activeBranchName || branches.find((branch) => Number(branch.id_sucursal) === defaultSourceId)?.nombreSucursal || 'Sucursal origen';
 
     const content = `
+        <div class="form-group">
+            <label>Sucursal de Origen</label>
+            <input type="text" class="form-control" value="${defaultSourceName}" disabled>
+        </div>
         <div class="form-group">
             <label>Buscar Producto a Trasladar</label>
             <input type="text" id="tra-product-search" class="form-control" placeholder="Escribe nombre o codigo">
             <input type="hidden" id="tra-product-id">
         </div>
         <div id="tra-product-results" style="display:grid; gap:0.5rem; margin-bottom:1rem;"></div>
-        <div id="tra-product-selected" class="text-muted" style="margin-bottom:1rem;">Sin producto seleccionado</div>
+        <div id="tra-product-selected" class="text-muted" style="margin-bottom:0.5rem;">Sin producto seleccionado</div>
+        <div id="tra-stock-info" style="display:none; margin-bottom:1rem; padding:0.75rem; background:#f0fdf4; border:1px solid #86efac; border-radius:0.5rem;">
+            <span style="font-size:0.85rem; color:#166534;">
+                <i class="bi bi-box-seam"></i> Stock disponible: <strong id="tra-stock-qty">0</strong>
+            </span>
+        </div>
         <div class="form-group">
             <label>Sucursal de Destino</label>
-            <select id="tra-dest" class="form-control">
-                ${branches.map((b) => `<option value="${b.id_sucursal}">${b.nombreSucursal}</option>`).join('')}
-            </select>
+            <select id="tra-dest" class="form-control"></select>
         </div>
         <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">
-            * El origen sera tu sucursal actual asignada.
+            El traslado mueve stock de <strong id="tra-origin-name">${defaultSourceName}</strong> hacia otra sucursal.
         </p>
         <div class="form-group">
             <label>Cantidad a Trasladar</label>
@@ -714,17 +883,23 @@ async function openTransferForm() {
     showModal('Traslado entre Sucursales', content, async () => {
         const data = {
             id_producto: parseInt(document.getElementById('tra-product-id').value, 10),
+            id_sucursalOrigen: Number(defaultSourceId),
             id_sucursalDestino: parseInt(document.getElementById('tra-dest').value, 10),
             cantidadMov: parseFloat(document.getElementById('tra-qty').value)
         };
 
-        if (isNaN(data.id_producto) || isNaN(data.id_sucursalDestino)) {
-            Swal.fire('Error', 'Debe seleccionar un producto y una sucursal de destino', 'error');
+        if (isNaN(data.id_producto) || isNaN(data.id_sucursalOrigen) || isNaN(data.id_sucursalDestino)) {
+            Swal.fire('Error', 'Debes seleccionar producto, sucursal origen y sucursal destino.', 'error');
             return;
         }
 
         if (isNaN(data.cantidadMov) || data.cantidadMov <= 0) {
             Swal.fire('Error', 'Cantidad invalida', 'error');
+            return;
+        }
+
+        if (data.id_sucursalOrigen === data.id_sucursalDestino) {
+            Swal.fire('Error', 'La sucursal de origen y destino deben ser distintas.', 'error');
             return;
         }
 
@@ -744,23 +919,65 @@ async function openTransferForm() {
         }
     });
 
+    document.getElementById('modal-save-btn').textContent = 'Registrar traslado';
+    syncTransferDestinationOptions(branches, Number(defaultSourceId));
+
     initAdminProductPicker({
         searchInputId: 'tra-product-search',
         resultsId: 'tra-product-results',
         hiddenId: 'tra-product-id',
         selectedLabelId: 'tra-product-selected',
-        quantityInputId: 'tra-qty'
+        quantityInputId: 'tra-qty',
+        stockInfoId: 'tra-stock-info',
+        stockQtyId: 'tra-stock-qty',
+        sourceBranchId: Number(defaultSourceId)
     });
 }
 
-function initAdminProductPicker({ searchInputId, resultsId, hiddenId, selectedLabelId, quantityInputId }) {
+function initAdminProductPicker({ searchInputId, resultsId, hiddenId, selectedLabelId, quantityInputId, stockInfoId, stockQtyId, sourceBranchId }) {
     const searchInput = document.getElementById(searchInputId);
     const results = document.getElementById(resultsId);
     const hiddenInput = document.getElementById(hiddenId);
     const selectedLabel = document.getElementById(selectedLabelId);
     const qtyInput = document.getElementById(quantityInputId);
+    const stockInfoDiv = stockInfoId ? document.getElementById(stockInfoId) : null;
+    const stockQtySpan = stockQtyId ? document.getElementById(stockQtyId) : null;
 
     let timer = null;
+
+    // Función para obtener stock del producto en la sucursal origen
+    const fetchProductStock = async (productId) => {
+        if (!sourceBranchId || !stockInfoDiv || !stockQtySpan) return;
+        
+        try {
+            const token = getAuthToken();
+            const invRes = await apiRequest({ 
+                endpoint: `/productos/inventario?id_sucursal=${sourceBranchId}`, 
+                token 
+            });
+            const inventario = Array.isArray(invRes?.data) ? invRes.data : [];
+            const item = inventario.find(i => Number(i.id_producto) === Number(productId));
+            const stock = item ? (Number(item.stockActual || item.cantidad || item.stock || 0)) : 0;
+            const esPesable = item?.esPesable;
+            
+            stockQtySpan.textContent = esPesable ? `${stock.toFixed(3)} Kg` : `${Math.round(stock)} unidades`;
+            stockInfoDiv.style.display = 'block';
+            
+            // Cambiar color si stock es bajo
+            if (stock <= 0) {
+                stockInfoDiv.style.background = '#fef2f2';
+                stockInfoDiv.style.borderColor = '#fca5a5';
+                stockQtySpan.parentElement.style.color = '#991b1b';
+            } else {
+                stockInfoDiv.style.background = '#f0fdf4';
+                stockInfoDiv.style.borderColor = '#86efac';
+                stockQtySpan.parentElement.style.color = '#166534';
+            }
+        } catch (e) {
+            console.error('Error fetching stock:', e);
+            stockInfoDiv.style.display = 'none';
+        }
+    };
 
     searchInput.addEventListener('input', () => {
         clearTimeout(timer);
@@ -771,6 +988,7 @@ function initAdminProductPicker({ searchInputId, resultsId, hiddenId, selectedLa
                 results.innerHTML = '';
                 hiddenInput.value = '';
                 selectedLabel.textContent = 'Sin producto seleccionado';
+                if (stockInfoDiv) stockInfoDiv.style.display = 'none';
                 return;
             }
 
@@ -798,6 +1016,9 @@ function initAdminProductPicker({ searchInputId, resultsId, hiddenId, selectedLa
                     searchInput.value = button.dataset.name;
                     results.innerHTML = '';
                     updateProductQuantityStep(button.dataset.pesable === '1', qtyInput);
+                    
+                    // Obtener y mostrar stock disponible
+                    fetchProductStock(button.dataset.id);
                 });
             });
         }, 300);
@@ -808,4 +1029,144 @@ function updateProductQuantityStep(isPesable, input) {
     if (!input) return;
     input.step = isPesable ? '0.001' : '1';
     input.placeholder = isPesable ? '0.000' : '0';
+}
+
+function syncTransferDestinationOptions(branches, originId) {
+    const destinationSelect = document.getElementById('tra-dest');
+    const originNameLabel = document.getElementById('tra-origin-name');
+    if (!destinationSelect) return;
+
+    const availableDestinations = branches.filter((branch) => Number(branch.id_sucursal) !== originId);
+    destinationSelect.innerHTML = availableDestinations.map((branch) =>
+        `<option value="${branch.id_sucursal}">${branch.nombreSucursal}</option>`
+    ).join('');
+
+    const selectedOrigin = branches.find((branch) => Number(branch.id_sucursal) === originId);
+    if (originNameLabel) {
+        originNameLabel.textContent = selectedOrigin?.nombreSucursal || 'Sucursal origen';
+    }
+}
+
+function appendInboundLineRow(product = null) {
+    const linesContainer = document.getElementById('mov-lines');
+    if (!linesContainer) return;
+
+    adminInboundRowSequence += 1;
+    const rowId = adminInboundRowSequence;
+    const row = document.createElement('div');
+    row.className = 'mov-line-row';
+    row.dataset.rowId = String(rowId);
+    row.style.cssText = 'border:1px solid var(--line-soft); border-radius:16px; padding:1rem; background:rgba(255,255,255,0.75);';
+    row.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; margin-bottom:0.85rem;">
+            <strong style="color:var(--text-main);">Producto ${rowId}</strong>
+            <button type="button" class="btn btn-ghost btn-sm mov-remove-line-btn">Quitar</button>
+        </div>
+        <div class="form-group" style="margin-bottom:0.8rem;">
+            <label>Buscar producto</label>
+            <input type="text" class="form-control mov-line-search" placeholder="Escribe nombre o codigo" autocomplete="off">
+            <input type="hidden" class="mov-line-product-id">
+        </div>
+        <div class="mov-line-results" style="display:grid; gap:0.45rem; margin-bottom:0.8rem;"></div>
+        <div class="text-muted mov-line-selected" style="margin-bottom:0.8rem;">Sin producto seleccionado</div>
+        <div class="form-group" style="margin-bottom:0;">
+            <label>Cantidad a ingresar</label>
+            <input type="number" class="form-control mov-line-qty" placeholder="0" step="1" min="0">
+        </div>
+    `;
+
+    linesContainer.appendChild(row);
+    bindInboundLineRow(row, product);
+}
+
+function bindInboundLineRow(row, product = null) {
+    const searchInput = row.querySelector('.mov-line-search');
+    const hiddenInput = row.querySelector('.mov-line-product-id');
+    const results = row.querySelector('.mov-line-results');
+    const selectedLabel = row.querySelector('.mov-line-selected');
+    const qtyInput = row.querySelector('.mov-line-qty');
+    const removeButton = row.querySelector('.mov-remove-line-btn');
+    let timer = null;
+
+    removeButton?.addEventListener('click', () => {
+        const allRows = document.querySelectorAll('.mov-line-row');
+        if (allRows.length === 1) {
+            clearInboundLineRow(row);
+            return;
+        }
+        row.remove();
+    });
+
+    searchInput?.addEventListener('input', () => {
+        clearTimeout(timer);
+        timer = setTimeout(async () => {
+            const term = searchInput.value.trim();
+
+            if (!term) {
+                results.innerHTML = '';
+                hiddenInput.value = '';
+                searchInput.dataset.pesable = '0';
+                selectedLabel.textContent = 'Sin producto seleccionado';
+                return;
+            }
+
+            const response = await fetchAdminProducts(term, 12, 1);
+            const products = response.ok && Array.isArray(response.data) ? response.data : [];
+
+            results.innerHTML = products.map((item) => `
+                <button
+                    type="button"
+                    class="btn btn-ghost btn-sm"
+                    data-id="${item.id_producto}"
+                    data-name="${item.nombreProducto}"
+                    data-code="${item.codigoBarras || ''}"
+                    data-pesable="${item.esPesable ? '1' : '0'}"
+                    style="justify-content:flex-start; text-align:left;"
+                >
+                    <strong>${item.nombreProducto}</strong>
+                    <span style="margin-left:0.5rem; color:var(--text-muted);">${item.codigoBarras || 'Sin codigo'}</span>
+                </button>
+            `).join('');
+
+            Array.from(results.querySelectorAll('button')).forEach((button) => {
+                button.addEventListener('click', () => {
+                    hiddenInput.value = button.dataset.id;
+                    searchInput.value = button.dataset.name;
+                    searchInput.dataset.pesable = button.dataset.pesable;
+                    selectedLabel.textContent = `${button.dataset.name} (${button.dataset.code || 'Sin codigo'})`;
+                    results.innerHTML = '';
+                    updateProductQuantityStep(button.dataset.pesable === '1', qtyInput);
+                    qtyInput.focus();
+                });
+            });
+        }, 250);
+    });
+
+    if (product?.id_producto) {
+        hiddenInput.value = product.id_producto;
+        searchInput.value = product.nombreProducto || '';
+        searchInput.dataset.pesable = product.esPesable ? '1' : '0';
+        selectedLabel.textContent = `${product.nombreProducto || 'Producto'} (${product.codigoBarras || 'Sin codigo'})`;
+        updateProductQuantityStep(Boolean(product.esPesable), qtyInput);
+    }
+}
+
+function clearInboundLineRow(row) {
+    const searchInput = row.querySelector('.mov-line-search');
+    const hiddenInput = row.querySelector('.mov-line-product-id');
+    const results = row.querySelector('.mov-line-results');
+    const selectedLabel = row.querySelector('.mov-line-selected');
+    const qtyInput = row.querySelector('.mov-line-qty');
+
+    if (searchInput) {
+        searchInput.value = '';
+        searchInput.dataset.pesable = '0';
+    }
+    if (hiddenInput) hiddenInput.value = '';
+    if (results) results.innerHTML = '';
+    if (selectedLabel) selectedLabel.textContent = 'Sin producto seleccionado';
+    if (qtyInput) {
+        qtyInput.value = '';
+        updateProductQuantityStep(false, qtyInput);
+    }
 }

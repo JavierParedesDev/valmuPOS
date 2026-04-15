@@ -12,42 +12,40 @@
 
 <body>
     <div class="login-shell">
-        <section class="login-hero">
-            <div class="login-hero-badge">Valmu Ecosystem</div>
-            <img src="assets/logo.png" alt="Valmu Logo" class="login-logo-mark">
-            <h1>Control comercial con identidad propia.</h1>
-            <p>
-                Un panel de administracion mas calido, claro y preparado para crecer contigo entre productos,
-                sucursales y operaciones.
-            </p>
-            <div class="login-hero-points">
-                <span>Inventario centralizado</span>
-                <span>Acceso seguro</span>
-                <span>Actualizaciones listas</span>
-            </div>
-        </section>
-
         <section class="login-panel glass-panel">
+            <!-- Simplified login: logo + compact form -->
+            <img src="assets/logo.png" alt="Valmu Logo" class="login-panel-logo">
             <div class="login-panel-head">
-                <p class="login-kicker">Acceso al sistema</p>
-                <h2>Iniciar sesion</h2>
-                <p class="login-copy">Ingresa tus credenciales para continuar en Valmu Admin.</p>
+                <p class="login-kicker">Ingreso</p>
+                <h2>Bienvenido</h2>
+                <p class="login-copy">Ingresa tus datos para continuar.</p>
             </div>
 
             <form id="login-form" class="login-form">
                 <div class="form-group">
                     <label for="username">Usuario</label>
-                    <input type="text" id="username" required placeholder="Tu usuario">
+                    <div class="input-shell">
+                        <span class="input-icon" aria-hidden="true">👤</span>
+                        <input type="text" id="username" required placeholder="Tu usuario">
+                    </div>
                 </div>
                 <div class="form-group">
                     <label for="password">Contrasena</label>
-                    <input type="password" id="password" required placeholder="••••••••">
+                    <div class="input-shell">
+                        <span class="input-icon" aria-hidden="true">🔒</span>
+                        <input type="password" id="password" required placeholder="••••••••">
+                    </div>
+                </div>
+
+                <div id="login-access-preview" class="login-access-preview" aria-live="polite">
+                    <span class="login-access-dot"></span>
+                    <span id="login-access-text">Acceso a Valmu</span>
                 </div>
 
                 <div id="login-error" class="error-message"></div>
 
                 <button type="submit" class="btn btn-primary btn-block" id="btn-login">
-                    Iniciar sesion
+                    Entrar
                 </button>
             </form>
         </section>

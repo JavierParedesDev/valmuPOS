@@ -1,9 +1,24 @@
 let currentPage = null;
 let updateStateCleanup = null;
 let lastUpdateStatus = null;
-const ROLE_PERMISSIONS = {
-    1: ['dashboard', 'users', 'customers', 'products', 'categories', 'suppliers', 'advertising', 'wastage', 'finances', 'invoicing', 'branches', 'settings', 'logistics'], // Admin
-    3: ['dashboard', 'products', 'categories', 'suppliers', 'wastage', 'logistics'] // Bodeguero
+const ROLE_CONFIGS = {
+    1: {
+        allowedPages: ['dashboard', 'users', 'customers', 'products', 'categories', 'suppliers', 'advertising', 'wastage', 'finances', 'invoicing', 'dispatches', 'branches', 'settings', 'logistics'],
+        defaultPage: 'dashboard'
+    },
+    3: {
+        allowedPages: ['dashboard', 'products', 'wastage', 'branches', 'settings'],
+        defaultPage: 'dashboard',
+        brandName: 'Bodega',
+        navLabels: {
+            dashboard: 'Resumen Bodega',
+            products: 'Ingreso de Stock',
+            wastage: 'Mermas',
+            branches: 'Mi Sucursal',
+            settings: 'Configuracion'
+        },
+        sectionLabels: ['Bodega', 'Operacion']
+    }
 };
 
 function getRoutes() {
@@ -17,6 +32,8 @@ function getNavigation() {
 document.addEventListener('DOMContentLoaded', async () => {
     enforceSession();
     hydrateUserProfile();
+    applyRoleChrome();
+    applyRoleEntrance();
     applyRolePermissions();
     await hydrateSidebarVersion();
     const navigation = getNavigation();
@@ -31,7 +48,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     await bindWindowActions();
     bindUpdateStateListener();
 
-    const initialPage = navigation.getInitialPage(getRoutes);
+    const initialPage = getInitialPageForUser();
     navigation.setActiveNav(initialPage);
     navigation.updatePageTitle(initialPage, getRoutes);
     loadPage(initialPage);
@@ -76,6 +93,83 @@ function hydrateUserProfile() {
     }
 }
 
+function getUserRoleConfig() {
+    const user = getCurrentUser();
+    if (!user) return ROLE_CONFIGS[1];
+
+    const roleKey = Number(user.id_rol || user.rol_id || user.idRol);
+    if (ROLE_CONFIGS[roleKey]) {
+        return ROLE_CONFIGS[roleKey];
+    }
+
+    if (String(user.rol || '').toLowerCase() === 'bodeguero') {
+        return ROLE_CONFIGS[3];
+    }
+
+    return ROLE_CONFIGS[1];
+}
+
+function getAllowedPagesForUser() {
+    return getUserRoleConfig().allowedPages || ROLE_CONFIGS[1].allowedPages;
+}
+
+function getInitialPageForUser() {
+    const requestedPage = window.location.hash.replace('#', '');
+    const routes = getRoutes();
+    const allowedPages = getAllowedPagesForUser();
+    const roleConfig = getUserRoleConfig();
+
+    if (routes[requestedPage] && allowedPages.includes(requestedPage)) {
+        return requestedPage;
+    }
+
+    if (routes[roleConfig.defaultPage] && allowedPages.includes(roleConfig.defaultPage)) {
+        return roleConfig.defaultPage;
+    }
+
+    return allowedPages.find((page) => routes[page]) || 'dashboard';
+}
+
+function applyRoleChrome() {
+    const roleConfig = getUserRoleConfig();
+
+    if (roleConfig.brandName) {
+        const brandName = document.querySelector('.brand-name');
+        if (brandName) {
+            brandName.textContent = roleConfig.brandName;
+        }
+    }
+
+    const navLabels = roleConfig.navLabels || {};
+    document.querySelectorAll('.nav-item, .sidebar-settings-link').forEach((item) => {
+        const page = item.dataset.page;
+        const label = item.querySelector('.nav-label');
+        if (page && label && navLabels[page]) {
+            label.textContent = navLabels[page];
+        }
+    });
+
+    if (Array.isArray(roleConfig.sectionLabels) && roleConfig.sectionLabels.length) {
+        const labels = document.querySelectorAll('.sidebar-section-label');
+        roleConfig.sectionLabels.forEach((text, index) => {
+            if (labels[index]) {
+                labels[index].textContent = text;
+            }
+        });
+    }
+}
+
+function applyRoleEntrance() {
+    if (!isBodeguero()) {
+        return;
+    }
+
+    document.body.classList.add('role-bodeguero-enter');
+    window.setTimeout(() => {
+        document.body.classList.remove('role-bodeguero-enter');
+    }, 900);
+}
+
 function applyRolePermissions() {
     const user = getCurrentUser();
     if (!user) return;
@@ -90,14 +184,7 @@ function applyRolePermissions() {
     });
 
     const roleKey = user.id_rol || user.rol_id || user.idRol;
-    let allowedPages = ROLE_PERMISSIONS[roleKey];
-
-    // Fallback por nombre de rol
-    if (!allowedPages && user.rol) {
-        const normalRol = String(user.rol).toLowerCase();
-        if (normalRol === 'administrador') allowedPages = ROLE_PERMISSIONS[1];
-        if (normalRol === 'bodeguero') allowedPages = ROLE_PERMISSIONS[3];
-    }
+    let allowedPages = getAllowedPagesForUser();
 
     if (!allowedPages) {
         if (user.rol === 'Administrador' || Number(roleKey) === 1) {
@@ -199,8 +286,7 @@ async function loadPage(page) {
 
     // Verificacion de permisos
     if (user) {
-        const roleId = Number(user.id_rol);
-        const allowedPages = ROLE_PERMISSIONS[roleId];
+        const allowedPages = getAllowedPagesForUser();
         if (allowedPages && !allowedPages.includes(page)) {
             console.error(`Acceso denegado a la pagina: ${page}`);
             renderBootstrapError('No tienes permisos para acceder a este modulo.');
@@ -228,6 +314,24 @@ async function loadPage(page) {
         `;
     }
 }
+
+window.adminNavigateToPage = function adminNavigateToPage(page) {
+    const navigation = getNavigation();
+    if (!navigation) {
+        return;
+    }
+
+    const allowedPages = getAllowedPagesForUser();
+    if (!allowedPages.includes(page)) {
+        Toast.fire({ icon: 'warning', title: 'No tienes acceso a este modulo' });
+        return;
+    }
+
+    navigation.setActiveNav(page);
+    navigation.updatePageTitle(page, getRoutes);
+    loadPage(page);
+    window.location.hash = page;
+};
 
 function renderBootstrapError(message) {
     const contentArea = document.getElementById('content-area');

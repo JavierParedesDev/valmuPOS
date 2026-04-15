@@ -36,6 +36,7 @@ window.AdminRoutes = {
     wastage: { title: 'Mermas', render: resolveRenderer('renderMermas', 'Mermas') },
     finances: { title: 'Finanzas', render: resolveRenderer('renderFinances', 'Finanzas') },
     invoicing: { title: 'Facturacion', render: resolveRenderer('renderInvoicing', 'Facturacion') },
+    dispatches: { title: 'Despachos', render: resolveRenderer('renderDispatches', 'Despachos') },
     logistics: { title: 'Logistica', render: resolveRenderer('renderLogistics', 'Logistica') },
     branches: { title: 'Sucursales', render: resolveRenderer('renderBranches', 'Sucursales') },
     advertising: { title: 'Publicidad', render: resolveRenderer('renderAdvertising', 'Publicidad') },

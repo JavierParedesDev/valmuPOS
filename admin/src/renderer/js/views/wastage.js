@@ -6,6 +6,9 @@ let mermasState = {
 async function renderMermas() {
     const contentArea = document.getElementById('content-area');
     if (!contentArea) return;
+    const activeBranchId = getActiveBranchId();
+    const activeBranchName = getActiveBranchName();
+    const bodegueroMode = isBodeguero() && activeBranchId;
 
     contentArea.innerHTML = `
         <div class="space-y-8 animate-fade-in pb-10">
@@ -13,9 +16,9 @@ async function renderMermas() {
             <div class="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
                 <div>
                     <h2 class="text-3xl font-black text-gray-900 tracking-tighter">Control de Mermas</h2>
-                    <p class="text-gray-400 text-sm font-medium">Gestión de pérdidas, roturas y auditoría de inventario crítico</p>
+                    <p class="text-gray-400 text-sm font-medium">${bodegueroMode ? `Registro operativo de perdidas para ${activeBranchName || 'tu sucursal'}.` : 'Gestión de pérdidas, roturas y auditoría de inventario crítico'}</p>
                 </div>
-                <div id="mermas-branch-container" class="w-full md:w-80">
+                <div id="mermas-branch-container" class="w-full md:w-80 ${bodegueroMode ? 'hidden' : ''}">
                     <div class="relative group">
                         <i class="bi bi-shop absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-orange-600 transition-colors"></i>
                         <select id="mermas-branch-select" class="w-full pl-12 pr-10 py-4 bg-white border border-gray-100 rounded-2xl text-sm font-bold shadow-sm focus:border-orange-200 outline-none transition-all appearance-none cursor-pointer" onchange="mermasCambiarSucursal(this.value)">
@@ -31,7 +34,7 @@ async function renderMermas() {
                     <i class="bi bi-geo-fill"></i>
                 </div>
                 <h3 class="text-xl font-black text-gray-900 uppercase tracking-tighter">Origen de Datos No Seleccionado</h3>
-                <p class="text-gray-400 max-w-sm mx-auto mt-3 text-sm font-medium">Seleccione una sucursal en el menú superior para cargar el inventario y comenzar el registro de mermas.</p>
+                <p class="text-gray-400 max-w-sm mx-auto mt-3 text-sm font-medium">${bodegueroMode ? 'Estamos preparando el inventario de tu sucursal para comenzar el registro de mermas.' : 'Seleccione una sucursal en el menú superior para cargar el inventario y comenzar el registro de mermas.'}</p>
             </div>
 
             <div id="mermas-main-area" class="hidden space-y-8">
@@ -74,17 +77,30 @@ async function renderMermas() {
     `;
 
     await mermasCargarSucursales();
+
+    if (bodegueroMode) {
+        mermasState.selectedBranchId = activeBranchId;
+        await mermasCambiarSucursal(String(activeBranchId));
+    }
 }
 
 async function mermasCargarSucursales() {
     const token = getAuthToken();
     try {
         const response = await apiRequest({ endpoint: '/sucursales', token });
+        const assignedBranchId = getActiveBranchId();
         const branches = Array.isArray(response?.data) ? response.data : (Array.isArray(response) ? response : []);
+        const availableBranches = isBodeguero() && assignedBranchId
+            ? branches.filter((branch) => Number(branch.id_sucursal) === assignedBranchId)
+            : branches;
         const select = document.getElementById('mermas-branch-select');
         if (select) {
             select.innerHTML = '<option value="">Seleccionar Sucursal...</option>' +
-                branches.map(b => `<option value="${b.id_sucursal}">${b.nombreSucursal}</option>`).join('');
+                availableBranches.map(b => `<option value="${b.id_sucursal}">${b.nombreSucursal}</option>`).join('');
+
+            if (isBodeguero() && assignedBranchId) {
+                select.value = String(assignedBranchId);
+            }
         }
     } catch (_) {
         const select = document.getElementById('mermas-branch-select');

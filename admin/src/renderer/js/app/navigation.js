@@ -25,7 +25,8 @@ window.AdminNavigation = {
         const routeMap = this.resolveRoutes(routes);
         const pageTitle = document.getElementById('page-title');
         if (pageTitle) {
-            pageTitle.textContent = routeMap[page]?.title || 'Valmu Admin';
+            const navLabel = document.querySelector(`.nav-item[data-page="${page}"] .nav-label, .sidebar-settings-link[data-page="${page}"] .nav-label`);
+            pageTitle.textContent = navLabel?.textContent || routeMap[page]?.title || 'Valmu Admin';
         }
     },
 
