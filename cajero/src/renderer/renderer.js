@@ -69,12 +69,15 @@ import {
     addUnitToCart,
     addWeightedQuantityToCart,
     setWeightedCartQuantity,
+    setCartItemQuantity,
     updateCartItemQuantityValue,
     removeCartItemByProductId
 } from './domain/cart-domain.js';
 import {
     filterDispatchProducts,
     addProductToDispatchCart,
+    addWeightedQuantityToDispatchCart,
+    setDispatchCartItemQuantity,
     updateDispatchCartQuantity,
     removeDispatchCartItem,
     buildDispatchSnapshot,
@@ -113,7 +116,8 @@ import {
     renderCarrierSelectionList,
     updateCarrierTiles,
     updateDispatchCustomerTile,
-    updateDispatchDocumentTypeUI
+    updateDispatchDocumentTypeUI,
+    updateDispatchAddressVisibility
 } from './ui/dispatch-view.js';
 import {
     showAppViewLayout,
@@ -195,12 +199,17 @@ let updateStateCleanup = null;
 let latestUpdateState = null;
 let lastUpdatePromptStatus = null;
 const BOLETA_ENVELOPE_WINDOW_MS = 45 * 60 * 1000;
+const LIVE_CATALOG_REFRESH_MS = 5000;
 const boletaEnvelopeState = {
     startedAt: null,
     items: []
 };
 let boletaEnvelopeFlushTimer = null;
 let boletaEnvelopeSendInFlight = false;
+let lastCatalogSyncAt = 0;
+let catalogRefreshPromise = null;
+let customerDisplayScrollSyncTimer = null;
+let autoScanTimer = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
     hydrateVersion();
@@ -717,6 +726,7 @@ function bindBranchSelection() {
 }
 
 function bindDispatchView() {
+    document.getElementById('dispatch-customer-tile')?.addEventListener('click', openDispatchCustomerModal);
     document.getElementById('dispatch-carrier-tile')?.addEventListener('click', openCarrierSelectionModal);
     document.getElementById('dispatch-manage-customer-btn')?.addEventListener('click', openDispatchCustomerModal);
     document.getElementById('dispatch-clear-customer-btn')?.addEventListener('click', clearDispatchCustomer);
@@ -746,6 +756,10 @@ function bindDispatchView() {
     dispatchSearchInput?.addEventListener('blur', () => {
         window.setTimeout(() => renderDispatchSearchResults([]), 120);
     });
+    document.getElementById('dispatch-address-input')?.addEventListener('input', (event) => {
+        dispatchState.manualAddress = String(event.target?.value || '').trim();
+    });
+    document.getElementById('dispatch-add-manual-btn')?.addEventListener('click', addFirstDispatchSearchResult);
     document.getElementById('dispatch-clear-btn')?.addEventListener('click', clearDispatchDraft);
     document.getElementById('dispatch-generate-btn')?.addEventListener('click', generateDispatchRecord);
     document.getElementById('dispatch-add-carrier-btn')?.addEventListener('click', openDispatchCarrierModal);
@@ -1180,15 +1194,47 @@ function showAppView(view) {
 
 function bindSaleEvents() {
     const searchInput = document.getElementById('product-search-input');
+    const saleCartList = document.getElementById('cart-list');
+    const dispatchCartList = document.getElementById('dispatch-cart-list');
     if (!searchInput || searchInput.dataset.bound === 'true') {
         return;
     }
 
     searchInput.addEventListener('input', handleSearchInput);
     searchInput.addEventListener('keydown', handleSearchKeydown);
+    searchInput.addEventListener('focus', () => {
+        void ensureFreshCatalogForSearch().then((refreshed) => {
+            if (!refreshed) {
+                return;
+            }
+
+            const currentTerm = String(searchInput.value || '').trim();
+            if (!currentTerm) {
+                renderCatalogStatus();
+                renderCart();
+                return;
+            }
+
+            renderSearchResults(findProducts(currentTerm).slice(0, 6));
+            renderCart();
+            renderCatalogStatus();
+        });
+    });
     searchInput.addEventListener('blur', () => {
+        clearAutoScanTimer();
         window.setTimeout(() => renderSearchResults([]), 120);
     });
+
+    if (saleCartList && saleCartList.dataset.customerScrollBound !== 'true') {
+        saleCartList.addEventListener('scroll', scheduleCustomerDisplayScrollSync, { passive: true });
+        saleCartList.dataset.customerScrollBound = 'true';
+    }
+
+    if (dispatchCartList && dispatchCartList.dataset.customerScrollBound !== 'true') {
+        dispatchCartList.addEventListener('scroll', scheduleCustomerDisplayScrollSync, { passive: true });
+        dispatchCartList.dataset.customerScrollBound = 'true';
+    }
+
     searchInput.dataset.bound = 'true';
     if (cashSessionState.isOpen) {
         searchInput.focus();
@@ -1976,9 +2022,11 @@ function buildReceiptRecord({
     const resolvedFooterMessage = footerMessage || (
         documentType === 'Vale interno'
             ? 'Documento no fiscal.'
-            : folioDocumento
-                ? 'Documento tributario emitido y respaldado para reimpresion.'
-                : 'Documento fiscal sin folio sincronizado en esta sesion.'
+            : documentType === 'Boleta'
+                ? ''
+                : folioDocumento
+                    ? 'Documento tributario emitido y respaldado para reimpresion.'
+                    : 'Documento fiscal sin folio sincronizado en esta sesion.'
     );
     const lineItems = Array.isArray(cart)
         ? cart.map((item) => {
@@ -2236,7 +2284,7 @@ async function prepareReceiptReprint() {
     }
 }
 
-function buildDispatchReceiptRecord({ dispatchId, saleId, carrier, snapshot, branchName }) {
+function buildDispatchReceiptRecord({ dispatchId, saleId, carrier, snapshot, branchName, addressLabel = '' }) {
     const createdAt = new Date().toISOString();
     const lineItems = snapshot.lines.map((line) => ({
         name: line.productName,
@@ -2255,6 +2303,7 @@ function buildDispatchReceiptRecord({ dispatchId, saleId, carrier, snapshot, bra
         `Fecha: ${formatDateTime(createdAt)}`,
         `Sucursal: ${branchName}`,
         `Transportista: ${carrier.name} · ${carrier.plate}`,
+        ...(addressLabel ? [`Direccion: ${addressLabel}`] : []),
         '--------------------------------',
         'DETALLE DE CARGA'
     ];
@@ -2286,7 +2335,7 @@ function buildDispatchReceiptRecord({ dispatchId, saleId, carrier, snapshot, bra
         referenceLabel: `Despacho #DSP-${dispatchId}`,
         documentType: 'Vale de despacho',
         isFiscal: false,
-        customerLabel: `${carrier.name} · ${carrier.plate}`,
+        customerLabel: addressLabel || `${carrier.name} · ${carrier.plate}`,
         paymentMethod: 'En ruta',
         subtotal,
         iva,
@@ -2318,32 +2367,61 @@ function buildFallbackDispatchReceiptRecord(record) {
     }
 
     const saleDate = record.rawDate || record.dateLabel || new Date().toISOString();
+    const normalizedLineItems = Array.isArray(record.lineItems) ? record.lineItems.map((item) => ({
+        name: item.name || item.productName || 'Producto',
+        quantityLabel: item.quantityLabel || formatQuantity(item.quantity || 0, Boolean(item.isWeighted)),
+        unitPrice: Number(item.unitPrice || 0),
+        subtotal: Number(item.subtotal || item.lineTotal || 0)
+    })) : [];
+    const subtotal = Number(record.subtotal || Math.round(Number(record.total || 0) / 1.19));
+    const iva = Number(record.iva || (Number(record.total || 0) - subtotal));
     const previewLines = [
         'VALMU CAJERO',
-        'VALE DE DESPACHO REFERENCIAL',
+        String(record.documentType || 'VALE DE DESPACHO').toUpperCase(),
         `Despacho #DSP-${record.id}`,
         `Fecha: ${record.createdAtLabel || formatDateTime(saleDate)}`,
-        `Transportista: ${record.carrierName}`,
-        `Estado: ${record.status || 'EN_RUTA'}`,
-        record.total ? `Total referencial: $${formatCurrency(record.total)}` : 'Total referencial no disponible',
-        '',
-        'Detalle completo no disponible en esta sesion.',
-        'La base completa se conserva cuando el vale se genera desde esta caja.'
+        `Sucursal: ${record.branchName || 'Sucursal'}`,
+        `Transportista: ${record.carrierName || 'Transportista'}${record.plate ? ` · ${record.plate}` : ''}`,
+        ...(record.customerLabel ? [`Cliente: ${record.customerLabel}`] : []),
+        `Estado: ${record.status || 'EN_RUTA'}`
     ];
+
+    if (normalizedLineItems.length) {
+        previewLines.push('--------------------------------', 'DETALLE DE CARGA');
+        normalizedLineItems.forEach((item) => {
+            previewLines.push(item.name);
+            previewLines.push(`${item.quantityLabel} x $${formatCurrency(item.unitPrice)} = $${formatCurrency(item.subtotal)}`);
+        });
+        previewLines.push(
+            '--------------------------------',
+            `Items: ${formatQuantity(record.items || normalizedLineItems.length, false)}`,
+            `Neto: $${formatCurrency(subtotal)}`,
+            `IVA: $${formatCurrency(iva)}`,
+            `Total referencial: $${formatCurrency(record.total || 0)}`
+        );
+    } else {
+        previewLines.push(
+            record.total ? `Total referencial: $${formatCurrency(record.total)}` : 'Total referencial no disponible',
+            '',
+            'Detalle completo no disponible en esta sesion.',
+            'La base completa se conserva cuando el vale se genera desde esta caja.'
+        );
+    }
 
     return {
         dispatchId: String(record.id),
         saleId: 0,
         date: saleDate,
         referenceLabel: `Despacho #DSP-${record.id}`,
-        documentType: 'Vale de despacho',
+        documentType: record.documentType || 'Vale de despacho',
         isFiscal: false,
-        customerLabel: record.carrierName || 'Transportista',
+        customerLabel: record.customerLabel || `${record.carrierName || 'Transportista'}${record.plate ? ` · ${record.plate}` : ''}`,
         paymentMethod: 'En ruta',
-        subtotal: Math.round(Number(record.total || 0) / 1.19),
-        iva: Number(record.total || 0) - Math.round(Number(record.total || 0) / 1.19),
+        subtotal,
+        iva,
         total: Number(record.total || 0),
-        items: Number(record.items || 0),
+        items: Number(record.items || normalizedLineItems.length || 0),
+        lineItems: normalizedLineItems,
         preview: previewLines.join('\n'),
         footerMessage: 'Mercaderia cargada a ruta. La rendicion se revisa fuera del arqueo de caja.',
         branchName: record.branchName || 'Sucursal'
@@ -4780,6 +4858,7 @@ async function saveCustomerDisplaySettings() {
 function buildCustomerDisplayPayload() {
     const dispatchMode = isDispatchMode();
     const activeCart = dispatchMode ? dispatchState.cart : saleState.cart;
+    const cartList = document.getElementById(dispatchMode ? 'dispatch-cart-list' : 'cart-list');
     const snapshot = dispatchMode
         ? buildDispatchSnapshot(dispatchState.cart, catalogState.products, getPricingForProduct)
         : getCartSnapshot();
@@ -4808,6 +4887,7 @@ function buildCustomerDisplayPayload() {
                 : activeCart.length
                     ? 'Revise su compra'
                     : 'Escanee sus productos',
+        cartScrollTop: Number(cartList?.scrollTop || 0),
         cart: activeCart.map((item) => {
             const product = findProductById(catalogState.products, item.productId);
 
@@ -4842,17 +4922,117 @@ async function syncCustomerDisplay() {
     }
 }
 
+function scheduleCustomerDisplayScrollSync() {
+    if (customerDisplayScrollSyncTimer) {
+        window.clearTimeout(customerDisplayScrollSyncTimer);
+    }
+
+    customerDisplayScrollSyncTimer = window.setTimeout(() => {
+        customerDisplayScrollSyncTimer = null;
+        void syncCustomerDisplay();
+    }, 30);
+}
+
+function clearAutoScanTimer() {
+    if (!autoScanTimer) {
+        return;
+    }
+
+    window.clearTimeout(autoScanTimer);
+    autoScanTimer = null;
+}
+
+function findExactProductMatch(term) {
+    const normalizedTerm = String(term || '').trim();
+    if (!normalizedTerm) {
+        return null;
+    }
+
+    return catalogState.products.find((product) => String(product.code || '').trim() === normalizedTerm) || null;
+}
+
+function completeAutoScan(term, inputElement = null) {
+    const exactCodeMatch = findExactProductMatch(term);
+    if (!exactCodeMatch) {
+        return false;
+    }
+
+    if (isDispatchMode()) {
+        selectProductForDispatch(exactCodeMatch.id);
+    } else {
+        selectProductForSale(exactCodeMatch.id);
+    }
+
+    const resolvedInput = inputElement || document.getElementById(isDispatchMode() ? 'dispatch-search-input' : 'product-search-input');
+    if (resolvedInput) {
+        resolvedInput.value = '';
+    }
+
+    if (isDispatchMode()) {
+        dispatchState.searchQuery = '';
+    }
+
+    renderSearchResults([]);
+    return true;
+}
+
+function scheduleAutoScan(term, inputElement = null) {
+    clearAutoScanTimer();
+
+    const normalizedTerm = String(term || '').trim();
+    if (!normalizedTerm) {
+        return;
+    }
+
+    autoScanTimer = window.setTimeout(async () => {
+        autoScanTimer = null;
+        await ensureFreshCatalogForSearch();
+
+        const activeInput = inputElement || document.getElementById(isDispatchMode() ? 'dispatch-search-input' : 'product-search-input');
+        const activeTerm = String(activeInput?.value || '').trim();
+        if (activeTerm !== normalizedTerm) {
+            return;
+        }
+
+        completeAutoScan(normalizedTerm, activeInput);
+    }, 90);
+}
+
 function handleSearchInput(event) {
     if (!cashSessionState.isOpen) {
         return;
     }
 
+    const inputElement = event.target;
     const term = String(event.target.value || '').trim();
 
     if (!term) {
+        clearAutoScanTimer();
         renderSearchResults([]);
         return;
     }
+
+    void ensureFreshCatalogForSearch().then((refreshed) => {
+        if (!refreshed) {
+            return;
+        }
+
+        const activeInput = document.getElementById('product-search-input');
+        const activeTerm = String(activeInput?.value || '').trim();
+        if (!activeTerm || activeTerm !== term) {
+            return;
+        }
+
+        if (isDispatchMode()) {
+            renderSearchResults(filterDispatchProducts(catalogState.products, activeTerm, normalizeCatalogText).slice(0, 6));
+        } else {
+            renderSearchResults(findProducts(activeTerm).slice(0, 6));
+        }
+        renderCart();
+        renderCatalogStatus();
+    });
+
+    scheduleAutoScan(term, inputElement);
 
     if (isDispatchMode()) {
         dispatchState.searchQuery = term;
@@ -4863,7 +5043,7 @@ function handleSearchInput(event) {
     renderSearchResults(findProducts(term).slice(0, 6));
 }
 
-function handleSearchKeydown(event) {
+async function handleSearchKeydown(event) {
     if (!cashSessionState.isOpen) {
         return;
     }
@@ -4873,8 +5053,15 @@ function handleSearchKeydown(event) {
     }
 
     event.preventDefault();
+    clearAutoScanTimer();
     const term = String(event.target.value || '').trim();
     if (!term) {
+        return;
+    }
+
+    await ensureFreshCatalogForSearch();
+
+    if (completeAutoScan(term, event.target)) {
         return;
     }
 
@@ -4953,6 +5140,43 @@ function addWeightedProductToCart(productId, quantity) {
     renderCart();
 }
 
+function addUnitsProductToCart(productId, quantity) {
+    const product = findProductById(catalogState.products, productId);
+    if (!product) {
+        return;
+    }
+
+    if (Number(product.stockActual || 0) <= 0) {
+        notifyNoStockInBranch(product);
+        return;
+    }
+
+    const normalizedQuantity = Number(quantity);
+    if (!Number.isFinite(normalizedQuantity) || normalizedQuantity <= 0 || !Number.isInteger(normalizedQuantity)) {
+        return;
+    }
+
+    const existingItem = findCartItemByProductId(saleState.cart, productId);
+    const currentQuantity = Number(existingItem?.quantity || 0);
+    const targetQuantity = currentQuantity + normalizedQuantity;
+
+    if (targetQuantity > Number(product.stockActual || 0)) {
+        setBackendStatus(`Stock insuficiente para ${product.name}. Quedan ${formatQuantity(product.stockActual || 0, false)}.`);
+        return;
+    }
+
+    if (existingItem) {
+        existingItem.quantity = targetQuantity;
+    } else {
+        saleState.cart.push({
+            productId: product.id,
+            quantity: normalizedQuantity
+        });
+    }
+
+    renderCart();
+}
+
 function setWeightedProductQuantity(productId, quantity) {
     const product = findProductById(catalogState.products, productId);
     if (!product) {
@@ -4977,6 +5201,32 @@ function setWeightedProductQuantity(productId, quantity) {
 
     if (!result.ok && result.reason === 'missing_cart_item') {
         addWeightedProductToCart(productId, quantity);
+        return;
+    }
+
+    renderCart();
+}
+
+function setCartProductQuantity(productId, quantity) {
+    const product = findProductById(catalogState.products, productId);
+    if (!product) {
+        return;
+    }
+
+    const result = setCartItemQuantity({
+        cart: saleState.cart,
+        product,
+        quantity,
+        roundWeightedQuantity
+    });
+
+    if (!result.ok && result.reason === 'invalid_quantity') {
+        setBackendStatus(product.isWeighted ? 'Ingresa un peso valido.' : 'Ingresa una cantidad entera valida.');
+        return;
+    }
+
+    if (!result.ok && result.reason === 'stock_insufficient') {
+        setBackendStatus(`Stock insuficiente para ${product.name}. Quedan ${formatQuantity(product.stockActual || 0, product.isWeighted)}.`);
         return;
     }
 
@@ -5093,6 +5343,12 @@ function renderDispatchSection() {
     const customer = invoiceClientState.customers.find(c => String(c.id) === String(dispatchState.selectedCustomerId));
     updateDispatchCustomerTile(customer);
     updateDispatchDocumentTypeUI(dispatchState.selectedDocumentTypeId);
+    updateDispatchAddressVisibility(dispatchState.selectedDocumentTypeId);
+
+    const dispatchAddressInput = document.getElementById('dispatch-address-input');
+    if (dispatchAddressInput && dispatchAddressInput.value !== dispatchState.manualAddress) {
+        dispatchAddressInput.value = dispatchState.manualAddress || '';
+    }
 
     renderDispatchCarrierSummary(getSelectedDispatchCarrier());
     renderDispatchCarrierSummary(getSelectedDispatchCarrier(), 'dispatch-inline-carrier-summary');
@@ -5137,7 +5393,12 @@ function openCarrierSelectionModal() {
 
 function openDispatchCustomerModal() {
     const customer = invoiceClientState.customers.find(c => String(c.id) === String(dispatchState.selectedCustomerId));
+    selectedClientId = customer?.id || null;
+    invoiceClientState.pendingDocumentType = null;
+    setInvoiceClientStatus('');
     openInvoiceClientModalView(customer);
+    showCustomerModalStepView('search');
+    loadInvoiceClients();
 }
 
 function clearDispatchCustomer() {
@@ -5166,12 +5427,33 @@ function handleDispatchSearchInput(event) {
     renderDispatchSection();
 }
 
+function addFirstDispatchSearchResult() {
+    const query = String(dispatchState.searchQuery || '').trim();
+    if (!query) {
+        setBackendStatus('Escribe un codigo o descripcion para agregar manualmente al despacho.');
+        return;
+    }
+
+    const firstMatch = filterDispatchProducts(catalogState.products, query, normalizeCatalogText)[0];
+    if (!firstMatch) {
+        setBackendStatus('No se encontro un producto para agregar al despacho.');
+        return;
+    }
+
+    selectProductForDispatch(firstMatch.id);
+}
+
 function clearDispatchDraft() {
     dispatchState.cart = [];
     dispatchState.searchQuery = '';
+    dispatchState.manualAddress = '';
     const dispatchSearchInput = document.getElementById('dispatch-search-input');
     if (dispatchSearchInput) {
         dispatchSearchInput.value = '';
+    }
+    const dispatchAddressInput = document.getElementById('dispatch-address-input');
+    if (dispatchAddressInput) {
+        dispatchAddressInput.value = '';
     }
     const saleSearchInput = document.getElementById('product-search-input');
     if (saleSearchInput) {
@@ -5182,7 +5464,55 @@ function clearDispatchDraft() {
     setBackendStatus('Carga de despacho vaciada.');
 }
 
+function addWeightedProductToDispatch(productId, quantity) {
+    const product = findProductById(catalogState.products, productId);
+    if (!product) {
+        return;
+    }
+
+    const result = addWeightedQuantityToDispatchCart(dispatchState.cart, product, quantity);
+    dispatchState.cart = result.cart;
+    if (result.error) {
+        setBackendStatus(result.error);
+        return;
+    }
+
+    renderDispatchSection();
+}
+
+function setDispatchProductQuantity(productId, quantity) {
+    const product = findProductById(catalogState.products, productId);
+    if (!product) {
+        return;
+    }
+
+    const result = setDispatchCartItemQuantity(dispatchState.cart, product, quantity);
+    dispatchState.cart = result.cart;
+    if (result.error) {
+        setBackendStatus(result.error);
+        return;
+    }
+
+    renderDispatchSection();
+}
+
 function selectProductForDispatch(productId) {
+    const product = findProductById(catalogState.products, productId);
+    if (!product) {
+        return;
+    }
+
+    if (product.isWeighted) {
+        dispatchState.searchQuery = '';
+        const dispatchSearchInput = document.getElementById('dispatch-search-input');
+        if (dispatchSearchInput) {
+            dispatchSearchInput.value = '';
+        }
+        renderSearchResults([]);
+        openWeightedModal(product, 'add', 1, 'dispatch');
+        return;
+    }
+
     const result = addProductToDispatchCart(dispatchState.cart, productId, catalogState.products);
     dispatchState.cart = result.cart;
     if (result.error) {
@@ -5232,9 +5562,15 @@ async function generateDispatchRecord() {
 
     const documentType = dispatchState.selectedDocumentTypeId;
     const customerId = dispatchState.selectedCustomerId;
+    const dispatchAddress = String(dispatchState.manualAddress || '').trim();
 
     if (Number(documentType) === 2 && !customerId) {
         setBackendStatus('Debes seleccionar un cliente para emitir una Factura.');
+        return;
+    }
+
+    if (Number(documentType) === 3 && !dispatchAddress) {
+        setBackendStatus('Ingresa una direccion para emitir el vale de despacho.');
         return;
     }
 
@@ -5349,7 +5685,8 @@ async function generateDispatchRecord() {
             saleId: result.id_venta,
             carrier,
             snapshot,
-            branchName: getSelectedBranchName()
+            branchName: getSelectedBranchName(),
+            addressLabel: Number(documentType) === 3 ? dispatchAddress : ''
         });
 
         dispatchState.records.unshift(record);
@@ -5357,11 +5694,16 @@ async function generateDispatchRecord() {
         catalogState.products = decreaseLocalStockFromDispatchCart(catalogState.products, dispatchState.cart);
         dispatchState.cart = [];
         dispatchState.searchQuery = '';
+        dispatchState.manualAddress = '';
         saveDispatchReceiptRecord(dispatchReceiptRecord);
 
         const searchInput = document.getElementById('dispatch-search-input');
         if (searchInput) {
             searchInput.value = '';
+        }
+        const dispatchAddressInput = document.getElementById('dispatch-address-input');
+        if (dispatchAddressInput) {
+            dispatchAddressInput.value = '';
         }
 
         addAuditEntry({
@@ -5380,7 +5722,6 @@ async function generateDispatchRecord() {
         renderSearchResults([]);
         renderCart();
         if (saleReceiptRecord) {
-            openDispatchReceiptModal(record.id);
             try {
                 await printReceiptRecord({
                     record: saleReceiptRecord,
@@ -5390,6 +5731,7 @@ async function generateDispatchRecord() {
                 });
             } catch (printError) {
                 console.error('Sale DTE auto print error:', printError);
+                openDispatchReceiptModal(record.id);
                 addAuditEntry({
                     type: 'warning',
                     title: 'Boleta pendiente de impresion',
@@ -5397,7 +5739,6 @@ async function generateDispatchRecord() {
                 });
             }
         } else {
-            openDispatchReceiptModal(record.id);
             try {
                 await printReceiptRecord({
                     record: dispatchReceiptRecord,
@@ -5407,6 +5748,7 @@ async function generateDispatchRecord() {
                 });
             } catch (printError) {
                 console.error('Dispatch auto print error:', printError);
+                openDispatchReceiptModal(record.id);
                 addAuditEntry({
                     type: 'warning',
                     title: 'Vale pendiente de impresion',
@@ -5485,6 +5827,7 @@ async function connectCatalogToBackend() {
         catalogState.products = inventoryState.products;
         catalogState.source = inventoryState.source;
         catalogState.status = inventoryState.status;
+        lastCatalogSyncAt = Date.now();
     } catch (error) {
         console.error('Catalog load error:', error);
         catalogState.products = fallbackProducts.slice();
@@ -5498,16 +5841,83 @@ async function connectCatalogToBackend() {
     renderDispatchSection();
 }
 
+function openDispatchQuantityEditModal(productId) {
+    const weightedEditState = resolveWeightedEditState({
+        products: catalogState.products,
+        cart: dispatchState.cart,
+        productId,
+        findProductById,
+        findCartItemByProductId
+    });
+
+    if (!weightedEditState) {
+        return;
+    }
+
+    openWeightedModal(weightedEditState.product, 'edit', weightedEditState.quantity, 'dispatch');
+}
+
+async function refreshCatalogProductsLive() {
+    if (catalogRefreshPromise) {
+        return catalogRefreshPromise;
+    }
+
+    const apiBaseUrl = normalizeApiBaseUrl(getApiBaseUrl());
+    const token = getAuthToken();
+    const selectedBranchId = getSelectedBranchId();
+
+    if (!apiBaseUrl || !token) {
+        return false;
+    }
+
+    catalogRefreshPromise = (async () => {
+        try {
+            const inventoryState = await resolveCatalogInventory({
+                apiBaseUrl,
+                token,
+                selectedBranchId,
+                categories: catalogState.categories,
+                fetchInventory,
+                normalizeBackendProduct,
+                fallbackProducts
+            });
+
+            catalogState.products = inventoryState.products;
+            catalogState.source = inventoryState.source;
+            catalogState.status = inventoryState.status;
+            lastCatalogSyncAt = Date.now();
+            return true;
+        } catch (error) {
+            console.error('Live catalog refresh error:', error);
+            return false;
+        } finally {
+            catalogRefreshPromise = null;
+        }
+    })();
+
+    return catalogRefreshPromise;
+}
+
+async function ensureFreshCatalogForSearch({ force = false } = {}) {
+    const catalogAge = Date.now() - lastCatalogSyncAt;
+    if (!force && lastCatalogSyncAt && catalogAge < LIVE_CATALOG_REFRESH_MS) {
+        return false;
+    }
+
+    return refreshCatalogProductsLive();
+}
+
 function renderCatalogStatus() {
     renderCatalogStatusView(catalogState);
 }
 
-function openWeightedModal(product, mode = 'add', currentQuantity = 1) {
-    openWeightedState(weightedProductState, product, mode);
+function openWeightedModal(product, mode = 'add', currentQuantity = 1, target = 'sale') {
+    openWeightedState(weightedProductState, product, mode, target);
     openWeightedModalView({
         productName: product.name,
         mode,
-        currentQuantity
+        currentQuantity,
+        isWeighted: Boolean(product.isWeighted)
     });
 }
 
@@ -5518,22 +5928,36 @@ function closeWeightedModal() {
 
 function confirmWeightedProduct() {
     const quantityInput = document.getElementById('weighted-quantity-input');
-    const quantity = parseWeightedQuantity(quantityInput?.value || 0);
+    const product = findProductById(catalogState.products, weightedProductState.productId);
+    const quantity = product?.isWeighted
+        ? parseWeightedQuantity(quantityInput?.value || 0)
+        : Number(quantityInput?.value || 0);
 
-    if (!weightedProductState.productId || quantity === null) {
+    if (!weightedProductState.productId || !product || !Number.isFinite(quantity) || quantity <= 0 || (!product.isWeighted && !Number.isInteger(quantity))) {
         quantityInput?.focus();
+        quantityInput?.select();
         return;
     }
 
     if (weightedProductState.mode === 'edit') {
-        setWeightedProductQuantity(weightedProductState.productId, quantity);
+        if (weightedProductState.target === 'dispatch') {
+            setDispatchProductQuantity(weightedProductState.productId, quantity);
+        } else {
+            setCartProductQuantity(weightedProductState.productId, quantity);
+        }
     } else {
-        addWeightedProductToCart(weightedProductState.productId, quantity);
+        if (weightedProductState.target === 'dispatch') {
+            addWeightedProductToDispatch(weightedProductState.productId, quantity);
+        } else if (product.isWeighted) {
+            addWeightedProductToCart(weightedProductState.productId, quantity);
+        } else {
+            addUnitsProductToCart(weightedProductState.productId, quantity);
+        }
     }
     closeWeightedModal();
 }
 
-function openWeightedEditModal(productId) {
+function openCartQuantityEditModal(productId) {
     const weightedEditState = resolveWeightedEditState({
         products: catalogState.products,
         cart: saleState.cart,
@@ -5558,6 +5982,7 @@ window.removeDispatchItem = removeDispatchItem;
 window.toggleCartItemOffer = toggleCartItemOffer;
 window.toggleDispatchItemOffer = toggleDispatchItemOffer;
 window.clearCurrentSale = clearCurrentSale;
-window.openWeightedEditModal = openWeightedEditModal;
+window.openCartQuantityEditModal = openCartQuantityEditModal;
+window.openDispatchQuantityEditModal = openDispatchQuantityEditModal;
 window.openSaleCancellationModal = openSaleCancellationModal;
 window.openDispatchReceiptModal = openDispatchReceiptModal;

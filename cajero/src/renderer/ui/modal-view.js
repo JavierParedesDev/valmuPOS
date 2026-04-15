@@ -56,6 +56,9 @@ export function closeCashSessionModalView() {
 }
 
 export function openInvoiceClientModalView(customer = null) {
+    const isDispatchMode = document.getElementById('cashier-app')?.dataset?.view === 'dispatch';
+    const titleLabel = document.querySelector('#invoice-client-modal-backdrop .modal-header h3');
+    const subtitleLabel = document.querySelector('#invoice-client-modal-backdrop .modal-header p');
     document.getElementById('invoice-client-search-input').value = '';
     document.getElementById('invoice-client-select-list').innerHTML = '<div style="padding: 1.5rem; text-align: center; color: #9ca3af; font-size: 0.95rem;">Cargando clientes...</div>';
     document.getElementById('invoice-rut-input').value = '';
@@ -68,6 +71,16 @@ export function openInvoiceClientModalView(customer = null) {
 
     // Show selection step by default
     showCustomerModalStepView('selection');
+
+    if (titleLabel) {
+        titleLabel.textContent = isDispatchMode ? 'Gestion de Cliente del Despacho' : 'Gestion de Cliente';
+    }
+
+    if (subtitleLabel) {
+        subtitleLabel.textContent = isDispatchMode
+            ? 'Busca un cliente existente o registra uno nuevo para usarlo en boleta o factura del despacho.'
+            : 'Busca un cliente existente o registra uno nuevo para la factura.';
+    }
 
     const currentCard = document.getElementById('invoice-client-current-card');
     if (currentCard) {
@@ -171,18 +184,44 @@ export function closeCloseCashModalView() {
     document.getElementById('close-cash-modal-backdrop')?.classList.add('hidden');
 }
 
-export function openWeightedModalView({ productName, mode, currentQuantity }) {
+export function openWeightedModalView({ productName, mode, currentQuantity, isWeighted }) {
+    const titleLabel = document.getElementById('weighted-modal-title');
     const nameLabel = document.getElementById('weighted-product-name');
+    const quantityLabel = document.getElementById('weighted-quantity-label');
     const quantityInput = document.getElementById('weighted-quantity-input');
+    const confirmButton = document.getElementById('weighted-confirm-btn');
 
+    const modalTitle = isWeighted ? 'Producto pesable' : 'Editar cantidad';
+    const helperText = mode === 'edit'
+        ? (isWeighted ? `Edita el peso para ${productName}.` : `Edita la cantidad para ${productName}.`)
+        : (isWeighted ? `Ingresa el peso para ${productName}.` : `Ingresa la cantidad para ${productName}.`);
+    const inputLabel = isWeighted ? 'Cantidad en kg' : 'Cantidad en unidades';
+    const step = isWeighted ? '0.001' : '1';
+    const min = isWeighted ? '0.001' : '1';
+    const placeholder = isWeighted ? '1.000' : '1';
+
+    if (titleLabel) {
+        titleLabel.textContent = modalTitle;
+    }
     if (nameLabel) {
-        nameLabel.textContent = mode === 'edit'
-            ? `Edita el peso para ${productName}.`
-            : `Ingresa el peso para ${productName}.`;
+        nameLabel.textContent = helperText;
+    }
+
+    if (quantityLabel) {
+        quantityLabel.textContent = inputLabel;
     }
 
     if (quantityInput) {
-        quantityInput.value = Number(currentQuantity || 1).toFixed(3);
+        quantityInput.value = isWeighted
+            ? Number(currentQuantity || 1).toFixed(3)
+            : String(Math.max(1, Number(currentQuantity || 1)));
+        quantityInput.step = step;
+        quantityInput.min = min;
+        quantityInput.placeholder = placeholder;
+    }
+
+    if (confirmButton) {
+        confirmButton.textContent = mode === 'edit' ? 'Guardar' : 'Agregar';
     }
 
     document.getElementById('weighted-modal-backdrop')?.classList.remove('hidden');

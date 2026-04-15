@@ -1,11 +1,13 @@
-export function openWeightedState(weightedProductState, product, mode = 'add') {
+export function openWeightedState(weightedProductState, product, mode = 'add', target = 'sale') {
     weightedProductState.productId = product.id;
     weightedProductState.mode = mode;
+    weightedProductState.target = target;
 }
 
 export function closeWeightedState(weightedProductState) {
     weightedProductState.productId = null;
     weightedProductState.mode = 'add';
+    weightedProductState.target = 'sale';
 }
 
 export function resolveWeightedEditState({ products, cart, productId, findProductById, findCartItemByProductId }) {

@@ -11,7 +11,7 @@ export function renderDispatchCarrierOptions({ carriers, selectedCarrierId, sele
         <option value="">Seleccionar transportista</option>
         ${carriers.map((carrier) => `
             <option value="${carrier.id}" ${String(selectedCarrierId) === String(carrier.id) ? 'selected' : ''}>
-                ${escapeHtml(carrier.name)} · ${escapeHtml(carrier.plate)}
+                ${escapeHtml(carrier.name)} - ${escapeHtml(carrier.plate)}
             </option>
         `).join('')}
     `;
@@ -54,11 +54,27 @@ export function updateCarrierTiles(carrier) {
 }
 
 export function updateDispatchCustomerTile(customer) {
-    const manageBtn = document.getElementById('dispatch-manage-customer-btn');
-    const clearBtn = document.getElementById('dispatch-clear-customer-btn');
+    const tileName = document.getElementById('dispatch-customer-name-display');
+    const tileMeta = document.getElementById('dispatch-customer-meta-display');
 
-    if (manageBtn) manageBtn.classList.toggle('hidden', !!customer);
-    if (clearBtn) clearBtn.classList.toggle('hidden', !customer);
+    if (tileName) {
+        tileName.textContent = customer ? customer.name : 'Seleccionar cliente';
+    }
+
+    if (tileMeta) {
+        tileMeta.textContent = customer
+            ? [customer.rut, customer.address || customer.comuna || customer.city].filter(Boolean).join(' - ')
+            : 'Toca para buscar o registrar cliente';
+    }
+}
+
+export function updateDispatchAddressVisibility(selectedTypeId) {
+    const addressShell = document.getElementById('dispatch-address-shell');
+    if (!addressShell) {
+        return;
+    }
+
+    addressShell.classList.toggle('hidden', Number(selectedTypeId) !== 3);
 }
 
 export function updateDispatchDocumentTypeUI(selectedTypeId) {
@@ -79,7 +95,7 @@ export function renderDispatchCarrierSummary(carrier, summaryId = 'dispatch-carr
     }
 
     label.textContent = carrier
-        ? `${carrier.name} · ${carrier.plate} · ${carrier.routeName}`
+        ? `${carrier.name} - ${carrier.plate} - ${carrier.routeName}`
         : 'Sin transportista seleccionado';
 }
 
@@ -198,7 +214,7 @@ export function renderDispatchCart({
                 <div class="col-qty">
                     <div class="cart-qty-controls">
                         <button class="qty-btn" type="button" onclick="${quantityUpdateFunction}('${product.id}', -1)">-</button>
-                        <span class="qty-value">${formatQuantity(item.quantity, product.isWeighted)}</span>
+                        <button class="qty-value-btn" type="button" onclick="openDispatchQuantityEditModal('${product.id}')">${formatQuantity(item.quantity, product.isWeighted)}</button>
                         <button class="qty-btn" type="button" onclick="${quantityUpdateFunction}('${product.id}', 1)">+</button>
                     </div>
                 </div>

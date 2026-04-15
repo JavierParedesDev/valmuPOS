@@ -101,12 +101,12 @@ function getReceiptPrinterScriptPath() {
         return path.join(process.resourcesPath, 'scripts', 'receipt_printer.exe');
     }
 
-    const exePath = path.join(__dirname, '../../scripts/receipt_printer.exe');
-    if (fsSync.existsSync(exePath)) {
-        return exePath;
+    const pythonPath = path.join(__dirname, '../../scripts/receipt_printer.py');
+    if (fsSync.existsSync(pythonPath)) {
+        return pythonPath;
     }
 
-    return path.join(__dirname, '../../scripts/receipt_printer.py');
+    return path.join(__dirname, '../../scripts/receipt_printer.exe');
 }
 
 function getReceiptLogoPath() {

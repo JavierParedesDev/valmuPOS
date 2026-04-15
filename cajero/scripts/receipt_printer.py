@@ -55,6 +55,26 @@ def wrap_text(draw, text, font, max_width):
     return lines
 
 
+def measure_text_height(draw, text, font):
+    bbox = draw.textbbox((0, 0), str(text or ''), font=font)
+    return bbox[3] - bbox[1]
+
+
+def draw_centered_lines(draw, left, y, width, lines, font, fill='black', line_gap=4):
+    visible_lines = [str(line).strip() for line in lines if str(line or '').strip()]
+    if not visible_lines:
+        return y
+
+    for line in visible_lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        line_width = bbox[2] - bbox[0]
+        line_height = bbox[3] - bbox[1]
+        draw.text((left + ((width - line_width) // 2), y), line, fill=fill, font=font)
+        y += line_height + line_gap
+
+    return y
+
+
 def draw_wrapped_text(draw, x, y, text, font, max_width, fill='black', align='left', line_gap=4):
     lines = wrap_text(draw, text, font, max_width)
     if not lines:
@@ -118,18 +138,19 @@ def build_receipt_image(payload):
     logo_path = payload.get('logoPath')
     width_px = 464 if printer_paper == '58mm' else 640
     is_small_paper = printer_paper == '58mm'
-    padding = 18 if is_small_paper else 24
+    padding = 14 if is_small_paper else 18
     gap = 8 if is_small_paper else 10
 
-    font_brand = load_font(40 if is_small_paper else 44, bold=True)
-    font_title = load_font(30 if is_small_paper else 34, bold=True)
-    font_body = load_font(23 if is_small_paper else 27, bold=False)
-    font_body_bold = load_font(24 if is_small_paper else 28, bold=True)
-    font_small = load_font(20 if is_small_paper else 24, bold=False)
-    font_small_bold = load_font(21 if is_small_paper else 25, bold=True)
-    font_mono = load_font(22 if is_small_paper else 26, bold=True)
-    font_box_rut = load_font(25 if is_small_paper else 29, bold=True)
-    font_box_doc = load_font(23 if is_small_paper else 27, bold=True)
+    font_brand = load_font(36 if is_small_paper else 40, bold=True)
+    font_title = load_font(28 if is_small_paper else 32, bold=True)
+    font_body = load_font(22 if is_small_paper else 27, bold=False)
+    font_body_bold = load_font(24 if is_small_paper else 30, bold=True)
+    font_meta = load_font(24 if is_small_paper else 29, bold=True)
+    font_small = load_font(18 if is_small_paper else 21, bold=False)
+    font_small_bold = load_font(19 if is_small_paper else 22, bold=True)
+    font_mono = load_font(22 if is_small_paper else 27, bold=True)
+    font_box_rut = load_font(27 if is_small_paper else 31, bold=True)
+    font_box_doc = load_font(24 if is_small_paper else 27, bold=True)
 
     document_type = str(receipt.get('documentType') or 'Documento')
     tipo_dte = dte.get('tipo')
@@ -146,20 +167,31 @@ def build_receipt_image(payload):
     if logo_path and os.path.exists(logo_path) and not is_fiscal:
         try:
             logo = Image.open(logo_path).convert('RGBA')
-            logo.thumbnail((int(width_px * 0.48), 110 if is_small_paper else 130))
+            logo.thumbnail((int(width_px * 0.62), 180 if is_small_paper else 260))
             logo_x = (width_px - logo.width) // 2
             image.paste(logo, (logo_x, cursor_y), logo)
-            cursor_y += logo.height + gap
+            cursor_y += logo.height + 8
         except OSError:
             pass
 
     if is_fiscal:
-        brand = str(emisor.get('razonSocial') or 'VALMU').upper()
+        if logo_path and os.path.exists(logo_path):
+            try:
+                logo = Image.open(logo_path).convert('RGBA')
+                logo.thumbnail((int(width_px * 0.62), 180 if is_small_paper else 260))
+                logo_x = (width_px - logo.width) // 2
+                image.paste(logo, (logo_x, cursor_y), logo)
+                cursor_y += logo.height + 8
+            except OSError:
+                pass
+
+        brand = 'COMERCIAL VALMU'
         brand_box = draw.textbbox((0, 0), brand, font=font_brand)
         brand_width = brand_box[2] - brand_box[0]
         draw.text(((width_px - brand_width) // 2, cursor_y), brand, fill='black', font=font_brand)
-        cursor_y += (brand_box[3] - brand_box[1]) + 10
+        cursor_y += (brand_box[3] - brand_box[1]) + 8
 
+        header_max_width = content_width - (20 if is_small_paper else 40)
         for text in [
             f"Giro: {emisor.get('giro') or ''}",
             f"{emisor.get('direccion') or ''}",
@@ -171,31 +203,30 @@ def build_receipt_image(payload):
                 cursor_y,
                 text,
                 font_small,
-                content_width,
+                header_max_width,
                 align='center',
-                line_gap=2
+                line_gap=8
             )
 
-        cursor_y += 8
-        box_h = 132 if is_small_paper else 144
+        cursor_y += 10
         box_w = min(content_width, 360 if is_small_paper else 420)
         box_x = (width_px - box_w) // 2
+        box_lines = [
+            (f"R.U.T.: {emisor.get('rut') or ''}", font_box_rut, 8),
+            ('FACTURA ELECTRONICA' if tipo_dte == 33 else 'BOLETA ELECTRONICA', font_box_doc, 8),
+            (f"N° {folio}", font_box_rut, 8),
+            (f"S.I.I. - {emisor.get('ciudad') or 'CHILE'}", font_box_doc, 0)
+        ]
+        box_padding_y = 14 if is_small_paper else 18
+        box_h = (box_padding_y * 2) + sum(
+            measure_text_height(draw, text, font) + line_gap
+            for text, font, line_gap in box_lines
+        )
         draw.rectangle([box_x, cursor_y, box_x + box_w, cursor_y + box_h], outline='black', width=2)
 
-        box_lines = [
-            (f"R.U.T.: {emisor.get('rut') or ''}", font_box_rut),
-            ('FACTURA ELECTRONICA' if tipo_dte == 33 else 'BOLETA ELECTRONICA', font_box_doc),
-            (f"N° {folio}", font_box_rut),
-            (f"S.I.I. - {emisor.get('ciudad') or 'CHILE'}", font_box_doc)
-        ]
-
-        box_cursor = cursor_y + 8
-        for text, font in box_lines:
-            bbox = draw.textbbox((0, 0), text, font=font)
-            text_w = bbox[2] - bbox[0]
-            text_h = bbox[3] - bbox[1]
-            draw.text((box_x + ((box_w - text_w) // 2), box_cursor), text, fill='black', font=font)
-            box_cursor += text_h + 4
+        box_cursor = cursor_y + box_padding_y
+        for text, font, line_gap in box_lines:
+            box_cursor = draw_centered_lines(draw, box_x, box_cursor, box_w, [text], font, line_gap=line_gap)
 
         cursor_y += box_h + 14
     else:
@@ -203,16 +234,16 @@ def build_receipt_image(payload):
         title_box = draw.textbbox((0, 0), title, font=font_brand)
         title_width = title_box[2] - title_box[0]
         draw.text(((width_px - title_width) // 2, cursor_y), title, fill='black', font=font_brand)
-        cursor_y += (title_box[3] - title_box[1]) + 8
+        cursor_y += (title_box[3] - title_box[1]) + 12
 
         header_title = 'VALE DE DESPACHO' if 'despacho' in document_type.lower() else document_type.upper()
         header_box = draw.textbbox((0, 0), header_title, font=font_title)
         header_width = header_box[2] - header_box[0]
         draw.text(((width_px - header_width) // 2, cursor_y), header_title, fill='black', font=font_title)
-        cursor_y += (header_box[3] - header_box[1]) + 8
+        cursor_y += (header_box[3] - header_box[1]) + 6
 
     draw.line((padding, cursor_y, width_px - padding, cursor_y), fill='black', width=2)
-    cursor_y += gap
+    cursor_y += gap + 4
 
     meta_lines = [f"Fecha: {receipt.get('dateLabel') or ''}"]
 
@@ -232,18 +263,28 @@ def build_receipt_image(payload):
         meta_lines.insert(0, f"Venta #: {sale_id}")
 
     for line in meta_lines:
-        draw.text((padding, cursor_y), line, fill='black', font=font_body_bold)
-        bbox = draw.textbbox((padding, cursor_y), line, font=font_body_bold)
-        cursor_y += (bbox[3] - bbox[1]) + 6
+        meta_font = font_meta if line.startswith('Cliente:') else font_body_bold
+        cursor_y = draw_wrapped_text(
+            draw,
+            padding,
+            cursor_y,
+            line,
+            meta_font,
+            content_width,
+            line_gap=6
+        )
+        cursor_y += 8
 
-    cursor_y += 4
+    cursor_y += 8
     draw.line((padding, cursor_y, width_px - padding, cursor_y), fill='black', width=2)
-    cursor_y += gap
+    cursor_y += gap + 6
 
     detail_title = 'DETALLE DE PRODUCTOS'
     draw.text((padding, cursor_y), detail_title, fill='black', font=font_title)
     detail_title_box = draw.textbbox((padding, cursor_y), detail_title, font=font_title)
-    cursor_y += (detail_title_box[3] - detail_title_box[1]) + 10
+    cursor_y += (detail_title_box[3] - detail_title_box[1]) + 8
+    draw.line((padding, cursor_y, width_px - padding, cursor_y), fill='black', width=2)
+    cursor_y += 10
 
     detail_lines = receipt.get('lineItems') or []
     if detail_lines:
@@ -260,16 +301,17 @@ def build_receipt_image(payload):
                 name,
                 font_body_bold,
                 content_width,
-                line_gap=2
+                line_gap=8
             )
 
+            cursor_y += 10 if is_small_paper else 14
             row_text = f"{qty} x {unit_price}"
             draw.text((padding, cursor_y), row_text, fill='black', font=font_body)
             subtotal_box = draw.textbbox((0, 0), subtotal, font=font_mono)
             subtotal_w = subtotal_box[2] - subtotal_box[0]
             subtotal_h = subtotal_box[3] - subtotal_box[1]
             draw.text((width_px - padding - subtotal_w, cursor_y), subtotal, fill='black', font=font_mono)
-            cursor_y += max(subtotal_h, 22) + 10
+            cursor_y += max(subtotal_h, 24) + 14
     else:
         preview_lines = str(receipt.get('preview') or '').splitlines()
         for preview_line in preview_lines:
@@ -310,8 +352,10 @@ def build_receipt_image(payload):
     cursor_y += gap + 2
 
     footer = str(receipt.get('footerMessage') or '').strip()
+    if is_fiscal:
+        footer = ''
     if not footer:
-        footer = 'GRACIAS POR SU COMPRA'
+        footer = '' if is_fiscal else 'GRACIAS POR SU COMPRA'
 
     # --- SII TIMBRE (REMOVED AS PER USER REQUEST) ---
     # if is_fiscal:
@@ -337,19 +381,21 @@ def build_receipt_image(payload):
     #     )
     #     cursor_y += 4
 
-    cursor_y += 10 # Extra gap before footer
-
-    cursor_y = draw_wrapped_text(
-        draw,
-        padding,
-        cursor_y,
-        footer,
-        font_small_bold if is_fiscal else font_body_bold,
-        content_width,
-        align='center',
-        line_gap=3
-    )
-    cursor_y += padding
+    if footer:
+        cursor_y += 10
+        cursor_y = draw_wrapped_text(
+            draw,
+            padding,
+            cursor_y,
+            footer,
+            font_small_bold if is_fiscal else font_body_bold,
+            content_width,
+            align='center',
+            line_gap=3
+        )
+        cursor_y += padding + (36 if is_small_paper else 54)
+    else:
+        cursor_y += padding + (36 if is_small_paper else 54)
 
     final_image = image.crop((0, 0, width_px, cursor_y))
     final_image = final_image.convert('L')

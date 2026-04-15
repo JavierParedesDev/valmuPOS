@@ -11,14 +11,30 @@ export function normalizeCustomerList(payload) {
 }
 
 export function filterCustomers(customers, filterTerm = '') {
-    const term = String(filterTerm || '').trim().toLowerCase();
+    const normalizeSearchValue = (value) => String(value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[.\-]/g, '')
+        .trim();
+
+    const term = normalizeSearchValue(filterTerm);
 
     return customers.filter((customer) => {
         if (!term) {
             return true;
         }
 
-        return customer.name.toLowerCase().includes(term) || customer.rut.toLowerCase().includes(term);
+        const haystack = normalizeSearchValue([
+            customer.name,
+            customer.rut,
+            customer.business,
+            customer.address,
+            customer.comuna,
+            customer.city
+        ].filter(Boolean).join(' '));
+
+        return haystack.includes(term);
     });
 }
 

@@ -134,7 +134,8 @@ export const cashSessionState = {
 
 export const weightedProductState = {
     productId: null,
-    mode: 'add'
+    mode: 'add',
+    target: 'sale'
 };
 
 export const turnHistoryState = {
@@ -185,6 +186,7 @@ export const dispatchState = {
     selectedCarrierId: null,
     selectedDocumentTypeId: 3, // Vale interno por defecto
     selectedCustomerId: null,
+    manualAddress: '',
     searchQuery: '',
     cart: [],
     records: []

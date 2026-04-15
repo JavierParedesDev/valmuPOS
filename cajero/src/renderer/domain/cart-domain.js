@@ -142,6 +142,41 @@ export function updateCartItemQuantityValue({
     return { ok: true };
 }
 
+export function setCartItemQuantity({
+    cart,
+    product,
+    quantity,
+    roundWeightedQuantity
+}) {
+    const existingItem = findCartItemByProductId(cart, product.id);
+    if (!existingItem) {
+        return { ok: false, reason: 'missing_cart_item' };
+    }
+
+    const normalizedQuantity = product.isWeighted
+        ? roundWeightedQuantity(quantity)
+        : Number(quantity);
+
+    if (!Number.isFinite(normalizedQuantity) || normalizedQuantity <= 0) {
+        return { ok: false, reason: 'invalid_quantity' };
+    }
+
+    if (!product.isWeighted && !Number.isInteger(normalizedQuantity)) {
+        return { ok: false, reason: 'invalid_quantity' };
+    }
+
+    if (normalizedQuantity > Number(product.stockActual || 0)) {
+        return {
+            ok: false,
+            reason: 'stock_insufficient',
+            product
+        };
+    }
+
+    existingItem.quantity = normalizedQuantity;
+    return { ok: true };
+}
+
 export function removeCartItemByProductId(cart, productId) {
     return cart.filter((entry) => entry.productId !== productId);
 }

@@ -206,7 +206,7 @@
 
                     <div class="summary-breakdown-box retail-breakdown-box" id="sale-breakdown-box">
                         <div class="summary-row">
-                            <span>Neto</span>
+                            <span>Subtotal</span>
                             <strong id="summary-subtotal">$0</strong>
                         </div>
                         <div class="summary-row">
@@ -254,15 +254,19 @@
             <section class="pos-grid dispatch-view hidden" id="dispatch-view">
                 <div class="sale-panel retail-sale-panel dispatch-sale-panel">
                     <div class="retail-sale-toolbar dispatch-sale-toolbar">
-                        <div class="sale-input-row search-box-shell retail-search-shell dispatch-search-shell">
-                            <i class="bi bi-search search-icon-left"></i>
-                            <input class="scan-input with-icons" id="dispatch-search-input" type="text"
-                                placeholder="Buscar producto para despacho">
-                            <i class="bi bi-upc-scan barcode-icon-right"></i>
+                        <div class="dispatch-search-toolbar">
+                            <div class="sale-input-row search-box-shell retail-search-shell dispatch-search-shell">
+                                <i class="bi bi-search search-icon-left"></i>
+                                <input class="scan-input with-icons" id="dispatch-search-input" type="text"
+                                    placeholder="Buscar producto para despacho">
+                                <i class="bi bi-upc-scan barcode-icon-right"></i>
 
-                            <div class="dispatch-search-overlay hidden" id="dispatch-search-overlay">
-                                <div class="search-results" id="dispatch-search-results"></div>
+                                <div class="dispatch-search-overlay hidden" id="dispatch-search-overlay">
+                                    <div class="search-results" id="dispatch-search-results"></div>
+                                </div>
                             </div>
+                            <button class="secondary-btn dispatch-add-manual-btn" id="dispatch-add-manual-btn"
+                                type="button">Agregar manual</button>
                         </div>
                     </div>
 
@@ -313,6 +317,20 @@
                         <strong id="dispatch-total-label">$0</strong>
                     </div>
 
+                    <div class="selection-tile-shell">
+                        <label class="input-label">Cliente</label>
+                        <button class="selection-tile" id="dispatch-customer-tile" type="button">
+                            <div class="selection-tile-info">
+                                <i class="bi bi-person-badge selection-tile-icon"></i>
+                                <div class="selection-tile-text">
+                                    <strong id="dispatch-customer-name-display">Seleccionar cliente</strong>
+                                    <span id="dispatch-customer-meta-display">Toca para buscar o registrar cliente</span>
+                                </div>
+                            </div>
+                            <i class="bi bi-chevron-right selection-tile-chevron"></i>
+                        </button>
+                    </div>
+
                     <div class="dispatch-document-shell">
                         <label class="input-label">Tipo de documento</label>
                         <div class="document-type-chips">
@@ -322,7 +340,11 @@
                         </div>
                     </div>
 
-                    <!-- Customer moved to footer buttons -->
+                    <div class="dispatch-document-shell" id="dispatch-address-shell">
+                        <label class="input-label" for="dispatch-address-input">Dirección para el vale</label>
+                        <input class="input-control" id="dispatch-address-input" type="text"
+                            placeholder="Ej: Pasaje Los Aromos 123, Coronel">
+                    </div>
 
                     <div class="selection-tile-shell">
                         <label class="input-label">Seleccionar transportista</label>
@@ -671,10 +693,10 @@
 
     <div class="modal-backdrop hidden" id="weighted-modal-backdrop">
         <div class="weighted-modal">
-            <h3>Producto pesable</h3>
+            <h3 id="weighted-modal-title">Producto pesable</h3>
             <p id="weighted-product-name">Ingresa el peso del producto.</p>
 
-            <label class="input-label" for="weighted-quantity-input">Cantidad en kg</label>
+            <label class="input-label" id="weighted-quantity-label" for="weighted-quantity-input">Cantidad en kg</label>
             <input class="input-control weighted-input" id="weighted-quantity-input" type="number" min="0.001"
                 step="0.001" placeholder="1.000">
 

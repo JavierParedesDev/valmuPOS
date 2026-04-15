@@ -203,6 +203,7 @@ function bindAdvertisingImageGuards() {
 
 function renderCustomerDisplay(payload = {}) {
     advertisingState.currentPayload = payload;
+    const displayRoot = document.querySelector('.customer-display');
     const branchLabel = document.getElementById('customer-branch-label');
     const documentLabel = document.getElementById('customer-document-label');
     const itemsCountLabel = document.getElementById('customer-items-count');
@@ -223,6 +224,13 @@ function renderCustomerDisplay(payload = {}) {
     }
 
     const cart = Array.isArray(payload.cart) ? payload.cart : [];
+    const targetScrollTop = Math.max(0, Number(payload.cartScrollTop || 0));
+    const compactLevel = cart.length >= 10 ? 'dense' : (cart.length >= 7 ? 'compact' : '');
+
+    if (displayRoot) {
+        displayRoot.classList.toggle('customer-display-compact', compactLevel === 'compact');
+        displayRoot.classList.toggle('customer-display-dense', compactLevel === 'dense');
+    }
 
     // Si no hay items, limpiamos la lista pero mantenemos el contenedor de publicidad
     if (!cart.length) {
@@ -241,6 +249,7 @@ function renderCustomerDisplay(payload = {}) {
 
         // Removemos cualquier item previo
         itemsList.querySelectorAll('.customer-item').forEach(el => el.remove());
+        itemsList.scrollTop = 0;
 
         renderAdvertising();
         return;
@@ -272,6 +281,8 @@ function renderCustomerDisplay(payload = {}) {
         `;
         itemsList.appendChild(article);
     });
+
+    itemsList.scrollTop = targetScrollTop;
     renderAdvertising();
 }
 

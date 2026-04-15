@@ -163,9 +163,7 @@ export function renderCartView({ cart, products }) {
                 <div class="col-qty">
                     <div class="cart-qty-controls">
                         <button class="qty-btn" type="button" onclick="updateCartItemQuantity('${product.id}', -1)">-</button>
-                        ${product.isWeighted
-                ? `<button class="qty-value-btn" type="button" onclick="openWeightedEditModal('${product.id}')">${formatQuantity(item.quantity, product.isWeighted)}</button>`
-                : `<span class="qty-value">${formatQuantity(item.quantity, product.isWeighted)}</span>`}
+                        <button class="qty-value-btn" type="button" onclick="openCartQuantityEditModal('${product.id}')">${formatQuantity(item.quantity, product.isWeighted)}</button>
                         <button class="qty-btn" type="button" onclick="updateCartItemQuantity('${product.id}', 1)">+</button>
                     </div>
                 </div>
