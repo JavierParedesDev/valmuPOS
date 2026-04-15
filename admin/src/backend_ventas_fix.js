@@ -15,7 +15,7 @@ router.post('/', verificarToken, async (req, res) => {
     try {
         await conexion.beginTransaction();
 
-        const { id_usuario, id_sucursal } = req.usuario; 
+        const { id_usuario, id_sucursal } = req.usuario;
         const { id_cliente, id_tipoDoc, folioDocumento, subtotal, iva, total, metodoPago, montoPago, carrito } = req.body;
 
         // 1. BLINDAJE: Verificar si hay stock suficiente para TODO el carrito antes de hacer nada
@@ -28,8 +28,8 @@ router.post('/', verificarToken, async (req, res) => {
             // Si no existe registro de stock o la cantidad que intentan vender es mayor a la disponible
             if (stockActual.length === 0 || stockActual[0].cantidad < item.cantidad) {
                 await conexion.rollback();
-                return res.status(400).json({ 
-                    error: `Stock insuficiente para el producto: ${stockActual.length > 0 ? stockActual[0].nombreProducto : 'ID ' + item.id_producto}. Stock actual: ${stockActual.length > 0 ? stockActual[0].cantidad : 0}` 
+                return res.status(400).json({
+                    error: `Stock insuficiente para el producto: ${stockActual.length > 0 ? stockActual[0].nombreProducto : 'ID ' + item.id_producto}. Stock actual: ${stockActual.length > 0 ? stockActual[0].cantidad : 0}`
                 });
             }
         }
@@ -87,8 +87,7 @@ router.get('/', verificarToken, async (req, res) => {
     try {
         const { id_sucursal, rol } = req.usuario;
         const { all } = req.query; // Parámetro para traer todas las ventas
-        
-        // Query base con JOIN a SUCURSAL para obtener el nombre
+
         let query = `
             SELECT 
                 v.id_venta, 
@@ -105,18 +104,18 @@ router.get('/', verificarToken, async (req, res) => {
             INNER JOIN SUCURSAL s ON v.id_sucursal = s.id_sucursal
             LEFT JOIN PAGO_VENTA p ON v.id_venta = p.id_venta
         `;
-        
+
         let params = [];
-        
-        // Si es administrador y pide todas las ventas, no filtrar por sucursal
+
+        // Si el usuario es Administrador y solicita 'all', no filtramos por sucursal
         if (all === 'true' && (rol === 'Administrador' || rol === 'Admin' || rol === 'admin')) {
-            query += ` ORDER BY v.fechaVenta DESC LIMIT 500`;
+            query += ` ORDER BY v.fechaVenta DESC LIMIT 10000`;
         } else {
-            // Filtrar solo por la sucursal del usuario
-            query += ` WHERE v.id_sucursal = ? ORDER BY v.fechaVenta DESC LIMIT 50`;
+            // De lo contrario, filtramos por la sucursal del usuario
+            query += ` WHERE v.id_sucursal = ? ORDER BY v.fechaVenta DESC LIMIT 1000`;
             params = [id_sucursal];
         }
-        
+
         const [ventas] = await db.execute(query, params);
         res.json(ventas);
     } catch (error) {

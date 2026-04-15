@@ -291,39 +291,40 @@ function finanzasAplicarFiltros() {
 
     const sucursal = document.getElementById('fin-filtro-sucursal')?.value || '';
     const sucursalLabel = document.getElementById('fin-filtro-sucursal')?.selectedOptions?.[0]?.textContent?.trim() || '';
-    if (sucursal || sucursalLabel) {
-        console.log('[Finanzas] Filtro sucursal aplicado:', { sucursal, sucursalLabel });
-        console.table(finanzasState.ventas.map(v => ({
-            id_sucursal: v.id_sucursal,
-            sucursal_id: v.sucursal_id,
-            branchId: v.branchId,
-            idSucursal: v.idSucursal,
-            nombre_sucursal: v.nombre_sucursal,
-            nombreSucursal: v.nombreSucursal,
-            sucursal: v.sucursal,
-            estado: v.estado
-        })));
-    }
     const medio = document.getElementById('fin-filtro-medio')?.value || '';
 
     finanzasState.filtered = finanzasState.ventas.filter((v) => {
+        // 1. Filtro de Estado: Excluir solo ventas anuladas/canceladas para máxima compatibilidad
+        const estado = (v.estado || '').toString().trim().toLowerCase();
+        if (estado === 'anulada' || estado === 'cancelada') return false;
+
         const fechaVentaFull = (v.fecha_venta || v.created_at || v.fechaVenta || '').slice(0, 19);
         const fechaVenta = fechaVentaFull.slice(0, 10);
         const fechaMes = fechaVentaFull.slice(0, 7);
+
         if (fecha && fechaVenta !== fecha) return false;
         if (mes && fechaMes !== mes) return false;
+
         if (busq) {
             const haystack = [v.folio, v.numero_ticket, v.ticket_id, v.nombre_cliente, v.nombreCliente, v.cliente].filter(Boolean).join(' ').toLowerCase();
             if (!haystack.includes(busq)) return false;
         }
-        // Usar cualquier campo de sucursal disponible (id o nombre)
-        const idSuc = v.id_sucursal || v.sucursal_id || v.branchId || v.idSucursal || v.Sucursal?.id_sucursal || v.Sucursal?.id;
-        const nombreSuc = (v.nombre_sucursal || v.nombreSucursal || v.Sucursal?.nombreSucursal || v.Sucursal?.nombre || v.sucursal || '').toString().trim();
+
+        // 2. Filtro de Sucursal: Detección robusta de ID o Nombre
         if (sucursal) {
-            const matchId = String(idSuc) === String(sucursal);
-            const matchNombre = sucursalLabel && nombreSuc && nombreSuc.toLowerCase() === sucursalLabel.toLowerCase();
+            const idSuc = v.id_sucursal || v.sucursal_id || v.branchId || v.idSucursal || v.Sucursal?.id_sucursal || v.Sucursal?.id;
+            const nombreSuc = (v.nombre_sucursal || v.nombreSucursal || v.Sucursal?.nombreSucursal || v.Sucursal?.nombre || v.sucursal || '').toString().trim().toLowerCase();
+
+            const matchId = idSuc != null && String(idSuc) === String(sucursal);
+            const matchNombre = sucursalLabel && nombreSuc && (
+                nombreSuc === sucursalLabel.toLowerCase() ||
+                sucursalLabel.toLowerCase().includes(nombreSuc) ||
+                nombreSuc.includes(sucursalLabel.toLowerCase())
+            );
+
             if (!matchId && !matchNombre) return false;
         }
+
         if (medio) {
             const metodoPago = (v.medio_pago || v.medioPago || v.metodo_pago || v.metodoPago || v.payment_method || v.forma_pago || v.formaPago || '').toLowerCase();
             if (medio === 'tarjeta') {
@@ -342,31 +343,49 @@ function finanzasAplicarFiltros() {
 }
 
 function finanzasActualizarEfectivoHoy() {
-    // Suma total de efectivo del día según filtros
     const hoy = new Date().toISOString().slice(0, 10);
     const sucursal = document.getElementById('fin-filtro-sucursal')?.value || '';
-    const medio = document.getElementById('fin-filtro-medio')?.value || 'efectivo';
+    const sucursalLabel = document.getElementById('fin-filtro-sucursal')?.selectedOptions?.[0]?.textContent?.trim() || '';
+    const medioFiltro = document.getElementById('fin-filtro-medio')?.value || '';
+
     let total = 0;
     finanzasState.ventas.forEach((v) => {
+        // Estado
+        const estado = (v.estado || '').toString().trim().toLowerCase();
+        if (estado === 'anulada' || estado === 'cancelada') return;
+
+        // Fecha (Solo HOY)
         const fechaVenta = (v.fecha_venta || v.created_at || v.fechaVenta || '').slice(0, 10);
         if (fechaVenta !== hoy) return;
+
+        // Sucursal
         if (sucursal) {
-            const idSuc = v.id_sucursal || v.sucursal_id || v.branchId;
-            if (String(idSuc) !== String(sucursal)) return;
+            const idSuc = v.id_sucursal || v.sucursal_id || v.branchId || v.idSucursal || v.Sucursal?.id_sucursal || v.Sucursal?.id;
+            const nombreSuc = (v.nombre_sucursal || v.nombreSucursal || v.Sucursal?.nombreSucursal || v.Sucursal?.nombre || v.sucursal || '').toString().trim().toLowerCase();
+
+            const matchId = idSuc != null && String(idSuc) === String(sucursal);
+            const matchNombre = sucursalLabel && nombreSuc && (
+                nombreSuc === sucursalLabel.toLowerCase() ||
+                sucursalLabel.toLowerCase().includes(nombreSuc) ||
+                nombreSuc.includes(sucursalLabel.toLowerCase())
+            );
+            if (!matchId && !matchNombre) return;
         }
+
+        // Medio de pago (Si hay filtro, aplicarlo; si no, sumar todo lo del día filtrado por sucursal)
         const metodoPago = (v.medio_pago || v.medioPago || v.metodo_pago || v.metodoPago || v.payment_method || v.forma_pago || v.formaPago || '').toLowerCase();
-        if (medio) {
-            if (medio === 'tarjeta') {
-                // Considera debito y credito como tarjeta
+        if (medioFiltro) {
+            if (medioFiltro === 'tarjeta') {
                 if (!(metodoPago.includes('debito') || metodoPago.includes('crédito') || metodoPago.includes('credito') || metodoPago.includes('tarjeta'))) return;
             } else {
-                if (!metodoPago.includes(medio)) return;
+                if (!metodoPago.includes(medioFiltro)) return;
             }
         }
+
         total += parseNumber(v.total || v.monto_total || v.monto || 0);
     });
     const el = document.getElementById('fin-hoy-efectivo');
-    if (el) el.textContent = `$${total.toLocaleString('es-CL')}`;
+    if (el) el.textContent = `$${Math.round(total).toLocaleString('es-CL')}`;
 }
 
 function finanzasRenderTabla() {
@@ -505,8 +524,8 @@ function finanzasActualizarKPIs() {
 
     let montoHoy = 0, countHoy = 0, montoMes = 0, countMes = 0, montoTotal = 0;
     finanzasState.ventas.forEach((v) => {
-        const estado = (v.estado || '').toUpperCase();
-        if (estado === 'ANULADA' || estado === 'CANCELADA') return;
+        const estado = (v.estado || '').toString().trim().toLowerCase();
+        if (estado === 'anulada' || estado === 'cancelada') return;
         const monto = parseNumber(v.total || v.monto_total || v.monto || 0);
         const fechaFull = (v.fecha_venta || v.created_at || v.fechaVenta || '').slice(0, 19);
         const fecha = fechaFull.slice(0, 10);
