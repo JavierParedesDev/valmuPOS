@@ -204,7 +204,7 @@ window.ValmuInvoicingApi = (() => {
             }
             return xmlContent;
         },
-        getSalesHistory: (limit) => safeRequest(`/ventas`),
+        getSalesHistory: (limit) => safeRequest(`/ventas?limit=${limit || 100000}`),
         deleteXml: (id) => safeRequest(`/dte/${id}`, 'DELETE'),
         uploadManualXml: async (file) => {
             return new Promise((resolve, reject) => {

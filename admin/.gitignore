@@ -3,3 +3,12 @@ dist/
 release/
 coverage/
 *.log
+
+
+# Private certificates and keys
+sii_data/*.pfx
+*.pfx
+
+# Ignored release artifacts (installers and blockmaps)
+release/*.exe
+release/*.blockmap

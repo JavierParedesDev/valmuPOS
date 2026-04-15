@@ -16,7 +16,7 @@ import {
     SectionHeader,
     SwitchField
 } from '../components/UI';
-import { formatCurrency, toInteger, toNumber } from '../utils/format';
+import { formatCurrency, toInteger, toNumber, filterProductsLocally, normalizeSearchValue } from '../utils/format';
 import { brandColors } from '../theme';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -25,36 +25,6 @@ const PRODUCT_PICKER_LIMIT = 12;
 const PRODUCT_REFERENCE_LIMIT = 500;
 let mobileProductRequestId = 0;
 let mobileProductPickerRequestId = 0;
-
-function normalizeProductSearchValue(value) {
-    return String(value || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .trim();
-}
-
-function filterProductsLocally(term = '', source = []) {
-    const normalizedTerm = normalizeProductSearchValue(term);
-    if (!normalizedTerm) return source;
-
-    const tokens = normalizedTerm.split(/\s+/).filter(Boolean);
-
-    return source.filter((product) => {
-        const haystack = [
-            product.nombreProducto,
-            product.codigoBarras,
-            product.nombreCategoria,
-            product.nombreProveedor,
-            product.familiaPromo
-        ]
-            .filter(Boolean)
-            .map(normalizeProductSearchValue)
-            .join(' ');
-
-        return tokens.every((token) => haystack.includes(token));
-    });
-}
 
 function emptyProductForm() {
     return {

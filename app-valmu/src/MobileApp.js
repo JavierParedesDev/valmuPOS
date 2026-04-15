@@ -30,7 +30,12 @@ const MODULES = [
     { key: 'products', label: 'Productos', metric: 'Catalogo', icon: { set: 'MaterialCommunityIcons', name: 'package-variant-closed' } },
     { key: 'categories', label: 'Categorías', metric: 'Orden', icon: { set: 'Ionicons', name: 'layers-outline' } },
     { key: 'suppliers', label: 'Proveedores', metric: 'Compras', icon: { set: 'Ionicons', name: 'storefront-outline' } },
-    { key: 'branches', label: 'Sucursales', metric: 'Stock', icon: { set: 'Ionicons', name: 'location-outline' } }
+    { key: 'branches', label: 'Sucursales', metric: 'Stock', icon: { set: 'Ionicons', name: 'location-outline' } },
+    { key: 'monitoring', label: 'Monitoreo', metric: 'Vivo', icon: { set: 'Ionicons', name: 'pulse-outline' }, hidden: true },
+    { key: 'users', label: 'Usuarios', metric: 'Cuentas', icon: { set: 'Ionicons', name: 'people-outline' }, hidden: true },
+    { key: 'movements', label: 'Movimientos', metric: 'Facturas', icon: { set: 'Ionicons', name: 'swap-horizontal-outline' }, hidden: true },
+    { key: 'dispatch', label: 'Despachos', metric: 'Envios', icon: { set: 'Ionicons', name: 'bus-outline' }, hidden: true },
+    { key: 'invoices', label: 'Facturas', metric: 'DTE', icon: { set: 'Ionicons', name: 'document-text-outline' }, hidden: true }
 ];
 
 const brandIcon = require('../assets/icon.png');
@@ -53,6 +58,16 @@ function resolveModuleComponent(moduleKey) {
             return require('./screens/SuppliersScreen').default;
         case 'branches':
             return require('./screens/BranchesScreen').default;
+        case 'monitoring':
+            return require('./screens/MonitoringScreen').default;
+        case 'users':
+            return require('./screens/UsersScreen').default;
+        case 'movements':
+            return require('./screens/MovementsScreen').default;
+        case 'dispatch':
+            return require('./screens/DispatchScreen').default;
+        case 'invoices':
+            return require('./screens/InvoicesScreen').default;
         default:
             return null;
     }
@@ -288,7 +303,7 @@ export default function MobileApp() {
                         </View>
 
                         <Surface style={styles.bottomDock} elevation={4}>
-                            {MODULES.map((item) => {
+                            {MODULES.filter(m => !m.hidden).map((item) => {
                                 const active = item.key === moduleKey;
                                 return (
                                     <TouchableRipple
@@ -316,6 +331,10 @@ export default function MobileApp() {
                         visible={drawerVisible}
                         onClose={() => setDrawerVisible(false)}
                         onLogout={handleLogout}
+                        onSelectModule={(key) => {
+                            setModuleKey(key);
+                            setDrawerVisible(false);
+                        }}
                     />
                 </>
             )}
@@ -433,12 +452,13 @@ function UpdatePrompt({ state, onClose, onInstall }) {
     );
 }
 
-function DrawerMenu({ visible, onClose, onLogout }) {
+function DrawerMenu({ visible, onClose, onLogout, onSelectModule }) {
     const items = [
-        { label: 'Monitoreo en vivo', icon: 'pulse-outline' },
-        { label: 'Movimientos', icon: 'swap-horizontal-outline' },
-        { label: 'Finanzas', icon: 'cash-outline' },
-        { label: 'Configuración', icon: 'settings-outline' }
+        { key: 'monitoring', label: 'Monitoreo en vivo', icon: 'pulse-outline' },
+        { key: 'movements', label: 'Movimientos', icon: 'swap-horizontal-outline' },
+        { key: 'dispatch', label: 'Despachos', icon: 'bus-outline' },
+        { key: 'users', label: 'Usuarios', icon: 'people-outline' },
+        { key: 'invoices', label: 'Historial Facturas', icon: 'document-text-outline' }
     ];
 
     return (
@@ -446,12 +466,12 @@ function DrawerMenu({ visible, onClose, onLogout }) {
             <Modal visible={visible} contentContainerStyle={styles.drawerModal} onDismiss={onClose}>
                 <View style={styles.sheetHandle} />
                 <View style={styles.drawerHeader}>
-                    <Text style={styles.drawerTitle}>Menu</Text>
+                    <Text style={styles.drawerTitle}>Menu de Gestión</Text>
                 </View>
 
                 <View style={styles.drawerContent}>
                     {items.map((item) => (
-                        <TouchableRipple key={item.label} style={styles.drawerItem} onPress={onClose} borderless>
+                        <TouchableRipple key={item.key} style={styles.drawerItem} onPress={() => onSelectModule(item.key)} borderless>
                             <View style={styles.drawerItemInner}>
                                 <View style={styles.drawerIconWrap}>
                                     <Ionicons name={item.icon} size={20} color={brandColors.shell} />
