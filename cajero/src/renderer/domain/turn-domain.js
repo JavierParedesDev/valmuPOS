@@ -8,7 +8,8 @@ export function getExpectedCashAmount() {
 export function getTurnSalesTotal() {
     return turnSummaryState.totalCash
         + turnSummaryState.totalCard
-        + turnSummaryState.totalTransfer;
+        + turnSummaryState.totalTransfer
+        + turnSummaryState.totalInternal;
 }
 
 export function formatDifferenceLabel(value) {

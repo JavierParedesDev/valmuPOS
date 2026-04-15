@@ -10,6 +10,15 @@ const advertisingState = {
     failedUrls: new Set()
 };
 
+const autoScrollState = {
+    animationId: null,
+    timeoutId: null,
+    direction: 1, // 1 for down, -1 for up
+    speed: 0.8, // pixels per frame
+    lastItemsCount: 0,
+    pauseUntil: 0
+};
+
 function formatItemCount(count) {
     const normalized = Number(count || 0);
     return `${normalized} ${normalized === 1 ? 'item' : 'items'}`;
@@ -224,8 +233,7 @@ function renderCustomerDisplay(payload = {}) {
     }
 
     const cart = Array.isArray(payload.cart) ? payload.cart : [];
-    const targetScrollTop = Math.max(0, Number(payload.cartScrollTop || 0));
-    const compactLevel = cart.length >= 10 ? 'dense' : (cart.length >= 7 ? 'compact' : '');
+    const compactLevel = cart.length >= 12 ? 'dense' : (cart.length >= 5 ? 'compact' : '');
 
     if (displayRoot) {
         displayRoot.classList.toggle('customer-display-compact', compactLevel === 'compact');
@@ -282,8 +290,56 @@ function renderCustomerDisplay(payload = {}) {
         itemsList.appendChild(article);
     });
 
-    itemsList.scrollTop = targetScrollTop;
     renderAdvertising();
+    handleAutoScroll(itemsList, cart.length);
+}
+
+function handleAutoScroll(scrollContainer, currentItemsCount) {
+    if (autoScrollState.animationId) {
+        cancelAnimationFrame(autoScrollState.animationId);
+        autoScrollState.animationId = null;
+    }
+    if (autoScrollState.timeoutId) {
+        clearTimeout(autoScrollState.timeoutId);
+        autoScrollState.timeoutId = null;
+    }
+
+    if (!scrollContainer) return;
+
+    // Always start from current position and go down
+    autoScrollState.direction = 1;
+
+    const runAnimation = () => {
+        const max = scrollContainer.scrollHeight - scrollContainer.clientHeight;
+
+        if (max <= 5) return;
+
+        if (autoScrollState.pauseUntil && Date.now() < autoScrollState.pauseUntil) {
+            autoScrollState.animationId = requestAnimationFrame(runAnimation);
+            return;
+        }
+
+        if (autoScrollState.direction === 1) {
+            scrollContainer.scrollTop += autoScrollState.speed;
+            if (scrollContainer.scrollTop >= max - 1) {
+                autoScrollState.direction = -1;
+                autoScrollState.pauseUntil = Date.now() + 2000; // Pause 2s at bottom
+            }
+        } else {
+            scrollContainer.scrollTop -= autoScrollState.speed;
+            if (scrollContainer.scrollTop <= 1) {
+                autoScrollState.direction = 1;
+                autoScrollState.pauseUntil = Date.now() + 2000; // Pause 2s at top
+            }
+        }
+
+        autoScrollState.animationId = requestAnimationFrame(runAnimation);
+    };
+
+    autoScrollState.timeoutId = setTimeout(() => {
+        console.log("Starting auto-scroll animation...");
+        runAnimation();
+    }, 4000);
 }
 
 async function bootCustomerDisplay() {

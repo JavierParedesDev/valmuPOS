@@ -13,7 +13,8 @@ export function normalizeSalesHistory(payload, formatDateTime) {
         trackId: sale.trackId || sale.track_id || null,
         fechaDte: sale.fechaDte || sale.fecha_dte || (sale.fechaVenta ? String(sale.fechaVenta).slice(0, 10) : null),
         rawDate: sale.fechaVenta,
-        dateLabel: formatDateTime(sale.fechaVenta)
+        dateLabel: formatDateTime(sale.fechaVenta),
+        userId: Number(sale.id_usuario || sale.idUsuario || sale.id_vendedor || 0)
     })).filter((sale) => sale.id > 0);
 }
 

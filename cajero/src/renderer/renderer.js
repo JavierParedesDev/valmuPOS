@@ -866,6 +866,10 @@ function bindPaymentModal() {
     document.getElementById('payment-confirm-btn')?.addEventListener('click', confirmPaymentFlow);
     document.getElementById('payment-method-select')?.addEventListener('change', handlePaymentMethodChange);
     document.getElementById('payment-received-input')?.addEventListener('input', renderPaymentChange);
+    document.getElementById('payment-mixed-cash')?.addEventListener('input', renderPaymentChange);
+    document.getElementById('payment-mixed-card')?.addEventListener('input', renderPaymentChange);
+    document.getElementById('payment-mixed-transfer')?.addEventListener('input', renderPaymentChange);
+    document.getElementById('invoice-client-clear-btn')?.addEventListener('click', clearInvoiceCustomer);
     document.getElementById('payment-modal-backdrop')?.addEventListener('click', (event) => {
         if (event.target.id === 'payment-modal-backdrop') {
             closePaymentModal();
@@ -1355,7 +1359,7 @@ async function handleBranchSelectionChange(event) {
     await loadSalesHistory();
     const userBranchId = String(getCurrentUser()?.id_sucursal || '');
     if (userBranchId && userBranchId !== branchId) {
-        setBackendStatus('Sucursal cambiada para inventario. Ojo: las ventas siguen registrandose con la sucursal del token.');
+        setBackendStatus('Sucursal cambiada. Las ventas se registraran en la nueva sucursal.');
         return;
     }
 
@@ -1953,16 +1957,21 @@ async function loadSalesHistory() {
             ? allSales
             : allSales.filter((sale) => sale.isFiscal);
 
-        // Filter by current shift if open
+        const currentUser = getCurrentUser();
+        const currentUserId = Number(currentUser?.id_usuario || currentUser?.idUsuario || currentUser?.id || 0);
+
+        // Filter by current shift if open AND by current user
         if (cashSessionState.isOpen && cashSessionState.openedAt) {
             const openedAtDate = new Date(cashSessionState.openedAt);
             salesHistoryState.items = visibleSales.filter(sale => {
                 const saleDate = new Date(sale.rawDate);
-                // Allow a small buffer of 5 seconds for clock drift/processing delay
-                return saleDate.getTime() >= (openedAtDate.getTime() - 5000);
+                const isFromTodayShift = saleDate.getTime() >= (openedAtDate.getTime() - 5000);
+                const isFromCurrentUser = sale.userId === currentUserId;
+                return isFromTodayShift && isFromCurrentUser;
             });
         } else {
-            salesHistoryState.items = visibleSales;
+            // If no shift open, still filter by user if possible
+            salesHistoryState.items = visibleSales.filter(sale => sale.userId === currentUserId);
         }
     } catch (error) {
         console.error('Sales history error:', error);
@@ -2002,6 +2011,7 @@ function buildReceiptRecord({
     paymentLabel = null,
     customerLabel = null,
     footerMessage = null,
+    addressLabel = null,
     origin = 'sale'
 }) {
     const saleDate = new Date().toISOString();
@@ -2054,6 +2064,7 @@ function buildReceiptRecord({
         `Cliente: ${resolvedCustomerLabel}`,
         `Pago: ${resolvedPaymentLabel}`,
         '--------------------------------',
+        ...(addressLabel ? [`Dirección: ${addressLabel}`, '--------------------------------'] : []),
         'DETALLE'
     ];
 
@@ -2115,6 +2126,7 @@ function buildReceiptRecord({
         lineItems,
         preview: previewLines.join('\n'),
         footerMessage: resolvedFooterMessage,
+        addressLabel,
         origin,
         emisor: dteMetadata?.emisor || null,
         xmlContent: dteMetadata?.xmlContent || null,
@@ -2859,14 +2871,20 @@ function openInvoiceClientFlow() {
 }
 
 function clearInvoiceCustomer() {
-    saleState.customer = null;
-    if (saleState.documentType === 'Factura') {
-        saleState.documentType = 'Boleta';
-        renderDocumentType();
+    if (isDispatchMode()) {
+        dispatchState.selectedCustomerId = null;
+        renderDispatchSection();
+    } else {
+        saleState.customer = null;
+        if (saleState.documentType === 'Factura') {
+            saleState.documentType = 'Boleta';
+            renderDocumentType();
+        }
+        renderCustomerSummary();
     }
 
-    renderCustomerSummary();
-    setBackendStatus('Cliente de factura limpiado. Puedes seleccionar otro cuando quieras.');
+    closeInvoiceClientModal();
+    setBackendStatus('Cliente desasignado correctamente.');
 }
 
 function closeInvoiceClientModal() {
@@ -3037,7 +3055,9 @@ function closePaymentModal() {
 
 function handlePaymentMethodChange() {
     const methodSelect = document.getElementById('payment-method-select');
-    const isCash = (methodSelect?.value || 'efectivo') === 'efectivo';
+    const method = methodSelect?.value || 'efectivo';
+    const isCash = method === 'efectivo';
+    const isMixed = method === 'mixto';
     const snapshot = getCartSnapshot();
 
     renderPaymentMethodView({
@@ -3045,13 +3065,29 @@ function handlePaymentMethodChange() {
         total: snapshot.total
     });
 
+    document.getElementById('payment-mixed-group')?.classList.toggle('hidden', !isMixed);
+    if (isMixed) {
+        document.getElementById('payment-mixed-cash').value = '';
+        document.getElementById('payment-mixed-card').value = '';
+        document.getElementById('payment-mixed-transfer').value = '';
+    }
+
     renderPaymentChange();
 }
 
 function renderPaymentChange() {
     const method = document.getElementById('payment-method-select')?.value || 'efectivo';
     const snapshot = getCartSnapshot();
-    const received = Number(document.getElementById('payment-received-input')?.value || 0);
+    let received = 0;
+
+    if (method === 'mixto') {
+        const cash = Number(document.getElementById('payment-mixed-cash')?.value || 0);
+        const card = Number(document.getElementById('payment-mixed-card')?.value || 0);
+        const transfer = Number(document.getElementById('payment-mixed-transfer')?.value || 0);
+        received = cash + card + transfer;
+    } else {
+        received = Number(document.getElementById('payment-received-input')?.value || 0);
+    }
 
     renderPaymentChangeView({
         method,
@@ -3116,16 +3152,36 @@ async function confirmPaymentFlow() {
 
         const method = document.getElementById('payment-method-select')?.value || 'efectivo';
         const snapshot = getCartSnapshot();
-        const received = Number(document.getElementById('payment-received-input')?.value || 0);
+        const isMixed = method === 'mixto';
 
-        if (method === 'efectivo' && received < snapshot.total) {
+        let receivedValue = 0;
+        let mixedData = null;
+
+        if (isMixed) {
+            mixedData = {
+                cash: Number(document.getElementById('payment-mixed-cash')?.value || 0),
+                card: Number(document.getElementById('payment-mixed-card')?.value || 0),
+                transfer: Number(document.getElementById('payment-mixed-transfer')?.value || 0)
+            };
+            receivedValue = mixedData.cash + mixedData.card + mixedData.transfer;
+        } else {
+            receivedValue = Number(document.getElementById('payment-received-input')?.value || 0);
+        }
+
+        const effectiveReceived = isMixed ? receivedValue : (receivedValue || snapshot.total);
+
+        if (effectiveReceived < snapshot.total) {
             Swal.fire({
                 icon: 'warning',
                 title: 'Monto insuficiente',
-                text: `El monto recibido ($${formatCurrency(received)}) es menor al total de la venta ($${formatCurrency(snapshot.total)}).`,
+                text: `El monto total de pago ($${formatCurrency(effectiveReceived)}) es menor al total de la venta ($${formatCurrency(snapshot.total)}).`,
                 target: '#payment-modal-backdrop'
             });
-            document.getElementById('payment-received-input')?.focus();
+            if (isMixed) {
+                document.getElementById('payment-mixed-cash')?.focus();
+            } else {
+                document.getElementById('payment-received-input')?.focus();
+            }
             return;
         }
 
@@ -3158,7 +3214,7 @@ async function confirmPaymentFlow() {
         const result = await submitSaleToBackend({
             method,
             snapshot,
-            received,
+            received: isMixed ? mixedData : effectiveReceived,
             folioDocumento: dteResult?.folio || null
         });
 
@@ -3207,6 +3263,10 @@ async function confirmPaymentFlow() {
             turnSummaryState.totalCard += snapshot.total;
         } else if (method === 'transferencia') {
             turnSummaryState.totalTransfer += snapshot.total;
+        } else if (method === 'mixto') {
+            turnSummaryState.totalCash += Number(mixedData.cash || 0);
+            turnSummaryState.totalCard += Number(mixedData.card || 0);
+            turnSummaryState.totalTransfer += Number(mixedData.transfer || 0);
         }
 
         if (saleState.documentType === 'Vale interno') {
@@ -3231,19 +3291,27 @@ async function confirmPaymentFlow() {
 
         saveReceiptRecord(receiptRecord);
 
-        try {
-            await printReceiptRecord({
-                record: receiptRecord,
-                printerName: getSessionValue(SESSION_KEYS.printerName) || 'Predeterminada del sistema',
-                printerPaper: getSessionValue(SESSION_KEYS.printerPaper) || '80mm',
-                printReceipt: window.cajeroAPI?.printReceipt
-            });
-        } catch (printError) {
-            console.error('Auto print error:', printError);
-            addAuditEntry({
-                type: 'warning',
-                title: 'Impresion pendiente',
-                detail: printError?.message || `La venta #${result.saleId} se registro, pero no se pudo imprimir.`
+        const skipPrint = document.getElementById('payment-no-print-checkbox')?.checked;
+        if (!skipPrint) {
+            try {
+                await printReceiptRecord({
+                    record: receiptRecord,
+                    printerName: getSessionValue(SESSION_KEYS.printerName) || 'Predeterminada del sistema',
+                    printerPaper: getSessionValue(SESSION_KEYS.printerPaper) || '80mm',
+                    printReceipt: window.cajeroAPI?.printReceipt
+                });
+            } catch (printError) {
+                console.error('Auto print error:', printError);
+                addAuditEntry({
+                    type: 'warning',
+                    title: 'Impresion pendiente',
+                    detail: printError?.message || `La venta #${result.saleId} se registro, pero no se pudo imprimir.`
+                });
+            }
+        } else {
+            addTurnHistoryEntry({
+                title: 'Impresión omitida',
+                detail: `Se omitió la impresión del comprobante para la venta #${result.saleId}.`
             });
         }
 
@@ -3315,7 +3383,8 @@ async function submitSaleToBackend({ method, received, folioDocumento = null }) 
         folioDocumento,
         documentTypeIds: DOCUMENT_TYPE_IDS,
         paymentMethodMap: PAYMENT_METHOD_MAP,
-        getPricingForProduct
+        getPricingForProduct,
+        branchId: getSelectedBranchId()
     });
     const result = await submitSaleRequest({ apiBaseUrl, token, payload });
 
@@ -3468,7 +3537,14 @@ Firma: ________________________
         receipt: {
             preview,
             documentType: 'RETIRO DE CAJA',
-            saleId: `R-${withdrawalId || Date.now()}`
+            saleId: `R-${withdrawalId || Date.now()}`,
+            withdrawalAmount: amount,
+            withdrawalReason: reason,
+            cashierName: cashierName,
+            beforeCash: beforeCash,
+            afterCash: afterCash,
+            dateLabel: now.toLocaleDateString(),
+            timeLabel: now.toLocaleTimeString()
         }
     });
 }
@@ -3636,8 +3712,15 @@ async function confirmCloseCashSession() {
             totals: {
                 cash: countedCash,
                 card: countedCard,
-                transfer: countedTransfer
-            }
+                transfer: countedTransfer,
+                internal: Number(turnSummaryState.totalInternal || 0)
+            },
+            differences: {
+                cash: cashDifference,
+                card: cardDifference,
+                transfer: transferDifference
+            },
+            observation: ''
         });
 
         addTurnHistoryEntry({
@@ -4261,6 +4344,12 @@ async function forceSendPendingBoletaEnvelope({ reason = 'manual', notifyUser = 
             ...(await window.cajeroAPI.getSiiConfig())
         };
         const payload = await sendBoletaEnvelopeBatch({ batch: snapshot, config, reason });
+
+        // Limpiar estado local persistente tras envío exitoso
+        boletaEnvelopeState.items = [];
+        boletaEnvelopeState.startedAt = null;
+        persistPendingBoletaEnvelopeState();
+
         if (notifyUser) {
             setSiiSettingsStatus(`Sobre de boletas enviado correctamente${payload?.TrackId || payload?.trackId ? ` · Track ID ${payload.TrackId || payload.trackId}` : ''}.`);
         }
@@ -4887,7 +4976,6 @@ function buildCustomerDisplayPayload() {
                 : activeCart.length
                     ? 'Revise su compra'
                     : 'Escanee sus productos',
-        cartScrollTop: Number(cartList?.scrollTop || 0),
         cart: activeCart.map((item) => {
             const product = findProductById(catalogState.products, item.productId);
 
@@ -5666,6 +5754,7 @@ async function generateDispatchRecord() {
                 dteMetadata: dteResult,
                 paymentLabel: 'En ruta',
                 footerMessage: 'Documento emitido para despacho en ruta. No se considera en el arqueo de caja.',
+                addressLabel: dispatchAddress,
                 origin: 'dispatch'
             });
             saveReceiptRecord(saleReceiptRecord);

@@ -939,11 +939,11 @@ select.input-control:focus+.select-chevron {
 }
 
 .compact-summary {
-    gap: 0.55rem;
+    gap: 0.4rem;
 }
 
 .compact-summary .summary-row {
-    padding-bottom: 0.55rem;
+    padding-bottom: 0.4rem;
 }
 
 .turn-history-head {
@@ -1517,6 +1517,8 @@ select.input-control:focus+.select-chevron {
 
 .weighted-modal {
     width: min(100%, 420px);
+    max-height: 90vh;
+    overflow-y: auto;
     padding: 1.25rem;
     border-radius: 24px;
     background: rgba(255, 253, 250, 0.98);
@@ -3516,4 +3518,39 @@ select.input-control:focus+.select-chevron {
     .dispatch-sale-panel {
         order: 1;
     }
+}
+
+/* Mixed Payment UI */
+#payment-mixed-group {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    transition: all 0.3s ease;
+}
+
+#payment-mixed-group div {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+#payment-mixed-group .input-control {
+    background: #fff;
+    border-color: #cbd5e1;
+}
+
+#payment-mixed-group .input-control:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
+}
+
+.diff-good {
+    color: #10b981 !important;
+}
+
+.diff-neutral {
+    color: #f59e0b !important;
+}
+
+.diff-bad {
+    color: #ef4444 !important;
 }

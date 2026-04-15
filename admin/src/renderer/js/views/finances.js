@@ -72,6 +72,11 @@ async function renderFinances() {
                             <span class="text-[9px] font-black text-gray-300 uppercase tracking-widest block mb-1">Monto total (hoy)</span>
                             <div class="text-3xl font-black text-gray-900" id="fin-hoy-total">$0</div>
                             <div class="text-[10px] text-gray-400 font-medium">Total ventas del día</div>
+                            <div class="mt-2">
+                                <span class="text-[9px] font-black text-green-700 uppercase tracking-widest block mb-1">Efectivo filtrado</span>
+                                <div class="text-xl font-black text-green-700" id="fin-hoy-efectivo">$0</div>
+                                <div class="text-[10px] text-gray-400 font-medium">Total efectivo según filtros</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -119,10 +124,9 @@ async function renderFinances() {
             <!-- FILTERS & TABLE -->
             <div class="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden border-b-4 border-b-gray-900/5 items-stretch h-full flex flex-col">
                 <div class="p-8 border-b border-gray-50 flex flex-wrap items-center gap-6 justify-between bg-gray-50/30">
-                    <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-4 flex-wrap">
                         <div class="relative group">
                             <i class="bi bi-calendar-range absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-orange-600 transition-colors"></i>
-                            <!-- Start with empty filters by default -->
                             <input type="date" id="fin-filtro-fecha" class="pl-12 pr-4 py-3 bg-white border border-gray-100 rounded-2xl text-xs font-bold shadow-sm focus:border-orange-200 outline-none w-48 transition-all" value="" oninput="finanzasAplicarFiltros()">
                         </div>
                         <div class="relative group">
@@ -133,11 +137,28 @@ async function renderFinances() {
                             <i class="bi bi-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-orange-600 transition-colors"></i>
                             <input type="text" id="fin-busqueda" class="pl-12 pr-4 py-3 bg-white border border-gray-100 rounded-2xl text-xs font-bold shadow-sm focus:border-orange-200 outline-none w-72 transition-all" placeholder="Buscar folio, cliente..." oninput="finanzasAplicarFiltros()">
                         </div>
-                <button class="h-11 px-4 text-[10px] font-black text-gray-400 hover:text-orange-600 uppercase tracking-widest transition-colors" onclick="
-                    document.getElementById('fin-filtro-fecha').value='';
-                    document.getElementById('fin-filtro-mes').value='';
-                    document.getElementById('fin-busqueda').value='';
-                    finanzasAplicarFiltros()">
+                        <div class="relative group">
+                            <i class="bi bi-shop absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                            <select id="fin-filtro-sucursal" class="pl-12 pr-4 py-3 bg-white border border-gray-100 rounded-2xl text-xs font-bold shadow-sm focus:border-orange-200 outline-none w-44 transition-all" onchange="finanzasAplicarFiltros()">
+                                <option value="">Todas las sucursales</option>
+                            </select>
+                        </div>
+                        <div class="relative group">
+                            <i class="bi bi-wallet2 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                            <select id="fin-filtro-medio" class="pl-12 pr-4 py-3 bg-white border border-gray-100 rounded-2xl text-xs font-bold shadow-sm focus:border-orange-200 outline-none w-44 transition-all" onchange="finanzasAplicarFiltros()">
+                                <option value="">Todos los medios</option>
+                                <option value="efectivo">Efectivo</option>
+                                <option value="tarjeta">Tarjeta</option>
+                                <option value="transferencia">Transferencia</option>
+                            </select>
+                        </div>
+                        <button class="h-11 px-4 text-[10px] font-black text-gray-400 hover:text-orange-600 uppercase tracking-widest transition-colors" onclick="
+                            document.getElementById('fin-filtro-fecha').value='';
+                            document.getElementById('fin-filtro-mes').value='';
+                            document.getElementById('fin-busqueda').value='';
+                            document.getElementById('fin-filtro-sucursal').value='';
+                            document.getElementById('fin-filtro-medio').value='';
+                            finanzasAplicarFiltros()">
                             Limpiar Filtros
                         </button>
                     </div>
@@ -198,12 +219,19 @@ async function finanzasCargarSucursales() {
         const response = await apiRequest({ endpoint: '/sucursales', token });
         const sucursales = Array.isArray(response) ? response : (Array.isArray(response?.data) ? response.data : []);
         finanzasSucursalesMap = {};
+        // Solo agregar una vez cada sucursal por su ID numérico
         sucursales.forEach(s => {
-            // Mapear tanto por id_sucursal como por string
             const id = s.id_sucursal || s.id;
-            finanzasSucursalesMap[id] = s.nombreSucursal || s.nombre || 'Sucursal ' + id;
-            finanzasSucursalesMap[String(id)] = s.nombreSucursal || s.nombre || 'Sucursal ' + id;
+            if (id != null && !finanzasSucursalesMap.hasOwnProperty(id)) {
+                finanzasSucursalesMap[id] = s.nombreSucursal || s.nombre || 'Sucursal ' + id;
+            }
         });
+        // Llenar el filtro de sucursales solo con los IDs numéricos únicos
+        const select = document.getElementById('fin-filtro-sucursal');
+        if (select) {
+            select.innerHTML = '<option value="">Todas las sucursales</option>' +
+                Object.entries(finanzasSucursalesMap).map(([id, nombre]) => `<option value="${id}">${nombre}</option>`).join('');
+        }
     } catch (e) {
         console.warn('No se pudieron cargar sucursales para mapeo:', e);
     }
@@ -261,6 +289,23 @@ function finanzasAplicarFiltros() {
     finanzasState.filtroFecha = fecha;
     finanzasState.filtroBusqueda = busq;
 
+    const sucursal = document.getElementById('fin-filtro-sucursal')?.value || '';
+    const sucursalLabel = document.getElementById('fin-filtro-sucursal')?.selectedOptions?.[0]?.textContent?.trim() || '';
+    if (sucursal || sucursalLabel) {
+        console.log('[Finanzas] Filtro sucursal aplicado:', { sucursal, sucursalLabel });
+        console.table(finanzasState.ventas.map(v => ({
+            id_sucursal: v.id_sucursal,
+            sucursal_id: v.sucursal_id,
+            branchId: v.branchId,
+            idSucursal: v.idSucursal,
+            nombre_sucursal: v.nombre_sucursal,
+            nombreSucursal: v.nombreSucursal,
+            sucursal: v.sucursal,
+            estado: v.estado
+        })));
+    }
+    const medio = document.getElementById('fin-filtro-medio')?.value || '';
+
     finanzasState.filtered = finanzasState.ventas.filter((v) => {
         const fechaVentaFull = (v.fecha_venta || v.created_at || v.fechaVenta || '').slice(0, 19);
         const fechaVenta = fechaVentaFull.slice(0, 10);
@@ -271,11 +316,57 @@ function finanzasAplicarFiltros() {
             const haystack = [v.folio, v.numero_ticket, v.ticket_id, v.nombre_cliente, v.nombreCliente, v.cliente].filter(Boolean).join(' ').toLowerCase();
             if (!haystack.includes(busq)) return false;
         }
+        // Usar cualquier campo de sucursal disponible (id o nombre)
+        const idSuc = v.id_sucursal || v.sucursal_id || v.branchId || v.idSucursal || v.Sucursal?.id_sucursal || v.Sucursal?.id;
+        const nombreSuc = (v.nombre_sucursal || v.nombreSucursal || v.Sucursal?.nombreSucursal || v.Sucursal?.nombre || v.sucursal || '').toString().trim();
+        if (sucursal) {
+            const matchId = String(idSuc) === String(sucursal);
+            const matchNombre = sucursalLabel && nombreSuc && nombreSuc.toLowerCase() === sucursalLabel.toLowerCase();
+            if (!matchId && !matchNombre) return false;
+        }
+        if (medio) {
+            const metodoPago = (v.medio_pago || v.medioPago || v.metodo_pago || v.metodoPago || v.payment_method || v.forma_pago || v.formaPago || '').toLowerCase();
+            if (medio === 'tarjeta') {
+                if (!(metodoPago.includes('debito') || metodoPago.includes('crédito') || metodoPago.includes('credito') || metodoPago.includes('tarjeta'))) return false;
+            } else {
+                if (!metodoPago.includes(medio)) return false;
+            }
+        }
         return true;
     });
 
     finanzasState.page = 1;
     finanzasRenderTabla();
+    finanzasActualizarEfectivoHoy();
+
+}
+
+function finanzasActualizarEfectivoHoy() {
+    // Suma total de efectivo del día según filtros
+    const hoy = new Date().toISOString().slice(0, 10);
+    const sucursal = document.getElementById('fin-filtro-sucursal')?.value || '';
+    const medio = document.getElementById('fin-filtro-medio')?.value || 'efectivo';
+    let total = 0;
+    finanzasState.ventas.forEach((v) => {
+        const fechaVenta = (v.fecha_venta || v.created_at || v.fechaVenta || '').slice(0, 10);
+        if (fechaVenta !== hoy) return;
+        if (sucursal) {
+            const idSuc = v.id_sucursal || v.sucursal_id || v.branchId;
+            if (String(idSuc) !== String(sucursal)) return;
+        }
+        const metodoPago = (v.medio_pago || v.medioPago || v.metodo_pago || v.metodoPago || v.payment_method || v.forma_pago || v.formaPago || '').toLowerCase();
+        if (medio) {
+            if (medio === 'tarjeta') {
+                // Considera debito y credito como tarjeta
+                if (!(metodoPago.includes('debito') || metodoPago.includes('crédito') || metodoPago.includes('credito') || metodoPago.includes('tarjeta'))) return;
+            } else {
+                if (!metodoPago.includes(medio)) return;
+            }
+        }
+        total += parseNumber(v.total || v.monto_total || v.monto || 0);
+    });
+    const el = document.getElementById('fin-hoy-efectivo');
+    if (el) el.textContent = `$${total.toLocaleString('es-CL')}`;
 }
 
 function finanzasRenderTabla() {

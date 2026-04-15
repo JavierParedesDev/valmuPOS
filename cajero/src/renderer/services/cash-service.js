@@ -35,7 +35,7 @@ export async function openCashTurn({ apiBaseUrl, token, openingAmount }) {
     return payload;
 }
 
-export async function closeCashTurn({ apiBaseUrl, token, totals }) {
+export async function closeCashTurn({ apiBaseUrl, token, totals, differences, observation }) {
     const response = await fetch(`${normalizeApiBaseUrl(apiBaseUrl)}/caja/cerrar`, {
         method: 'POST',
         headers: {
@@ -43,9 +43,14 @@ export async function closeCashTurn({ apiBaseUrl, token, totals }) {
             Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-            totalEfectivo: Math.round(totals.cash || 0),
-            totalTarjeta: Math.round(totals.card || 0),
-            totalTransferencia: Math.round(totals.transfer || 0)
+            monto_efectivo: Math.round(totals.cash || 0),
+            monto_tarjeta: Math.round(totals.card || 0),
+            monto_transferencia: Math.round(totals.transfer || 0),
+            monto_interno: Math.round(totals.internal || 0),
+            diferencia_efectivo: Math.round(differences?.cash || 0),
+            diferencia_tarjeta: Math.round(differences?.card || 0),
+            diferencia_transferencia: Math.round(differences?.transfer || 0),
+            observaciones: observation || ''
         })
     });
 

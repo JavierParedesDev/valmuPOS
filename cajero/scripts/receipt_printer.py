@@ -158,6 +158,7 @@ def build_receipt_image(payload):
     is_fiscal = bool(tipo_dte and folio)
     origin = str(receipt.get('origin') or 'sale').strip().lower()
     is_dispatch_origin = origin == 'dispatch'
+    is_withdrawal = 'retiro' in document_type.lower()
 
     image = Image.new('RGB', (width_px, 4200), 'white')
     draw = ImageDraw.Draw(image)
@@ -279,12 +280,59 @@ def build_receipt_image(payload):
     draw.line((padding, cursor_y, width_px - padding, cursor_y), fill='black', width=2)
     cursor_y += gap + 6
 
-    detail_title = 'DETALLE DE PRODUCTOS'
-    draw.text((padding, cursor_y), detail_title, fill='black', font=font_title)
-    detail_title_box = draw.textbbox((padding, cursor_y), detail_title, font=font_title)
-    cursor_y += (detail_title_box[3] - detail_title_box[1]) + 8
-    draw.line((padding, cursor_y, width_px - padding, cursor_y), fill='black', width=2)
-    cursor_y += 10
+    if is_withdrawal:
+        # Specialized Withdrawal Section
+        amount = receipt.get('withdrawalAmount', 0)
+        formatted_amount = f"${amount:,}".replace(',', '.')
+        reason = str(receipt.get('withdrawalReason') or 'Sin motivo especificado')
+        cashier = str(receipt.get('cashierName') or 'No especificado')
+
+        # Amount Header
+        cursor_y = draw_wrapped_text(draw, padding, cursor_y, "MONTO RETIRADO", font_title, content_width, align='center')
+        cursor_y += 5
+
+        # BIG AMOUNT
+        font_big_amount = load_font(64 if is_small_paper else 72, bold=True)
+        cursor_y = draw_centered_lines(draw, padding, cursor_y, content_width, [formatted_amount], font_big_amount)
+        cursor_y += 15
+
+        draw.line((padding, cursor_y, width_px - padding, cursor_y), fill='black', width=1)
+        cursor_y += 15
+
+        # Reason Header
+        draw.text((padding, cursor_y), "MOTIVO =", fill='black', font=font_body_bold)
+        cursor_y += 35
+
+        # REASON TEXT (Large and Spaced)
+        font_reason = load_font(28 if is_small_paper else 32, bold=False)
+        cursor_y = draw_wrapped_text(draw, padding, cursor_y, reason.upper(), font_reason, content_width, line_gap=10)
+        cursor_y += 20
+
+        # Flow Details
+        draw.line((padding, cursor_y, width_px - padding, cursor_y), fill='black', width=1)
+        cursor_y += 15
+        
+        flow_lines = [
+            f"Disponible antes: ${receipt.get('beforeCash', 0):,}".replace(',', '.'),
+            f"Disponible luego: ${receipt.get('afterCash', 0):,}".replace(',', '.')
+        ]
+        for fline in flow_lines:
+            cursor_y = draw_wrapped_text(draw, padding, cursor_y, fline, font_body, content_width)
+            cursor_y += 5
+        
+        cursor_y += 25
+        # Signature
+        draw.line((padding + 40, cursor_y + 60, width_px - padding - 40, cursor_y + 60), fill='black', width=2)
+        cursor_y = draw_wrapped_text(draw, padding, cursor_y + 70, "FIRMA CAJERO/RECEPTOR", font_small_bold, content_width, align='center')
+        cursor_y += 40
+
+    if not is_withdrawal:
+        detail_title = 'DETALLE DE PRODUCTOS'
+        draw.text((padding, cursor_y), detail_title, fill='black', font=font_title)
+        detail_title_box = draw.textbbox((padding, cursor_y), detail_title, font=font_title)
+        cursor_y += (detail_title_box[3] - detail_title_box[1]) + 8
+        draw.line((padding, cursor_y, width_px - padding, cursor_y), fill='black', width=2)
+        cursor_y += 10
 
     detail_lines = receipt.get('lineItems') or []
     if detail_lines:
@@ -329,24 +377,25 @@ def build_receipt_image(payload):
             )
             cursor_y += 2
 
-    draw.line((padding, cursor_y, width_px - padding, cursor_y), fill='black', width=2)
-    cursor_y += gap
+    if not is_withdrawal:
+        draw.line((padding, cursor_y, width_px - padding, cursor_y), fill='black', width=2)
+        cursor_y += gap
 
-    totals = [
-        ('SUBTOTAL', f"${receipt.get('subtotal', 0):,}".replace(',', '.')),
-        ('IVA (19%)', f"${receipt.get('iva', 0):,}".replace(',', '.')),
-        ('TOTAL', f"${receipt.get('total', 0):,}".replace(',', '.')),
-    ]
+        totals = [
+            ('SUBTOTAL', f"${receipt.get('subtotal', 0):,}".replace(',', '.')),
+            ('IVA (19%)', f"${receipt.get('iva', 0):,}".replace(',', '.')),
+            ('TOTAL', f"${receipt.get('total', 0):,}".replace(',', '.')),
+        ]
 
-    for label, value in totals:
-        label_font = font_title if label == 'TOTAL' else font_body_bold
-        value_font = font_title if label == 'TOTAL' else font_mono
-        draw.text((padding, cursor_y), label, fill='black', font=label_font)
-        value_box = draw.textbbox((0, 0), value, font=value_font)
-        value_w = value_box[2] - value_box[0]
-        value_h = value_box[3] - value_box[1]
-        draw.text((width_px - padding - value_w, cursor_y), value, fill='black', font=value_font)
-        cursor_y += max(value_h, 24) + 8
+        for label, value in totals:
+            label_font = font_title if label == 'TOTAL' else font_body_bold
+            value_font = font_title if label == 'TOTAL' else font_mono
+            draw.text((padding, cursor_y), label, fill='black', font=label_font)
+            value_box = draw.textbbox((0, 0), value, font=value_font)
+            value_w = value_box[2] - value_box[0]
+            value_h = value_box[3] - value_box[1]
+            draw.text((width_px - padding - value_w, cursor_y), value, fill='black', font=value_font)
+            cursor_y += max(value_h, 24) + 8
 
     draw.line((padding, cursor_y, width_px - padding, cursor_y), fill='black', width=2)
     cursor_y += gap + 2

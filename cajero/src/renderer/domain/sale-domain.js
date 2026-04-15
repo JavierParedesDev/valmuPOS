@@ -50,7 +50,8 @@ export function buildSalePayload({
     folioDocumento,
     documentTypeIds,
     paymentMethodMap,
-    getPricingForProduct
+    getPricingForProduct,
+    branchId = null
 }) {
     const snapshot = getCartSnapshot({
         cart,
@@ -62,16 +63,23 @@ export function buildSalePayload({
     const idTipoDoc = documentTypeIds[documentType] || documentTypeIds.Boleta;
     const customerId = documentType === 'Factura' ? customer?.id || null : null;
 
+    const isMixed = method === 'mixto';
+
     return {
         id_cliente: customerId,
         id_tipoDoc: idTipoDoc,
+        id_sucursal: branchId ? Number(branchId) : null,
         folioDocumento: folioDocumento || null,
         subtotal,
         descuento: snapshot.discount || 0,
         iva,
         total: snapshot.total,
-        metodoPago: paymentMethodMap[method] || paymentMethodMap.efectivo,
-        montoPago: method === 'efectivo' ? received || snapshot.total : snapshot.total,
+        metodoPago: isMixed ? 'MIXTO' : (paymentMethodMap[method] || paymentMethodMap.efectivo),
+        montoPago: isMixed ? snapshot.total : (method === 'efectivo' ? received || snapshot.total : snapshot.total),
+        // Breakdown for mixed payments
+        pago_efectivo: isMixed ? Number(received?.cash || 0) : (method === 'efectivo' ? snapshot.total : 0),
+        pago_tarjeta: isMixed ? Number(received?.card || 0) : (method === 'tarjeta' ? snapshot.total : 0),
+        pago_transferencia: isMixed ? Number(received?.transfer || 0) : (method === 'transferencia' ? snapshot.total : 0),
         carrito: cart.map((item) => {
             const product = products.find((entry) => entry.id === item.productId);
             const pricing = getPricingForProduct(product, item.quantity, cart);

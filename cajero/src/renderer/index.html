@@ -196,7 +196,8 @@
                             <button id="charge-invoice-btn"></button>
                             <button id="charge-internal-btn"></button>
                         </div>
-                        <div class="summary-top retail-total-card" id="sale-total-card" title="Doble click para activar o desactivar vale interno">
+                        <div class="summary-top retail-total-card" id="sale-total-card"
+                            title="Doble click para activar o desactivar vale interno">
                             <span class="summary-label">Total a pagar</span>
                             <strong id="sale-total">$0</strong>
                         </div>
@@ -324,7 +325,8 @@
                                 <i class="bi bi-person-badge selection-tile-icon"></i>
                                 <div class="selection-tile-text">
                                     <strong id="dispatch-customer-name-display">Seleccionar cliente</strong>
-                                    <span id="dispatch-customer-meta-display">Toca para buscar o registrar cliente</span>
+                                    <span id="dispatch-customer-meta-display">Toca para buscar o registrar
+                                        cliente</span>
                                 </div>
                             </div>
                             <i class="bi bi-chevron-right selection-tile-chevron"></i>
@@ -395,7 +397,8 @@
                             Mostrando <strong id="dispatch-history-count">0</strong> registros
                         </div>
 
-                        <div class="turn-history-list compact-history-list dispatch-history-modal-list" id="dispatch-records-list">
+                        <div class="turn-history-list compact-history-list dispatch-history-modal-list"
+                            id="dispatch-records-list">
                             <div class="turn-history-empty">Aun no hay vales de despacho emitidos.</div>
                         </div>
                     </div>
@@ -498,7 +501,12 @@
                                     <option value="80mm">Ticket 80mm</option>
                                     <option value="58mm">Ticket 58mm</option>
                                 </select>
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-top: 1rem;"><button class="secondary-btn" id="save-printer-settings-btn" type="button">Guardar impresora</button><button class="secondary-btn" id="test-printer-btn" type="button">Probar impresora</button></div>
+                                <div
+                                    style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-top: 1rem;">
+                                    <button class="secondary-btn" id="save-printer-settings-btn" type="button">Guardar
+                                        impresora</button><button class="secondary-btn" id="test-printer-btn"
+                                        type="button">Probar impresora</button>
+                                </div>
                             </article>
                         </div>
 
@@ -589,13 +597,15 @@
                                                 <strong>Sobre de Boletas</strong>
                                                 <span>Agrupacion automatica cada 45 minutos</span>
                                             </div>
-                                            <div class="caf-status-badge" id="boleta-envelope-status">Sin pendientes</div>
+                                            <div class="caf-status-badge" id="boleta-envelope-status">Sin pendientes
+                                            </div>
                                         </div>
                                         <div class="settings-info-row compact-row">
                                             <span>Pendientes en cola</span>
                                             <strong id="boleta-envelope-count-label">0 boletas</strong>
                                         </div>
-                                        <button class="secondary-btn" id="force-boleta-envelope-btn" type="button">Forzar envio del sobre</button>
+                                        <button class="secondary-btn" id="force-boleta-envelope-btn"
+                                            type="button">Forzar envio del sobre</button>
                                     </div>
 
                                     <div class="caf-settings-item">
@@ -752,7 +762,27 @@
                 <option value="efectivo">Efectivo</option>
                 <option value="tarjeta">Tarjeta</option>
                 <option value="transferencia">Transferencia</option>
+                <option value="mixto">Mixto</option>
             </select>
+
+            <div id="payment-mixed-group" class="hidden"
+                style="margin-top: 1rem; padding: 1rem; background: var(--bg-main); border-radius: 12px; display: flex; flex-direction: column; gap: 0.75rem;">
+                <div>
+                    <label class="input-label" style="font-size: 0.75rem;">Monto Efectivo</label>
+                    <input class="input-control weighted-input" id="payment-mixed-cash" type="number" min="0"
+                        placeholder="0">
+                </div>
+                <div>
+                    <label class="input-label" style="font-size: 0.75rem;">Monto Tarjeta</label>
+                    <input class="input-control weighted-input" id="payment-mixed-card" type="number" min="0"
+                        placeholder="0">
+                </div>
+                <div>
+                    <label class="input-label" style="font-size: 0.75rem;">Monto Transferencia</label>
+                    <input class="input-control weighted-input" id="payment-mixed-transfer" type="number" min="0"
+                        placeholder="0">
+                </div>
+            </div>
 
             <div id="payment-received-group">
                 <label class="input-label" for="payment-received-input">Monto recibido</label>
@@ -764,6 +794,12 @@
                 <span>Vuelto</span>
                 <strong id="payment-change-label">$0</strong>
             </div>
+
+            <label class="settings-toggle"
+                style="margin-top: 1rem; border-top: 1px solid rgba(0,0,0,0.05); padding-top: 1rem;">
+                <input id="payment-no-print-checkbox" type="checkbox" style="width: 20px; height: 20px;">
+                <span style="font-size: 0.9rem; font-weight: 500;">No imprimir comprobante</span>
+            </label>
 
             <div class="weighted-actions">
                 <button class="secondary-btn" id="payment-cancel-btn" type="button">Cancelar</button>
@@ -780,7 +816,7 @@
 
                 <!-- Section: Expected Totals -->
                 <div class="customer-modal-group"
-                    style="background: var(--bg-main); border: 1px dashed var(--primary-border-strong); margin-bottom: 1.5rem;">
+                    style="background: var(--bg-main); border: 1px dashed var(--primary-border-strong); margin-bottom: 1rem;">
                     <h4
                         style="margin: 0 0 1rem 0; font-size: 0.9rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-soft);">
                         Resumen Esperado</h4>
@@ -887,7 +923,11 @@
                         <span style="font-size: 0.85rem; color: #666;">Crea un perfil completo</span>
                     </div>
                 </div>
-                <div class="weighted-actions" style="margin-top: 0;">
+                <div class="weighted-actions"
+                    style="margin-top: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+                    <button class="secondary-btn" id="invoice-client-clear-btn" type="button"
+                        style="width: 100%; border-color: var(--danger-color); color: var(--danger-color);">Desasignar
+                        Cliente</button>
                     <button class="secondary-btn" id="invoice-client-cancel-btn" type="button"
                         style="width: 100%;">Cerrar</button>
                 </div>
@@ -1099,7 +1139,8 @@
                     style="text-align: center; border-bottom: 1px dashed #ccc; padding-bottom: 1rem; margin-bottom: 1rem;">
                     <strong style="font-size: 1.2rem; display: block;">VALMU</strong>
                     <span id="dispatch-receipt-document-label"
-                        style="font-size: 0.95rem; text-transform: uppercase; font-weight: bold; display: block; margin: 0.2rem 0;">Vale de despacho</span>
+                        style="font-size: 0.95rem; text-transform: uppercase; font-weight: bold; display: block; margin: 0.2rem 0;">Vale
+                        de despacho</span>
                     <span id="dispatch-receipt-id-label" style="font-size: 0.9rem; display: block;">#DSP-0</span>
                     <div
                         style="font-size: 0.8rem; color: #444; margin-top: 0.5rem; text-align: left; border-top: 1px dashed #eee; padding-top: 0.5rem;">
