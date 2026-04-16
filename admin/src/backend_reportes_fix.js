@@ -1,51 +1,17 @@
 const express = require('express');
-const db = require('../config/db');
-const { verificarToken } = require('../middlewares/authMiddleware');
+const db = require('../config/db'); // Ajusta segun tu config
+const { verificarToken } = require('../middlewares/authMiddleware'); // Ajusta segun tu config
 
 const router = express.Router();
 
-// Middleware para verificar si el usuario es administrador
+// Middleware para validar si es admin (ajustar segun tu logica de perfiles)
 const esAdmin = (req, res, next) => {
-    const roleId = req.usuario.id_rol ?? req.usuario.rol_id ?? req.usuario.idRol;
-    if (roleId === 1 || String(req.usuario.rol || '').toLowerCase() === 'admin') {
+    if (req.usuario && (req.usuario.id_perfil === 1 || req.usuario.rol === 'admin')) {
         next();
     } else {
-        res.status(403).json({ error: 'Acceso denegado. Se requiere perfil de administrador.' });
+        res.status(403).json({ error: 'Acceso denegado. Se requieren permisos de administrador.' });
     }
 };
-
-// --- ENDPOINT: MONITOREO DE MOVIMIENTOS (AUDITORÍA DE BODEGA) ---
-// GET /api/reportes/movimientos-inventario
-router.get('/movimientos-inventario', verificarToken, esAdmin, async (req, res) => {
-    try {
-        const query = `
-            SELECT 
-                m.id_movimiento,
-                m.fechaMov,
-                m.tipoMovimiento,
-                m.cantidadMov,
-                m.comprobanteMov,
-                p.nombreProducto,
-                p.codigoBarras,
-                p.esPesable,
-                IFNULL(u.nombreCompleto, 'Sistema Automático') as usuarioResponsable,
-                so.nombreSucursal as sucursalOrigen,
-                sd.nombreSucursal as sucursalDestino
-            FROM MOVIMIENTO_MERCADERIA m
-            INNER JOIN PRODUCTO p ON m.id_producto = p.id_producto
-            LEFT JOIN USUARIO u ON m.id_usuario = u.id_usuario
-            INNER JOIN SUCURSAL so ON m.id_sucursalOrigen = so.id_sucursal
-            INNER JOIN SUCURSAL sd ON m.id_sucursalDestino = sd.id_sucursal
-            ORDER BY m.fechaMov DESC
-            LIMIT 500
-        `;
-        const [movimientos] = await db.query(query);
-        res.json(movimientos);
-    } catch (error) {
-        console.error('Error Reporte Movimientos:', error);
-        res.status(500).json({ error: 'Error al obtener el historial de movimientos de bodega.' });
-    }
-});
 
 // --- ENDPOINT: ELIMINAR UN REGISTRO DE MOVIMIENTO (LIMPIAR HISTORIAL) ---
 // DELETE /api/reportes/movimientos-inventario/:id
@@ -53,7 +19,7 @@ router.delete('/movimientos-inventario/:id', verificarToken, esAdmin, async (req
     try {
         const { id } = req.params;
         const [resultado] = await db.query('DELETE FROM MOVIMIENTO_MERCADERIA WHERE id_movimiento = ?', [id]);
-        
+
         if (resultado.affectedRows === 0) {
             return res.status(404).json({ error: 'Registro de movimiento no encontrado' });
         }
