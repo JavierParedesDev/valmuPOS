@@ -3,6 +3,7 @@ import {
     ActivityIndicator,
     Alert,
     FlatList,
+    Platform,
     RefreshControl,
     StyleSheet,
     Text,
@@ -46,34 +47,46 @@ export default function InventoryReportScreen({ token, user }) {
         fetchMovements();
     };
 
+    const performDeletion = async (id) => {
+        try {
+            console.log("Iniciando API DELETE para ID:", id);
+            const response = await apiRequest({
+                endpoint: `/reportes/movimientos-inventario/${id}`,
+                method: 'DELETE',
+                token
+            });
+            console.log("Respuesta API:", response.status, response.ok);
+            if (response.ok) {
+                fetchMovements();
+                alert('Registro eliminado correctamente.');
+            } else {
+                alert(`Error al eliminar: ${response.status}. ${response.data?.error || 'Ruta no encontrada'}`);
+            }
+        } catch (error) {
+            alert('Error de Red: No hay conexión con el servidor.');
+        }
+    };
+
     const handleDelete = (id) => {
-        Alert.alert(
-            'Eliminar Registro',
-            '¿Estás seguro de que deseas eliminar este registro del historial? Esta acción no se puede deshacer.',
-            [
-                { text: 'Cancelar', style: 'cancel' },
-                { 
-                    text: 'Eliminar', 
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            const response = await apiRequest({
-                                endpoint: `/reportes/movimientos-inventario/${id}`,
-                                method: 'DELETE',
-                                token
-                            });
-                            if (response.ok) {
-                                fetchMovements();
-                            } else {
-                                Alert.alert('Error', response.data?.error || 'No se pudo eliminar el registro.');
-                            }
-                        } catch (error) {
-                            Alert.alert('Error', 'Error de conexión con el servidor.');
-                        }
+        if (Platform.OS === 'web') {
+            const confirmed = window.confirm(`¿Deseas eliminar el registro #${id}?`);
+            if (confirmed) {
+                performDeletion(id);
+            }
+        } else {
+            Alert.alert(
+                'Confirmar Eliminación',
+                `¿Deseas eliminar el registro #${id}?`,
+                [
+                    { text: 'Cancelar', style: 'cancel' },
+                    { 
+                        text: 'Eliminar', 
+                        style: 'destructive',
+                        onPress: () => performDeletion(id)
                     }
-                }
-            ]
-        );
+                ]
+            );
+        }
     };
 
     const getTipoInfo = (tipo) => {
@@ -95,7 +108,7 @@ export default function InventoryReportScreen({ token, user }) {
 
         const roleId = user?.id_rol ?? user?.rol_id ?? user?.idRol;
         const roleName = String(user?.rol || '').toLowerCase();
-        const isAdmin = true; // DEBUG: Forzado para confirmar visualización
+        const isAdmin = roleId === 1 || roleName === 'admin';
 
         return (
             <Card style={styles.moveCard}>
@@ -113,9 +126,11 @@ export default function InventoryReportScreen({ token, user }) {
                                     : `${Math.round(item.cantidadMov)} UN.`}
                             </Text>
                         </View>
-                        
                         {isAdmin && (
-                            <TouchableOpacity onPress={() => handleDelete(item.id_movimiento)} style={styles.deleteBtn}>
+                            <TouchableOpacity 
+                                onPress={() => handleDelete(item.id_movimiento)} 
+                                style={styles.deleteBtn}
+                            >
                                 <Ionicons name="trash-outline" size={18} color={brandColors.danger} />
                             </TouchableOpacity>
                         )}
@@ -167,36 +182,6 @@ export default function InventoryReportScreen({ token, user }) {
                         title="Auditoría de Stock" 
                         subtitle="Historial completo de movimientos"
                         icon="shield-checkmark-outline"
-                        actions={
-                            <TouchableOpacity 
-                                onPress={() => {
-                                    Alert.alert(
-                                        'Limpiar Historial',
-                                        '¿Deseas eliminar TODOS los registros de movimientos? Esta acción es irreversible.',
-                                        [
-                                            { text: 'Cancelar', style: 'cancel' },
-                                            { 
-                                                text: 'Limpiar Todo', 
-                                                style: 'destructive',
-                                                onPress: async () => {
-                                                    try {
-                                                        const response = await apiRequest({
-                                                            endpoint: '/reportes/movimientos-inventario/limpiar-todo',
-                                                            method: 'POST',
-                                                            token
-                                                        });
-                                                        if (response.ok) fetchMovements();
-                                                    } catch (e) {}
-                                                }
-                                            }
-                                        ]
-                                    );
-                                }}
-                                style={styles.headerAction}
-                            >
-                                <Ionicons name="trash-bin-outline" size={24} color={brandColors.danger} />
-                            </TouchableOpacity>
-                        }
                     />
                 }
                 ListEmptyComponent={

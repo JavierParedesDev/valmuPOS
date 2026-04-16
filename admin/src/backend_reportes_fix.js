@@ -1,15 +1,16 @@
 const express = require('express');
-const db = require('../config/db'); // Ajusta segun tu config
-const { verificarToken } = require('../middlewares/authMiddleware'); // Ajusta segun tu config
+const db = require('../config/db');
+const { verificarToken } = require('../middlewares/authMiddleware');
 
 const router = express.Router();
 
-// Middleware para validar si es admin (ajustar segun tu logica de perfiles)
+// Middleware para verificar si el usuario es administrador
 const esAdmin = (req, res, next) => {
-    if (req.usuario && (req.usuario.id_perfil === 1 || req.usuario.rol === 'admin')) {
+    const roleId = req.usuario.id_rol ?? req.usuario.rol_id ?? req.usuario.idRol;
+    if (roleId === 1 || String(req.usuario.rol || '').toLowerCase() === 'admin') {
         next();
     } else {
-        res.status(403).json({ error: 'Acceso denegado. Se requieren permisos de administrador.' });
+        res.status(403).json({ error: 'Acceso denegado. Se requiere perfil de administrador.' });
     }
 };
 
@@ -38,11 +39,11 @@ router.get('/movimientos-inventario', verificarToken, esAdmin, async (req, res) 
             ORDER BY m.fechaMov DESC
             LIMIT 500
         `;
-        const [movimientos] = await db.execute(query);
+        const [movimientos] = await db.query(query);
         res.json(movimientos);
     } catch (error) {
         console.error('Error Reporte Movimientos:', error);
-        res.status(500).json({ error: 'Error al obtener el historial de movimientos de bodega. ¿Ejecutaste el SQL de la tabla?' });
+        res.status(500).json({ error: 'Error al obtener el historial de movimientos de bodega.' });
     }
 });
 
@@ -51,7 +52,7 @@ router.get('/movimientos-inventario', verificarToken, esAdmin, async (req, res) 
 router.delete('/movimientos-inventario/:id', verificarToken, esAdmin, async (req, res) => {
     try {
         const { id } = req.params;
-        const [resultado] = await db.execute('DELETE FROM MOVIMIENTO_MERCADERIA WHERE id_movimiento = ?', [id]);
+        const [resultado] = await db.query('DELETE FROM MOVIMIENTO_MERCADERIA WHERE id_movimiento = ?', [id]);
         
         if (resultado.affectedRows === 0) {
             return res.status(404).json({ error: 'Registro de movimiento no encontrado' });
@@ -68,7 +69,7 @@ router.delete('/movimientos-inventario/:id', verificarToken, esAdmin, async (req
 // POST /api/reportes/movimientos-inventario/limpiar-todo
 router.post('/movimientos-inventario/limpiar-todo', verificarToken, esAdmin, async (req, res) => {
     try {
-        await db.execute('DELETE FROM MOVIMIENTO_MERCADERIA');
+        await db.query('DELETE FROM MOVIMIENTO_MERCADERIA');
         res.json({ ok: true, mensaje: 'Historial de movimientos limpiado por completo' });
     } catch (error) {
         console.error('Error al limpiar historial:', error);

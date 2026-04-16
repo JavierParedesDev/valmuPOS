@@ -170,7 +170,7 @@ export function PrimaryButton({ title, onPress, disabled = false, compact = fals
             disabled={disabled}
             activeOpacity={0.8}
         >
-            <Text style={styles.primaryButtonText}>{title}</Text>
+            <Text style={styles.primaryButtonText} numberOfLines={1} adjustsFontSizeToFit>{title}</Text>
         </TouchableOpacity>
     );
 }
@@ -178,7 +178,7 @@ export function PrimaryButton({ title, onPress, disabled = false, compact = fals
 export function SecondaryButton({ title, onPress, style }) {
     return (
         <TouchableOpacity style={[styles.secondaryButton, style]} onPress={onPress} activeOpacity={0.7}>
-            <Text style={styles.secondaryButtonText}>{title}</Text>
+            <Text style={styles.secondaryButtonText} numberOfLines={1} adjustsFontSizeToFit>{title}</Text>
         </TouchableOpacity>
     );
 }
@@ -186,7 +186,7 @@ export function SecondaryButton({ title, onPress, style }) {
 export function DangerButton({ title, onPress, style }) {
     return (
         <TouchableOpacity style={[styles.dangerButton, style]} onPress={onPress} activeOpacity={0.7}>
-            <Text style={styles.dangerButtonText}>{title}</Text>
+            <Text style={styles.dangerButtonText} numberOfLines={1} adjustsFontSizeToFit>{title}</Text>
         </TouchableOpacity>
     );
 }
@@ -424,6 +424,7 @@ const styles = StyleSheet.create({
         borderRadius: 18,
         alignItems: 'center',
         justifyContent: 'center',
+        minHeight: 48,
         ...Platform.select({
             web: {
                 boxShadow: '0 4px 10px rgba(255, 107, 0, 0.3)'
@@ -446,33 +447,35 @@ const styles = StyleSheet.create({
     primaryButtonText: {
         color: '#ffffff',
         fontWeight: '800',
-        fontSize: 16
+        fontSize: 15
     },
     secondaryButton: {
         backgroundColor: brandColors.backgroundAlt,
-        paddingHorizontal: 20,
-        paddingVertical: 16,
+        paddingHorizontal: 12,
+        paddingVertical: 14,
         borderRadius: 18,
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'center',
+        minHeight: 48
     },
     secondaryButtonText: {
         color: brandColors.shell,
         fontWeight: '700',
-        fontSize: 16
+        fontSize: 14
     },
     dangerButton: {
         backgroundColor: '#FEE2E2',
-        paddingHorizontal: 20,
-        paddingVertical: 16,
+        paddingHorizontal: 12,
+        paddingVertical: 14,
         borderRadius: 18,
         alignItems: 'center',
-        justifyContent: 'center'
+        justifyContent: 'center',
+        minHeight: 48
     },
     dangerButtonText: {
         color: brandColors.danger,
         fontWeight: '700',
-        fontSize: 16
+        fontSize: 14
     },
     buttonDisabled: {
         opacity: 0.5,

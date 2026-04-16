@@ -7,7 +7,8 @@ import {
     Text,
     TouchableOpacity,
     View,
-    ScrollView
+    ScrollView,
+    Platform
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { apiRequest } from '../services/api';
@@ -148,34 +149,45 @@ export default function DispatchScreen({ token }) {
     };
 
     const handleCancelDispatch = (item) => {
-        Alert.alert(
-            'Cancelar Despacho',
-            '¿Realmente deseas cancelar este despacho? El stock será devuelto y la venta anulada.',
-            [
-                { text: 'No', style: 'cancel' },
-                {
-                    text: 'Sí, Cancelar',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            const res = await apiRequest({
-                                endpoint: `/despachos/${item.id}/estado`,
-                                method: 'PUT',
-                                body: { estado: 'CANCELADO' },
-                                token
-                            });
-                            if (res.ok || res.mensaje) {
-                                fetchData();
-                            } else {
-                                Alert.alert('Error', 'No se pudo cancelar el despacho');
-                            }
-                        } catch (error) {
-                            Alert.alert('Error', 'Error de conexión');
-                        }
-                    }
+        const performCancel = async () => {
+            try {
+                const res = await apiRequest({
+                    endpoint: `/despachos/${item.id}/estado`,
+                    method: 'PUT',
+                    body: { estado: 'CANCELADO' },
+                    token
+                });
+                if (res.ok || res.mensaje) {
+                    fetchData();
+                    if (Platform.OS === 'web') alert('Despacho cancelado');
+                    else Alert.alert('Éxito', 'Despacho cancelado');
+                } else {
+                    if (Platform.OS === 'web') alert('No se pudo cancelar el despacho');
+                    else Alert.alert('Error', 'No se pudo cancelar el despacho');
                 }
-            ]
-        );
+            } catch (error) {
+                if (Platform.OS === 'web') alert('Error de conexión');
+                else Alert.alert('Error', 'Error de conexión');
+            }
+        };
+
+        if (Platform.OS === 'web') {
+            const confirmed = window.confirm('¿Realmente deseas cancelar este despacho? El stock será devuelto y la venta anulada.');
+            if (confirmed) performCancel();
+        } else {
+            Alert.alert(
+                'Cancelar Despacho',
+                '¿Realmente deseas cancelar este despacho? El stock será devuelto y la venta anulada.',
+                [
+                    { text: 'No', style: 'cancel' },
+                    {
+                        text: 'Sí, Cancelar',
+                        style: 'destructive',
+                        onPress: performCancel
+                    }
+                ]
+            );
+        }
     };
 
     const pendingDispatches = dispatches.filter(d => d.estado?.toUpperCase() === 'EN_RUTA');
@@ -507,11 +519,11 @@ const styles = StyleSheet.create({
     },
     cardActions: {
         flexDirection: 'row',
-        gap: 12
+        gap: 8,
+        flexWrap: 'wrap'
     },
     actionBtn: {
-        flex: 1,
-        height: 40
+        flex: 1
     },
     carrierCard: {
         flexDirection: 'row',
