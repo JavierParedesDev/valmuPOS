@@ -6,6 +6,7 @@ import {
     Platform,
     StyleSheet,
     Text,
+    TextInput,
     TouchableOpacity,
     View
 } from 'react-native';
@@ -27,24 +28,24 @@ import { DOMParser } from 'xmldom';
 export default function InvoicesScreen({ token }) {
     const [loading, setLoading] = useState(true);
     const [invoices, setInvoices] = useState([]);
+    const [filteredInvoices, setFilteredInvoices] = useState([]); // Filtered list
     const [generating, setGenerating] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
 
     const fetchData = async () => {
         setLoading(true);
         try {
-            // Buscamos los registros de DTE
             const res = await apiRequest({ endpoint: '/dte/list', token });
             const data = Array.isArray(res?.data) ? res.data : (Array.isArray(res) ? res : []);
 
-            // Filtramos solo Facturas (33) y Facturas Exentas (34)
             const filtered = data.filter(doc => {
                 const type = String(doc.tipoDte || doc.doc_type || doc.type || '');
                 return type === '33' || type === '34';
             });
 
-            // Ordenar por fecha o folio descendente
             const sorted = filtered.sort((a, b) => (b.folio || 0) - (a.folio || 0));
             setInvoices(sorted);
+            setFilteredInvoices(sorted);
         } catch (error) {
             console.error('Error fetching invoices:', error);
         } finally {
@@ -56,7 +57,20 @@ export default function InvoicesScreen({ token }) {
         fetchData();
     }, []);
 
+    const handleSearch = (text) => {
+        setSearchQuery(text);
+        if (!text.trim()) {
+            setFilteredInvoices(invoices);
+            return;
+        }
+        const filtered = invoices.filter(inv => 
+            String(inv.folio).includes(text.toLowerCase())
+        );
+        setFilteredInvoices(filtered);
+    };
+
     const generatePdf = async (invoice) => {
+        // ... (resto de la lógica igual)
         setGenerating(true);
         try {
             const idXml = invoice.id_xml || invoice.id;
@@ -284,10 +298,8 @@ export default function InvoicesScreen({ token }) {
     const renderInvoice = ({ item }) => (
         <Card style={styles.invoiceCard}>
             <View style={styles.invoiceInfo}>
-                <View style={[styles.typeBadge, { backgroundColor: item.tipoDte === '33' ? '#DBEAFE' : '#EEF2FF' }]}>
-                    <Text style={[styles.typeText, { color: item.tipoDte === '33' ? '#1E40AF' : '#3730A3' }]}>
-                        {item.tipoDte === '33' ? 'FACTURA' : 'EXENTA'}
-                    </Text>
+                <View style={styles.typeBadge}>
+                    <Text style={styles.typeText}>FACTURA</Text>
                 </View>
                 <View style={styles.details}>
                     <Text style={styles.folio}>Folio #{item.folio}</Text>
@@ -315,18 +327,28 @@ export default function InvoicesScreen({ token }) {
 
     return (
         <Screen statusBarColor={brandColors.surface}>
+            <View style={styles.searchHeader}>
+                <Ionicons name="search" size={20} color={brandColors.textMuted} />
+                <TextInput
+                    style={styles.searchInput}
+                    placeholder="Buscar folio..."
+                    value={searchQuery}
+                    onChangeText={handleSearch}
+                    keyboardType="numeric"
+                />
+            </View>
             <FlatList
-                data={invoices}
+                data={filteredInvoices}
                 keyExtractor={(item) => String(item.id_xml || item.id)}
                 renderItem={renderInvoice}
                 ListHeaderComponent={
                     <SectionHeader
                         title="Historial Facturas"
-                        subtitle="Solo documentos tributarios tipo 33/34"
+                        subtitle="Documentos Tributarios Electrónicos"
                         icon="document-text-outline"
                     />
                 }
-                ListEmptyComponent={<EmptyState title="No hay facturas" message="No se encontraron facturas tipo 33 o 34." />}
+                ListEmptyComponent={<EmptyState title="No hay resultados" message="No se encontraron documentos." />}
                 contentContainerStyle={styles.listContent}
             />
             {generating && (
@@ -354,6 +376,24 @@ const styles = StyleSheet.create({
         color: brandColors.textMuted,
         fontWeight: '700'
     },
+    searchHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: brandColors.surface,
+        margin: 16,
+        paddingHorizontal: 16,
+        height: 50,
+        borderRadius: 15,
+        borderWidth: 1,
+        borderColor: brandColors.outline,
+    },
+    searchInput: {
+        flex: 1,
+        marginLeft: 10,
+        fontSize: 15,
+        fontWeight: '600',
+        color: brandColors.text
+    },
     invoiceCard: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -371,11 +411,13 @@ const styles = StyleSheet.create({
         borderRadius: 8,
         justifyContent: 'center',
         alignItems: 'center',
-        marginRight: 12
+        marginRight: 12,
+        backgroundColor: '#f3f4f6'
     },
     typeText: {
         fontSize: 10,
-        fontWeight: '900'
+        fontWeight: '900',
+        color: '#6b7280'
     },
     details: {
         flex: 1

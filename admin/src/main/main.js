@@ -5,48 +5,6 @@ const { createUpdateManager } = require('./updater/update-manager');
 
 let mainWindow = null;
 
-function buildAppMenu() {
-    const template = [
-        {
-            label: 'Archivo',
-            submenu: [
-                { role: 'reload', label: 'Recargar' },
-                { role: 'forceReload', label: 'Forzar recarga' },
-                { type: 'separator' },
-                { role: 'quit', label: 'Salir' }
-            ]
-        },
-        {
-            label: 'Editar',
-            submenu: [
-                { role: 'undo', label: 'Deshacer' },
-                { role: 'redo', label: 'Rehacer' },
-                { type: 'separator' },
-                { role: 'cut', label: 'Cortar' },
-                { role: 'copy', label: 'Copiar' },
-                { role: 'paste', label: 'Pegar' },
-                { role: 'selectAll', label: 'Seleccionar todo' }
-            ]
-        },
-        {
-            label: 'Ver',
-            submenu: [
-                { role: 'togglefullscreen', label: 'Pantalla completa' },
-                { role: 'toggleDevTools', label: 'Herramientas de desarrollador' }
-            ]
-        },
-        {
-            label: 'Ventana',
-            submenu: [
-                { role: 'minimize', label: 'Minimizar' },
-                { role: 'close', label: 'Cerrar' }
-            ]
-        }
-    ];
-
-    Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-}
-
 app.whenReady().then(() => {
     const updateManager = createUpdateManager({
         app,
@@ -59,7 +17,7 @@ app.whenReady().then(() => {
         updateManager.sendStateToWindow();
     });
 
-    buildAppMenu();
+    Menu.setApplicationMenu(null);
     registerIpcHandlers(mainWindow, {
         getUpdateState: updateManager.getUpdateState,
         checkForUpdates: updateManager.checkForUpdates,

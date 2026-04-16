@@ -54,11 +54,18 @@ router.post('/', verificarToken, async (req, res) => {
                 VALUES (?, ?, ?, ?, ?, ?)
             `, [id_venta, item.id_producto, item.cantidad, item.precioVenta, costoHistorico, item.subtotalLinea]);
 
-            // C. Descontar Stock de INVENTARIO (Seguro, porque ya validamos en el Paso 1)
+            // C. Descontar Stock de INVENTARIO
             await conexion.execute(`
                 UPDATE STOCK_INVENTARIO SET cantidad = cantidad - ? 
                 WHERE id_producto = ? AND id_sucursal = ?
             `, [item.cantidad, item.id_producto, id_sucursal]);
+
+            // D. AUDITORÍA: Registrar movimiento de mercadería
+            await conexion.execute(`
+                INSERT INTO MOVIMIENTO_MERCADERIA 
+                (id_producto, id_usuario, id_sucursalOrigen, id_sucursalDestino, tipoMovimiento, cantidadMov, comprobanteMov)
+                VALUES (?, ?, ?, ?, 'VENTA', ?, ?)
+            `, [item.id_producto, id_usuario, id_sucursal, id_sucursal, item.cantidad, folioDocumento || id_venta]);
         }
 
         // 4. Registrar el Pago
@@ -161,6 +168,42 @@ router.put('/:id/anular', verificarToken, async (req, res) => {
         res.status(500).json({ error: 'Error al anular la venta' });
     } finally {
         conexion.release();
+    }
+});
+
+// --- ENDPOINT: OBTENER DETALLE DE UNA VENTA ---
+// GET /api/ventas/:id/detalle
+router.get('/:id/detalle', verificarToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        const query = `
+            SELECT 
+                d.id_detalle,
+                d.id_producto,
+                p.nombreProducto,
+                p.codigoBarras,
+                d.cantidadVenta as cantidad,
+                d.precioVenta,
+                d.subtotalLinea
+            FROM DETALLE_VENTA d
+            INNER JOIN PRODUCTO p ON d.id_producto = p.id_producto
+            WHERE d.id_venta = ?
+        `;
+
+        const [detalles] = await db.execute(query, [id]);
+        
+        // También podríamos querer información del pago
+        const [pagos] = await db.execute('SELECT metodoPago, montoPago FROM PAGO_VENTA WHERE id_venta = ?', [id]);
+
+        res.json({
+            ok: true,
+            items: detalles,
+            pagos: pagos
+        });
+    } catch (error) {
+        console.error('Error al obtener detalle de venta:', error);
+        res.status(500).json({ error: 'Error al obtener el detalle de la venta' });
     }
 });
 

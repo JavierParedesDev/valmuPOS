@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
     Image,
     SafeAreaView,
+    ScrollView,
     StatusBar,
     StyleSheet,
     View,
@@ -24,7 +25,45 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Font from 'expo-font';
 import LoginScreen from './screens/LoginScreen';
 import { checkForAppUpdate, downloadAndInstallUpdate } from './services/updates';
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import { API_BASE_URL } from './config/api';
 import { appTheme, brandColors } from './theme';
+
+Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+    }),
+});
+
+async function registerForPushNotificationsAsync() {
+    let token;
+    if (Device.isDevice) {
+        const { status: existingStatus } = await Notifications.getPermissionsAsync();
+        let finalStatus = existingStatus;
+        if (existingStatus !== 'granted') {
+            const { status } = await Notifications.requestPermissionsAsync();
+            finalStatus = status;
+        }
+        if (finalStatus !== 'granted') {
+            return null;
+        }
+        token = (await Notifications.getExpoPushTokenAsync()).data;
+    }
+
+    if (Platform.OS === 'android') {
+        Notifications.setNotificationChannelAsync('default', {
+            name: 'default',
+            importance: Notifications.AndroidImportance.MAX,
+            vibrationPattern: [0, 250, 250, 250],
+            lightColor: '#FF231F7C',
+        });
+    }
+
+    return token;
+}
 
 const MODULES = [
     { key: 'products', label: 'Productos', metric: 'Catalogo', icon: { set: 'MaterialCommunityIcons', name: 'package-variant-closed' } },
@@ -35,7 +74,10 @@ const MODULES = [
     { key: 'users', label: 'Usuarios', metric: 'Cuentas', icon: { set: 'Ionicons', name: 'people-outline' }, hidden: true },
     { key: 'movements', label: 'Movimientos', metric: 'Facturas', icon: { set: 'Ionicons', name: 'swap-horizontal-outline' }, hidden: true },
     { key: 'dispatch', label: 'Despachos', metric: 'Envios', icon: { set: 'Ionicons', name: 'bus-outline' }, hidden: true },
-    { key: 'invoices', label: 'Facturas', metric: 'DTE', icon: { set: 'Ionicons', name: 'document-text-outline' }, hidden: true }
+    { key: 'dispatch', label: 'Despachos', metric: 'Envios', icon: { set: 'Ionicons', name: 'bus-outline' }, hidden: true },
+    { key: 'invoices', label: 'Facturas', metric: 'DTE', icon: { set: 'Ionicons', name: 'document-text-outline' }, hidden: true },
+    { key: 'advertising', label: 'Publicidad', metric: 'Pub', icon: { set: 'Ionicons', name: 'megaphone-outline' }, hidden: true },
+    { key: 'inventory_report', label: 'Historial Stock', metric: 'Auditoría', icon: { set: 'Ionicons', name: 'receipt-outline' }, hidden: true }
 ];
 
 const brandIcon = require('../assets/icon.png');
@@ -68,6 +110,10 @@ function resolveModuleComponent(moduleKey) {
             return require('./screens/DispatchScreen').default;
         case 'invoices':
             return require('./screens/InvoicesScreen').default;
+        case 'advertising':
+            return require('./screens/AdvertisingScreen').default;
+        case 'inventory_report':
+            return require('./screens/InventoryReportScreen').default;
         default:
             return null;
     }
@@ -96,6 +142,49 @@ export default function MobileApp() {
         () => MODULES.find((item) => item.key === moduleKey) || MODULES[0],
         [moduleKey]
     );
+
+    useEffect(() => {
+        if (session.token && Platform.OS !== 'web') {
+            registerForPushNotificationsAsync().then(token => {
+                if (token) console.log('Push Token:', token);
+            });
+        }
+    }, [session.token]);
+
+    // Polling de movimientos para notificaciones locales (Simulación de Push)
+    useEffect(() => {
+        if (!session.token) return;
+
+        let lastMoveId = null;
+        const interval = setInterval(async () => {
+            try {
+                const res = await fetch(`${API_BASE_URL}/reportes/movimientos-inventario`, {
+                    headers: { 'Authorization': `Bearer ${session.token}` }
+                });
+                const data = await res.json();
+                
+                if (Array.isArray(data) && data.length > 0) {
+                    const latest = data[0];
+                    if (lastMoveId && latest.id_movimiento > lastMoveId) {
+                        // ¡Nuevo movimiento detectado!
+                        await Notifications.scheduleNotificationAsync({
+                            content: {
+                                title: `📦 Movimiento: ${latest.tipoMovimiento}`,
+                                body: `${latest.usuarioResponsable} movió ${latest.cantidadMov} de "${latest.nombreProducto}"`,
+                                data: { module: 'inventory_report' },
+                            },
+                            trigger: null,
+                        });
+                    }
+                    lastMoveId = latest.id_movimiento;
+                }
+            } catch (err) {
+                // Silently fail on polling errors
+            }
+        }, 30000); // Revisar cada 30 segundos
+
+        return () => clearInterval(interval);
+    }, [session.token]);
 
     useEffect(() => {
         let mounted = true;
@@ -184,6 +273,13 @@ export default function MobileApp() {
         setModuleLoadError('');
     }
 
+    const [moduleParams, setModuleParams] = useState(null);
+
+    const navigateTo = (key, params = null) => {
+        setModuleKey(key);
+        setModuleParams(params);
+    };
+
     function renderCurrentModule() {
         try {
             const ModuleScreen = resolveModuleComponent(currentModule.key);
@@ -197,11 +293,16 @@ export default function MobileApp() {
                 );
             }
 
-            if (currentModule.key === 'products') {
-                return <ModuleScreen token={session.token} onSummaryChange={setModuleSummary} />;
-            }
-
-            return <ModuleScreen token={session.token} />;
+            return (
+                <ModuleScreen 
+                    token={session.token} 
+                    user={session.user}
+                    onSummaryChange={currentModule.key === 'products' ? setModuleSummary : undefined} 
+                    navigateTo={navigateTo}
+                    params={moduleParams}
+                    clearParams={() => setModuleParams(null)}
+                />
+            );
         } catch (error) {
             const message = error?.message || 'No se pudo cargar este módulo.';
             if (moduleLoadError !== message) {
@@ -458,7 +559,9 @@ function DrawerMenu({ visible, onClose, onLogout, onSelectModule }) {
         { key: 'movements', label: 'Movimientos', icon: 'swap-horizontal-outline' },
         { key: 'dispatch', label: 'Despachos', icon: 'bus-outline' },
         { key: 'users', label: 'Usuarios', icon: 'people-outline' },
-        { key: 'invoices', label: 'Historial Facturas', icon: 'document-text-outline' }
+        { key: 'invoices', label: 'Historial Facturas', icon: 'document-text-outline' },
+        { key: 'advertising', label: 'Publicidad', icon: 'megaphone-outline' },
+        { key: 'inventory_report', label: 'Auditoría Stock', icon: 'receipt-outline' }
     ];
 
     return (
@@ -469,7 +572,11 @@ function DrawerMenu({ visible, onClose, onLogout, onSelectModule }) {
                     <Text style={styles.drawerTitle}>Menu de Gestión</Text>
                 </View>
 
-                <View style={styles.drawerContent}>
+                <ScrollView 
+                    style={styles.drawerScroll} 
+                    contentContainerStyle={styles.drawerContent}
+                    showsVerticalScrollIndicator={false}
+                >
                     {items.map((item) => (
                         <TouchableRipple key={item.key} style={styles.drawerItem} onPress={() => onSelectModule(item.key)} borderless>
                             <View style={styles.drawerItemInner}>
@@ -480,7 +587,7 @@ function DrawerMenu({ visible, onClose, onLogout, onSelectModule }) {
                             </View>
                         </TouchableRipple>
                     ))}
-                </View>
+                </ScrollView>
 
                 <Button
                     mode="contained"
@@ -979,13 +1086,18 @@ const styles = StyleSheet.create({
         fontWeight: '900',
         color: brandColors.text
     },
+    drawerScroll: {
+        width: '100%',
+        maxHeight: 450
+    },
     drawerContent: {
         width: '100%',
-        gap: 12
+        paddingBottom: 20
     },
     drawerItem: {
         borderRadius: 20,
-        backgroundColor: brandColors.backgroundAlt
+        backgroundColor: brandColors.backgroundAlt,
+        marginBottom: 12
     },
     drawerItemInner: {
         flexDirection: 'row',
@@ -1011,7 +1123,8 @@ const styles = StyleSheet.create({
         color: brandColors.text
     },
     drawerLogout: {
-        marginTop: 30,
+        marginTop: 10,
+        marginBottom: 10,
         width: '100%',
         borderRadius: 20,
         height: 56,

@@ -1,20 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     FlatList,
     RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
+    TextInput,
+    TouchableOpacity,
     View
 } from 'react-native';
+import { Modal, Portal, Divider } from 'react-native-paper';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { apiRequest } from '../services/api';
 import { Card, Screen, SectionHeader, Badge } from '../components/UI';
 import { brandColors } from '../theme';
 import { formatCurrency } from '../utils/format';
 
-export default function MonitoringScreen({ token }) {
+export default function MonitoringScreen({ token, navigateTo }) {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [stats, setStats] = useState({
@@ -27,7 +31,20 @@ export default function MonitoringScreen({ token }) {
     const [recentSales, setRecentSales] = useState([]);
     const [criticalItems, setCriticalItems] = useState([]);
 
+    // Modal para detalle de venta
+    const [showModal, setShowModal] = useState(false);
+    const [selectedSale, setSelectedSale] = useState(null);
+    const [saleDetail, setSaleDetail] = useState(null);
+    const [loadingDetail, setLoadingDetail] = useState(false);
+
+    // Modal para ingreso rápido de stock
+    const [showStockModal, setShowStockModal] = useState(false);
+    const [stockItem, setStockItem] = useState(null);
+    const [stockQty, setStockQty] = useState('1');
+    const [savingStock, setSavingStock] = useState(false);
+
     const fetchData = async () => {
+        // ... (resto del fetchData igual)
         try {
             const [prodRes, salesRes, branchRes] = await Promise.all([
                 apiRequest({ endpoint: '/productos?limit=10000', token }),
@@ -108,6 +125,7 @@ export default function MonitoringScreen({ token }) {
                     if (stock >= 0 && stock <= lowStockThreshold) {
                         tempCritical.push({
                             ...item,
+                            id_sucursal: branch.id_sucursal,
                             branchName: branch.nombreSucursal,
                             stock
                         });
@@ -138,6 +156,61 @@ export default function MonitoringScreen({ token }) {
     useEffect(() => {
         fetchData();
     }, []);
+
+    const fetchSaleDetail = async (sale) => {
+        setSelectedSale(sale);
+        setShowModal(true);
+        setLoadingDetail(true);
+        setSaleDetail(null);
+        try {
+            const saleId = sale.id_venta || sale.folio || sale.id;
+            // Usamos la ruta real de tu servidor: /api/ventas/:id
+            const res = await apiRequest({ endpoint: `/ventas/${saleId}`, token });
+            
+            if (res.ok && res.data) {
+                // Adaptamos tu estructura { cabecera, productos, pagos } a lo que la vista espera
+                setSaleDetail({
+                    items: res.data.productos || [],
+                    pagos: res.data.pagos || []
+                });
+            }
+        } catch (error) {
+            console.error('Error loading sale detail:', error);
+        } finally {
+            setLoadingDetail(false);
+        }
+    };
+
+    const handleQuickInbound = async () => {
+        if (!stockItem || !stockQty || parseFloat(stockQty) <= 0) return;
+        
+        setSavingStock(true);
+        try {
+            const res = await apiRequest({
+                endpoint: '/productos/ingreso',
+                method: 'POST',
+                body: {
+                    id_producto: parseInt(stockItem.id_producto),
+                    id_sucursal: parseInt(stockItem.id_sucursal),
+                    cantidadIngreso: parseFloat(stockQty),
+                    numeroFactura: 'AJUSTE-RAPIDO'
+                },
+                token
+            });
+
+            if (res.ok) {
+                Alert.alert('Éxito', 'Stock actualizado correctamente.');
+                setShowStockModal(false);
+                fetchData(); // Recargar datos
+            } else {
+                Alert.alert('Error', res.error || 'No se pudo actualizar el stock');
+            }
+        } catch (error) {
+            Alert.alert('Error', 'Fallo en la comunicación con el servidor');
+        } finally {
+            setSavingStock(false);
+        }
+    };
 
     const onRefresh = () => {
         setRefreshing(true);
@@ -218,24 +291,142 @@ export default function MonitoringScreen({ token }) {
                     <SectionHeader title="Productos Críticos" compact />
                     {criticalItems.length > 0 ? (
                         criticalItems.map((item, idx) => (
-                            <CriticalRow key={idx} item={item} />
+                            <CriticalRow 
+                                key={idx} 
+                                item={item} 
+                                onAddStock={() => {
+                                    setStockItem(item);
+                                    setStockQty('1');
+                                    setShowStockModal(true);
+                                }}
+                            />
                         ))
                     ) : (
                         <Text style={styles.emptyText}>No hay alertas de stock crítico.</Text>
                     )}
                 </View>
 
-                <View style={[styles.section, { marginBottom: 40 }]}>
+                <View style={[styles.section, { marginBottom: 120 }]}>
                     <SectionHeader title="Últimas Ventas" compact />
                     {recentSales.length > 0 ? (
                         recentSales.map((sale, idx) => (
-                            <RecentSaleRow key={idx} sale={sale} />
+                            <RecentSaleRow key={idx} sale={sale} onPress={() => fetchSaleDetail(sale)} />
                         ))
                     ) : (
                         <Text style={styles.emptyText}>No se registran ventas recientes.</Text>
                     )}
                 </View>
             </ScrollView>
+
+            <Portal>
+                <Modal
+                    visible={showModal}
+                    onDismiss={() => setShowModal(false)}
+                    contentContainerStyle={styles.modalScroll}
+                >
+                    <View style={styles.modalHeader}>
+                        <View style={styles.modalHandle} />
+                        <Text style={styles.modalTitle}>Detalle de Venta</Text>
+                        <Text style={styles.modalSubtitle}>Ticket #{selectedSale?.id_venta || selectedSale?.folio || '#'}</Text>
+                    </View>
+
+                    <View style={styles.modalBody}>
+                        {loadingDetail ? (
+                            <View style={styles.modalLoader}>
+                                <ActivityIndicator color={brandColors.accent} />
+                                <Text style={styles.modalLoaderText}>Cargando productos...</Text>
+                            </View>
+                        ) : saleDetail ? (
+                            <>
+                                <View style={styles.itemsList}>
+                                    {(saleDetail.items || []).map((item, index) => (
+                                        <View key={index} style={styles.itemRow}>
+                                            <View style={styles.itemInfo}>
+                                                <Text style={styles.itemName}>{item.nombreProducto}</Text>
+                                                <Text style={styles.itemQty}>{item.cantidad} x {formatCurrency(item.precioVenta)}</Text>
+                                            </View>
+                                            <Text style={styles.itemSubtotal}>{formatCurrency(item.subtotalLinea || (item.cantidad * item.precioVenta))}</Text>
+                                        </View>
+                                    ))}
+                                </View>
+
+                                <Divider style={styles.modalDivider} />
+
+                                <View style={styles.totalBlock}>
+                                    <View style={styles.totalRow}>
+                                        <Text style={styles.totalLabel}>Subtotal</Text>
+                                        <Text style={styles.totalVal}>{formatCurrency(selectedSale?.total / 1.19)}</Text>
+                                    </View>
+                                    <View style={styles.totalRow}>
+                                        <Text style={styles.totalLabel}>IVA (19%)</Text>
+                                        <Text style={styles.totalVal}>{formatCurrency(selectedSale?.total - (selectedSale?.total / 1.19))}</Text>
+                                    </View>
+                                    <View style={[styles.totalRow, styles.finalRow]}>
+                                        <Text style={styles.finalLabel}>TOTAL</Text>
+                                        <Text style={styles.finalVal}>{formatCurrency(selectedSale?.total)}</Text>
+                                    </View>
+                                </View>
+
+                                {saleDetail.pagos && saleDetail.pagos.length > 0 && (
+                                    <View style={styles.paymentInfo}>
+                                        <Ionicons name="card-outline" size={14} color={brandColors.textMuted} />
+                                        <Text style={styles.paymentText}>Pagado con {saleDetail.pagos[0].metodoPago}</Text>
+                                    </View>
+                                )}
+                            </>
+                        ) : (
+                            <Text style={styles.errorText}>No se pudo cargar el detalle.</Text>
+                        )}
+                    </View>
+
+                    <TouchableOpacity style={styles.closeBtn} onPress={() => setShowModal(false)}>
+                        <Text style={styles.closeBtnText}>Cerrar</Text>
+                    </TouchableOpacity>
+                </Modal>
+
+                <Modal
+                    visible={showStockModal}
+                    onDismiss={() => !savingStock && setShowStockModal(false)}
+                    contentContainerStyle={styles.modalSmall}
+                >
+                    <View style={styles.modalHeader}>
+                        <Text style={styles.modalTitle}>Ingreso Rápido</Text>
+                        <Text style={styles.modalSubtitle}>{stockItem?.nombreProducto}</Text>
+                        <Text style={styles.branchBadge}>{stockItem?.branchName}</Text>
+                    </View>
+                    <View style={styles.modalBodySmall}>
+                        <Text style={styles.inputLabel}>Cantidad a ingresar:</Text>
+                        <TextInput
+                            style={styles.bigInput}
+                            value={stockQty}
+                            onChangeText={setStockQty}
+                            keyboardType="numeric"
+                            autoFocus
+                            selectTextOnFocus
+                        />
+                        
+                        <TouchableOpacity 
+                            style={[styles.confirmBtn, savingStock && { opacity: 0.7 }]} 
+                            onPress={handleQuickInbound}
+                            disabled={savingStock}
+                        >
+                            {savingStock ? (
+                                <ActivityIndicator color="#fff" />
+                            ) : (
+                                <Text style={styles.confirmBtnText}>REGISTRAR STOCK</Text>
+                            )}
+                        </TouchableOpacity>
+
+                        <TouchableOpacity 
+                            style={styles.cancelBtn} 
+                            onPress={() => setShowStockModal(false)}
+                            disabled={savingStock}
+                        >
+                            <Text style={styles.cancelBtnText}>Cancelar</Text>
+                        </TouchableOpacity>
+                    </View>
+                </Modal>
+            </Portal>
         </Screen>
     );
 }
@@ -243,21 +434,28 @@ export default function MonitoringScreen({ token }) {
 function StatCard({ label, value, caption, icon, color }) {
     return (
         <Card style={styles.statCard}>
-            <View style={styles.statHeader}>
-                <Text style={styles.statLabel}>{label}</Text>
-                <View style={[styles.statIcon, { backgroundColor: color + '15' }]}>
-                    <Ionicons name={icon} size={18} color={color} />
-                </View>
+            <View style={[styles.statIcon, { backgroundColor: color + '15', marginRight: 16 }]}>
+                <Ionicons name={icon} size={22} color={color} />
             </View>
-            <Text style={styles.statValue}>{value}</Text>
-            <Text style={styles.statCaption}>{caption}</Text>
+            <View style={{ flex: 1 }}>
+                <Text style={styles.statLabel}>{label}</Text>
+                <Text 
+                    style={styles.statValue} 
+                    numberOfLines={1} 
+                    adjustsFontSizeToFit={true}
+                    minimumFontScale={0.7}
+                >
+                    {value}
+                </Text>
+                <Text style={styles.statCaption}>{caption}</Text>
+            </View>
         </Card>
     );
 }
 
-function CriticalRow({ item }) {
+function CriticalRow({ item, onAddStock }) {
     return (
-        <View style={styles.row}>
+        <TouchableOpacity style={styles.row} onPress={onAddStock} activeOpacity={0.7}>
             <View style={styles.rowInfo}>
                 <Text style={styles.rowTitle} numberOfLines={1}>{item.nombreProducto}</Text>
                 <Text style={styles.rowSubtitle}>{item.branchName} • {item.codigoBarras || 'S/C'}</Text>
@@ -266,16 +464,17 @@ function CriticalRow({ item }) {
                 label={`${item.esPesable ? item.stock.toFixed(3) : Math.round(item.stock)} ${item.esPesable ? 'Kg' : 'un.'}`}
                 type="danger"
             />
-        </View>
+            <Ionicons name="chevron-forward" size={16} color={brandColors.outline} style={{ marginLeft: 8 }} />
+        </TouchableOpacity>
     );
 }
 
-function RecentSaleRow({ sale }) {
+function RecentSaleRow({ sale, onPress }) {
     const total = Number(sale.total || sale.monto_total || 0);
     const dateStr = (sale.fecha_venta || sale.fechaVenta || sale.created_at || '').slice(11, 16);
 
     return (
-        <View style={styles.row}>
+        <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
             <View style={styles.rowInfo}>
                 <Text style={styles.rowTitle}>Ticket {sale.id_venta || sale.folio || '#'}</Text>
                 <Text style={styles.rowSubtitle}>{dateStr} • {sale.medio_pago || 'Efectivo'}</Text>
@@ -284,7 +483,7 @@ function RecentSaleRow({ sale }) {
                 <Text style={styles.rowValue}>{formatCurrency(total)}</Text>
                 <Text style={styles.rowStatus}>COMPLETADA</Text>
             </View>
-        </View>
+        </TouchableOpacity>
     );
 }
 
@@ -307,21 +506,14 @@ const styles = StyleSheet.create({
         fontWeight: '700'
     },
     grid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        marginHorizontal: -6,
-        marginTop: 10
+        marginTop: 10,
+        gap: 12
     },
     statCard: {
-        width: '46.5%', // Slightly less than 50% to account for margins
-        margin: 6,
-        padding: 14,
-    },
-    statHeader: {
+        width: '100%',
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 8
+        padding: 16,
     },
     statLabel: {
         fontSize: 11,
@@ -421,5 +613,219 @@ const styles = StyleSheet.create({
         fontSize: 15,
         fontWeight: '900',
         color: brandColors.accent
+    },
+    modalScroll: {
+        backgroundColor: brandColors.surface,
+        margin: 20,
+        borderRadius: 28,
+        paddingBottom: 20,
+        overflow: 'hidden'
+    },
+    modalHeader: {
+        alignItems: 'center',
+        paddingTop: 12,
+        paddingBottom: 20,
+        backgroundColor: brandColors.backgroundAlt
+    },
+    modalHandle: {
+        width: 36,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: brandColors.outline,
+        marginBottom: 16
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: '900',
+        color: brandColors.text
+    },
+    modalSubtitle: {
+        fontSize: 12,
+        color: brandColors.textMuted,
+        fontWeight: '700',
+        marginTop: 2
+    },
+    modalBody: {
+        padding: 20,
+        minHeight: 200
+    },
+    modalLoader: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingVertical: 40
+    },
+    modalLoaderText: {
+        marginTop: 12,
+        color: brandColors.textMuted,
+        fontWeight: '700',
+        fontSize: 12
+    },
+    itemsList: {
+        gap: 14
+    },
+    itemRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start'
+    },
+    itemInfo: {
+        flex: 1,
+        marginRight: 10
+    },
+    itemName: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: brandColors.text
+    },
+    itemQty: {
+        fontSize: 11,
+        color: brandColors.textMuted,
+        marginTop: 2
+    },
+    itemSubtotal: {
+        fontSize: 14,
+        fontWeight: '900',
+        color: brandColors.text
+    },
+    modalDivider: {
+        marginVertical: 20,
+        backgroundColor: brandColors.outline
+    },
+    totalBlock: {
+        gap: 8
+    },
+    totalRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center'
+    },
+    totalLabel: {
+        fontSize: 12,
+        color: brandColors.textMuted,
+        fontWeight: '600'
+    },
+    totalVal: {
+        fontSize: 13,
+        color: brandColors.text,
+        fontWeight: '700'
+    },
+    finalRow: {
+        marginTop: 4,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderTopColor: brandColors.outline
+    },
+    finalLabel: {
+        fontSize: 16,
+        fontWeight: '900',
+        color: brandColors.text
+    },
+    finalVal: {
+        fontSize: 20,
+        fontWeight: '900',
+        color: brandColors.accent
+    },
+    paymentInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginTop: 20,
+        padding: 10,
+        backgroundColor: brandColors.backgroundAlt,
+        borderRadius: 12,
+        alignSelf: 'flex-start'
+    },
+    paymentText: {
+        fontSize: 11,
+        fontWeight: '800',
+        color: brandColors.textMuted,
+        textTransform: 'uppercase'
+    },
+    errorText: {
+        textAlign: 'center',
+        color: brandColors.danger,
+        fontWeight: '700',
+        paddingVertical: 40
+    },
+    closeBtn: {
+        marginHorizontal: 20,
+        padding: 16,
+        borderRadius: 16,
+        backgroundColor: brandColors.shell,
+        alignItems: 'center'
+    },
+    closeBtnText: {
+        color: '#ffffff',
+        fontWeight: '900',
+        fontSize: 14,
+        textTransform: 'uppercase'
+    },
+    modalSmall: {
+        backgroundColor: brandColors.surface,
+        margin: 40,
+        borderRadius: 24,
+        overflow: 'hidden',
+        elevation: 10
+    },
+    modalBodySmall: {
+        padding: 24,
+        alignItems: 'center'
+    },
+    inputLabel: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: brandColors.textMuted,
+        marginBottom: 12
+    },
+    bigInput: {
+        width: '100%',
+        height: 60,
+        backgroundColor: brandColors.background,
+        borderRadius: 16,
+        fontSize: 28,
+        fontWeight: '900',
+        color: brandColors.text,
+        textAlign: 'center',
+        borderWidth: 2,
+        borderColor: brandColors.outline,
+        marginBottom: 24
+    },
+    confirmBtn: {
+        width: '100%',
+        height: 54,
+        backgroundColor: brandColors.accent,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 12,
+        shadowColor: brandColors.accent,
+        shadowOpacity: 0.3,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 4 }
+    },
+    confirmBtnText: {
+        color: '#ffffff',
+        fontWeight: '900',
+        fontSize: 15
+    },
+    cancelBtn: {
+        padding: 12
+    },
+    cancelBtnText: {
+        color: brandColors.textMuted,
+        fontWeight: '700',
+        fontSize: 14
+    },
+    branchBadge: {
+        fontSize: 10,
+        fontWeight: '900',
+        color: brandColors.accent,
+        backgroundColor: brandColors.accentSoft,
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 6,
+        marginTop: 6,
+        textTransform: 'uppercase'
     }
 });

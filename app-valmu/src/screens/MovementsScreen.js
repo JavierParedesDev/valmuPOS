@@ -30,7 +30,7 @@ import {
 import { brandColors } from '../theme';
 import { formatCurrency, filterProductsLocally } from '../utils/format';
 
-export default function MovementsScreen({ token }) {
+export default function MovementsScreen({ token, navigateTo, params, clearParams }) {
     const [loading, setLoading] = useState(true);
     const [branches, setBranches] = useState([]);
     const [selectedBranch, setSelectedBranch] = useState('');
@@ -73,12 +73,19 @@ export default function MovementsScreen({ token }) {
         fetchData();
     }, []);
 
+    useEffect(() => {
+        if (params?.product && productsRef.current.length > 0) {
+            addProductToInbound(params.product);
+            clearParams(); // Importante limpiar para no re-agregar al volver
+        }
+    }, [params, productsRef.current]);
+
     const handleSearch = (text) => {
         setSearchQuery(text);
         if (text.length > 1) {
             setIsSearching(true);
-            const filtered = filterProductsLocally(productsRef.current, text);
-            setSearchResults(filtered.slice(0, 5));
+            const filtered = filterProductsLocally(text, productsRef.current);
+            setSearchResults(filtered.slice(0, 20));
         } else {
             setSearchResults([]);
             setIsSearching(false);
@@ -322,7 +329,7 @@ const styles = StyleSheet.create({
     },
     listContent: {
         padding: 16,
-        paddingBottom: 150
+        paddingBottom: 220
     },
     configCard: {
         padding: 16,
@@ -431,14 +438,18 @@ const styles = StyleSheet.create({
     },
     footer: {
         position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
+        bottom: 110, // Elevado para que no quede detrás del dock (que está a bottom:30 + 72 height)
+        left: 20,
+        right: 20,
         backgroundColor: brandColors.surface,
-        padding: 20,
-        borderTopWidth: 1,
-        borderTopColor: brandColors.outline,
-        paddingBottom: Platform.OS === 'ios' ? 34 : 20
+        padding: 16,
+        borderRadius: 20,
+        borderWidth: 1,
+        borderColor: brandColors.outline,
+        ...Platform.select({
+            ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.1, shadowRadius: 10 },
+            android: { elevation: 6 }
+        })
     },
     loaderArea: {
         flex: 1,

@@ -799,12 +799,14 @@ async function openStockInboundForm(initialProduct = null) {
             return map;
         }, new Map()).values());
 
+        const currentUser = getCurrentUser();
         for (const line of aggregatedLines) {
             const response = await apiRequest({
                 endpoint: '/productos/ingreso',
                 method: 'POST',
                 body: {
                     id_producto: line.productId,
+                    id_usuario: currentUser?.id_usuario || null,
                     id_sucursal: targetBranchId,
                     cantidadIngreso: line.quantity,
                     numeroFactura: invoiceNumber
@@ -881,8 +883,10 @@ async function openTransferForm() {
     `;
 
     showModal('Traslado entre Sucursales', content, async () => {
+        const currentUser = getCurrentUser();
         const data = {
             id_producto: parseInt(document.getElementById('tra-product-id').value, 10),
+            id_usuario: currentUser?.id_usuario || null,
             id_sucursalOrigen: Number(defaultSourceId),
             id_sucursalDestino: parseInt(document.getElementById('tra-dest').value, 10),
             cantidadMov: parseFloat(document.getElementById('tra-qty').value)

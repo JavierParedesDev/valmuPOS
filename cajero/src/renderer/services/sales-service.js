@@ -48,3 +48,18 @@ export async function submitSaleRequest({ apiBaseUrl, token, payload }) {
 
     return result;
 }
+
+export async function fetchSaleDetail({ apiBaseUrl, token, saleId }) {
+    const response = await fetch(`${normalizeApiBaseUrl(apiBaseUrl)}/ventas/${saleId}`, {
+        headers: {
+            Authorization: `Bearer ${token}`
+        }
+    });
+
+    const payload = await parseJsonResponse(response);
+    if (!response.ok) {
+        throw new Error(payload?.error || 'No se pudo cargar el detalle de la venta.');
+    }
+
+    return payload; 
+}

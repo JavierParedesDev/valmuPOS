@@ -170,7 +170,7 @@ import {
     resolveOtherBranchStock
 } from './services/catalog-runtime-service.js';
 import { fetchCashStatus, openCashTurn, closeCashTurn, registerCashWithdrawal, fetchCashWithdrawals } from './services/cash-service.js';
-import { fetchSalesHistory, cancelSaleRequest, submitSaleRequest } from './services/sales-service.js';
+import { fetchSalesHistory, cancelSaleRequest, submitSaleRequest, fetchSaleDetail } from './services/sales-service.js';
 import { fetchClients, createQuickCustomer } from './services/clientes-service.js';
 import { loginCashier } from './services/auth-service.js';
 import { printReceiptRecord } from './services/print-service.js';
@@ -2193,11 +2193,11 @@ function buildFallbackReceiptRecord(sale) {
     };
 }
 
-function openSaleReceiptModal(saleId) {
+async function openSaleReceiptModal(saleId) {
     const activeSale = salesHistoryState.items.find((sale) => sale.id === Number(saleId));
     const cancelledSale = salesHistoryState.cancelledItems.find((sale) => sale.id === Number(saleId));
     const sale = activeSale || cancelledSale || null;
-    const record = getReceiptRecord(saleId) || buildFallbackReceiptRecord(sale);
+    let record = getReceiptRecord(saleId) || buildFallbackReceiptRecord(sale);
 
     if (!record) {
         setBackendStatus('No se pudo cargar el comprobante de la venta seleccionada.');
@@ -2205,6 +2205,34 @@ function openSaleReceiptModal(saleId) {
     }
 
     saleReceiptState.saleId = Number(saleId);
+
+    // Si no tiene items detallados, intentamos pedirlos al servidor
+    if (!record.lineItems || record.lineItems.length === 0) {
+        const itemsBody = document.getElementById('receipt-items-body');
+        if (itemsBody) itemsBody.innerHTML = '<div style="text-align: center; color: #999; padding: 1rem;">Buscando productos en el servidor...</div>';
+
+        try {
+            const apiBaseUrl = normalizeApiBaseUrl(getApiBaseUrl());
+            const token = getAuthToken();
+            const detail = await fetchSaleDetail({ apiBaseUrl, token, saleId });
+
+            if (detail && detail.productos) {
+                // Mapeamos los productos del servidor al formato que espera el recibo del Cajero
+                record.lineItems = detail.productos.map(item => ({
+                    name: item.nombreProducto,
+                    quantity: Number(item.cantidadVenta || item.cantidad),
+                    quantityLabel: formatQuantity(item.cantidadVenta || item.cantidad, false),
+                    unitPrice: Number(item.precioVenta),
+                    subtotal: Number(item.subtotalLinea || (item.cantidad * item.precioVenta))
+                }));
+                
+                // Actualizamos el cache local del Cajero para futuras vistas
+                saveReceiptRecord(record);
+            }
+        } catch (error) {
+            console.warn('No se pudo obtener detalle del servidor:', error);
+        }
+    }
 
     // Visual Receipt Metadata
     const visualFolio = document.getElementById('visual-receipt-folio');

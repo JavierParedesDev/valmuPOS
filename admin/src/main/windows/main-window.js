@@ -11,7 +11,8 @@ function createMainWindow() {
         webPreferences: {
             preload: path.join(__dirname, '../preload.js'),
             contextIsolation: true,
-            nodeIntegration: false
+            nodeIntegration: false,
+            devTools: false
         },
         title: 'Valmu Admin',
         autoHideMenuBar: false,
@@ -19,9 +20,6 @@ function createMainWindow() {
     });
 
     mainWindow.loadFile(path.join(__dirname, '../../renderer/login.html'));
-
-    // Abrir DevTools automáticamente
-    mainWindow.webContents.openDevTools();
 
     return mainWindow;
 }
