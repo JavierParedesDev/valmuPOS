@@ -159,6 +159,7 @@ def build_receipt_image(payload):
     origin = str(receipt.get('origin') or 'sale').strip().lower()
     is_dispatch_origin = origin == 'dispatch'
     is_withdrawal = 'retiro' in document_type.lower()
+    is_arqueo = 'cierre de caja' in document_type.lower()
 
     image = Image.new('RGB', (width_px, 4200), 'white')
     draw = ImageDraw.Draw(image)
@@ -258,6 +259,18 @@ def build_receipt_image(payload):
         meta_lines.append(f"Cliente: {customer_label}")
     if payment_label:
         meta_lines.append(f"Pago: {payment_label}")
+        # Add breakdown for mixed payments
+        if 'mixto' in str(payment_label).lower():
+            p_cash = receipt.get('paymentCash')
+            p_card = receipt.get('paymentCard')
+            p_transfer = receipt.get('paymentTransfer')
+            if p_cash: meta_lines.append(f" > EFECTIVO: ${int(p_cash):,}".replace(',', '.'))
+            if p_card: meta_lines.append(f" > TARJETA: ${int(p_card):,}".replace(',', '.'))
+            if p_transfer: meta_lines.append(f" > TRANSF: ${int(p_transfer):,}".replace(',', '.'))
+
+    address_label = str(receipt.get('addressLabel') or receipt.get('address_label') or '').strip()
+    if address_label:
+        meta_lines.append(f"Direccion: {address_label}")
 
     sale_id = receipt.get('saleId')
     if sale_id and not reference_label and not str(sale_id).startswith('C-') and not (is_fiscal and is_dispatch_origin):
@@ -326,7 +339,7 @@ def build_receipt_image(payload):
         cursor_y = draw_wrapped_text(draw, padding, cursor_y + 70, "FIRMA CAJERO/RECEPTOR", font_small_bold, content_width, align='center')
         cursor_y += 40
 
-    if not is_withdrawal:
+    if not is_withdrawal and not is_arqueo:
         detail_title = 'DETALLE DE PRODUCTOS'
         draw.text((padding, cursor_y), detail_title, fill='black', font=font_title)
         detail_title_box = draw.textbbox((padding, cursor_y), detail_title, font=font_title)
@@ -366,18 +379,27 @@ def build_receipt_image(payload):
             if not preview_line:
                 cursor_y += 10
                 continue
+            
+            p_font = font_body_bold if is_arqueo else font_body
+            p_gap = 6 if is_arqueo else 2
+            
+            if is_arqueo and (preview_line.startswith('======') or preview_line.startswith('------')):
+                draw.line((padding, cursor_y, width_px - padding, cursor_y), fill='black', width=2)
+                cursor_y += 10
+                continue
+
             cursor_y = draw_wrapped_text(
                 draw,
                 padding,
                 cursor_y,
                 preview_line,
-                font_body,
+                p_font,
                 content_width,
-                line_gap=2
+                line_gap=p_gap
             )
-            cursor_y += 2
+            cursor_y += p_gap
 
-    if not is_withdrawal:
+    if not is_withdrawal and not is_arqueo:
         draw.line((padding, cursor_y, width_px - padding, cursor_y), fill='black', width=2)
         cursor_y += gap
 

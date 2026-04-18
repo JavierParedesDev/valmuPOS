@@ -5,6 +5,16 @@ import { loginRequest } from '../services/api';
 import { Field, PrimaryButton } from '../components/UI';
 import { brandColors } from '../theme';
 
+function isAllowedLoginRole(user) {
+    const roleName = String(user?.rol || user?.nombreRol || '').trim().toLowerCase();
+    const roleId = Number(user?.id_rol ?? user?.rol_id ?? user?.idRol ?? 0);
+
+    return roleName === 'administrador'
+        || roleName === 'bodeguero'
+        || roleId === 1
+        || roleId === 3;
+}
+
 export default function LoginScreen({ onLogin }) {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
@@ -23,6 +33,10 @@ export default function LoginScreen({ onLogin }) {
         try {
             const result = await loginRequest(username.trim(), password);
             if (result.success) {
+                if (!isAllowedLoginRole(result.user)) {
+                    setError('Este acceso solo permite los roles Administrador y Bodeguero');
+                    return;
+                }
                 onLogin({ token: result.token, user: result.user });
                 return;
             }

@@ -1,6 +1,6 @@
 {
   "name": "admin",
-  "version": "1.0.6",
+  "version": "2.0.1",
   "description": "Valmu Admin desktop app",
   "main": "src/main/main.js",
   "scripts": {
@@ -29,6 +29,7 @@
   "build": {
     "appId": "com.valmu.admin",
     "productName": "Valmu Admin",
+    "artifactName": "Valmu.Admin.Setup.${version}.${ext}",
     "directories": {
       "output": "release"
     },
@@ -51,6 +52,7 @@
       "provider": "github",
       "owner": "JavierParedesDev",
       "repo": "valmuPOS",
+      "channel": "admin",
       "releaseType": "release"
     },
     "nsis": {

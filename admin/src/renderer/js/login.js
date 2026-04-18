@@ -25,6 +25,15 @@ function getRoleThemeClass(user) {
     return 'role-default';
 }
 
+function isAllowedLoginRole(user) {
+    const roleName = String(user?.rol || '').trim().toLowerCase();
+    const roleId = Number(user?.id_rol || user?.rol_id || user?.idRol || 0);
+    return roleName === 'administrador'
+        || roleName === 'bodeguero'
+        || roleId === 1
+        || roleId === 3;
+}
+
 function applyLoginRoleTheme(roleClass = 'role-default') {
     if (!loginShell || !loginPanel) return;
 
@@ -62,6 +71,10 @@ if (loginForm) {
             const result = await window.electronAPI.login({ username, password });
 
             if (result?.success) {
+                if (!isAllowedLoginRole(result.user)) {
+                    throw new Error('Este acceso solo permite los roles Administrador y Bodeguero.');
+                }
+
                 saveSession({ token: result.token, user: result.user });
                 applyLoginRoleTheme(getRoleThemeClass(result.user));
                 if (accessPreview && accessText) {

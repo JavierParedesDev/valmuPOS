@@ -145,10 +145,11 @@ function createUpdateManager({ app, getMainWindow, sendToWindow }) {
             return serializeUpdateState();
         } catch (error) {
             console.error('Download update failed:', error);
+            const friendlyError = getFriendlyUpdateError(error);
             setUpdateState({
                 status: 'error',
-                statusMessage: 'No se pudo descargar la actualizacion.',
-                errorMessage: getFriendlyUpdateError(error),
+                statusMessage: `No se pudo descargar la actualizacion. ${friendlyError}`,
+                errorMessage: friendlyError,
                 checkedAt: new Date().toISOString(),
                 downloadReady: false
             });
@@ -171,10 +172,11 @@ function createUpdateManager({ app, getMainWindow, sendToWindow }) {
 
         autoUpdater.on('error', (error) => {
             console.error('Auto-update error:', error);
+            const friendlyError = getFriendlyUpdateError(error);
             setUpdateState({
                 status: 'error',
-                statusMessage: 'No se pudo completar la actualizacion.',
-                errorMessage: getFriendlyUpdateError(error),
+                statusMessage: `No se pudo completar la actualizacion. ${friendlyError}`,
+                errorMessage: friendlyError,
                 checkedAt: new Date().toISOString(),
                 downloadReady: false
             });

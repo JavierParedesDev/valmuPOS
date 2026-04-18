@@ -9,11 +9,12 @@ async function getAppConfig() {
     return cachedConfig;
 }
 
-async function apiRequest({ endpoint, method = 'GET', body, token = getAuthToken() }) {
+async function apiRequest({ endpoint, method = 'GET', body, token = getAuthToken(), silentNonJson = false }) {
     return window.electronAPI.apiRequest({
         endpoint,
         method,
         body,
-        token
+        token,
+        silentNonJson
     });
 }

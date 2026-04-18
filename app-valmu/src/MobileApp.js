@@ -71,6 +71,7 @@ const MODULES = [
     { key: 'suppliers', label: 'Proveedores', metric: 'Compras', icon: { set: 'Ionicons', name: 'storefront-outline' } },
     { key: 'branches', label: 'Sucursales', metric: 'Stock', icon: { set: 'Ionicons', name: 'location-outline' } },
     { key: 'monitoring', label: 'Monitoreo', metric: 'Vivo', icon: { set: 'Ionicons', name: 'pulse-outline' }, hidden: true },
+    { key: 'sales_history', label: 'Historial Ventas', metric: 'Analisis', icon: { set: 'Ionicons', name: 'bar-chart-outline' }, hidden: true },
     { key: 'users', label: 'Usuarios', metric: 'Cuentas', icon: { set: 'Ionicons', name: 'people-outline' }, hidden: true },
     { key: 'movements', label: 'Movimientos', metric: 'Facturas', icon: { set: 'Ionicons', name: 'swap-horizontal-outline' }, hidden: true },
     { key: 'dispatch', label: 'Despachos', metric: 'Envios', icon: { set: 'Ionicons', name: 'bus-outline' }, hidden: true },
@@ -102,6 +103,8 @@ function resolveModuleComponent(moduleKey) {
             return require('./screens/BranchesScreen').default;
         case 'monitoring':
             return require('./screens/MonitoringScreen').default;
+        case 'sales_history':
+            return require('./screens/SalesHistoryScreen').default;
         case 'users':
             return require('./screens/UsersScreen').default;
         case 'movements':
@@ -556,6 +559,7 @@ function UpdatePrompt({ state, onClose, onInstall }) {
 function DrawerMenu({ visible, onClose, onLogout, onSelectModule }) {
     const items = [
         { key: 'monitoring', label: 'Monitoreo en vivo', icon: 'pulse-outline' },
+        { key: 'sales_history', label: 'Historial ventas', icon: 'bar-chart-outline' },
         { key: 'movements', label: 'Movimientos', icon: 'swap-horizontal-outline' },
         { key: 'dispatch', label: 'Despachos', icon: 'bus-outline' },
         { key: 'users', label: 'Usuarios', icon: 'people-outline' },

@@ -1,4 +1,5 @@
 const ADMIN_BRANCH_INVENTORY_LIMIT = 15;
+const BRANCH_INVENTORY_REFRESH_MS = 8000;
 const adminBranchInventoryPagination = {
     page: 1,
     branchId: null,
@@ -7,15 +8,130 @@ const adminBranchInventoryPagination = {
     branchSearch: '',
     isBodegueroView: false
 };
+let branchInventoryRefreshTimer = null;
+let branchInventoryRefreshListenerBound = false;
+let branchSelectionListenerBound = false;
+
+function isWeightedProduct(value) {
+    return value === true || value === 1 || value === '1';
+}
+
+function clearBranchInventoryRefreshTimer() {
+    if (branchInventoryRefreshTimer) {
+        clearInterval(branchInventoryRefreshTimer);
+        branchInventoryRefreshTimer = null;
+    }
+}
+
+function bindBranchInventoryRefreshListener() {
+    if (branchInventoryRefreshListenerBound) return;
+
+    window.addEventListener('valmu:inventory-changed', () => {
+        if (currentPage !== 'branches' || !adminBranchInventoryPagination.branchId) {
+            return;
+        }
+
+        void refreshCurrentBranchInventory();
+    });
+
+    branchInventoryRefreshListenerBound = true;
+}
+
+function bindBranchSelectionListener() {
+    if (branchSelectionListenerBound) return;
+
+    window.addEventListener('valmu:active-branch-changed', () => {
+        if (currentPage !== 'branches' || !isBodeguero()) {
+            return;
+        }
+
+        void renderAssignedBranchInventory();
+    });
+
+    branchSelectionListenerBound = true;
+}
+
+async function refreshCurrentBranchInventory() {
+    if (!adminBranchInventoryPagination.branchId) return;
+
+    await renderBranchInventory(
+        adminBranchInventoryPagination.branchId,
+        adminBranchInventoryPagination.branchName,
+        adminBranchInventoryPagination.page,
+        { isBodegueroView: adminBranchInventoryPagination.isBodegueroView }
+    );
+}
+
+function startBranchInventoryRefreshTimer() {
+    clearBranchInventoryRefreshTimer();
+    branchInventoryRefreshTimer = setInterval(() => {
+        if (currentPage !== 'branches' || !adminBranchInventoryPagination.branchId) {
+            clearBranchInventoryRefreshTimer();
+            return;
+        }
+
+        void refreshCurrentBranchInventory();
+    }, BRANCH_INVENTORY_REFRESH_MS);
+}
 
 function formatBranchStock(item) {
     const quantity = Number(item?.stockActual ?? item?.cantidad ?? 0);
-    return item?.esPesable
+    return isWeightedProduct(item?.esPesable)
         ? `${quantity.toFixed(3)} Kg`
         : `${Math.round(quantity).toLocaleString('es-CL')} un.`;
 }
 
+function buildBranchStockMatrix(branches = [], inventoryResults = []) {
+    const matrix = new Map();
+
+    inventoryResults.forEach((response, index) => {
+        const branch = branches[index];
+        const stockItems = Array.isArray(response?.data) ? response.data : [];
+
+        stockItems.forEach((item) => {
+            const productId = Number(item?.id_producto);
+            if (!productId) return;
+
+            const entries = matrix.get(productId) || [];
+            entries.push({
+                id_sucursal: branch?.id_sucursal,
+                branchName: branch?.nombreSucursal || 'Sucursal',
+                cantidad: Number(item?.stockActual ?? item?.cantidad ?? item?.stock ?? 0),
+                esPesable: isWeightedProduct(item?.esPesable)
+            });
+            matrix.set(productId, entries);
+        });
+    });
+
+    return matrix;
+}
+
+function formatBranchStockBreakdown(item) {
+    const entries = Array.isArray(item?.stockPorSucursal) ? item.stockPorSucursal : [];
+    if (!entries.length) {
+        return '<span class="text-gray-400 text-xs">Sin datos</span>';
+    }
+
+    return entries.map((entry) => {
+        const qtyLabel = entry.esPesable
+            ? `${Number(entry.cantidad || 0).toFixed(3)} Kg`
+            : `${Math.round(Number(entry.cantidad || 0)).toLocaleString('es-CL')} un.`;
+
+        const qtyColor = Number(entry.cantidad || 0) > 0 ? '#166534' : '#991b1b';
+        return `
+            <div style="display:flex; justify-content:space-between; gap:0.75rem; margin-bottom:0.3rem; font-size:0.78rem;">
+                <span style="color:var(--text-main); font-weight:700;">${entry.branchName}</span>
+                <span style="color:${qtyColor}; font-weight:700;">${qtyLabel}</span>
+            </div>
+        `;
+    }).join('');
+}
+
 async function renderBranches() {
+    clearBranchInventoryRefreshTimer();
+    bindBranchInventoryRefreshListener();
+    bindBranchSelectionListener();
+
     if (isBodeguero()) {
         await renderAssignedBranchInventory();
         return;
@@ -74,33 +190,47 @@ async function renderAssignedBranchInventory() {
     const contentArea = document.getElementById('content-area');
     if (!contentArea) return;
 
-    const assignedBranchId = getActiveBranchId();
-    const assignedBranchName = getActiveBranchName();
-
-    if (!assignedBranchId) {
-        contentArea.innerHTML = `
-            <div class="glass-panel">
-                <h2>Mi sucursal</h2>
-                <p class="text-muted">Tu usuario no tiene una sucursal asignada. Pidele al administrador que configure ese dato para habilitar esta vista.</p>
-            </div>
-        `;
-        return;
-    }
-
-    if (assignedBranchName) {
-        await renderBranchInventory(assignedBranchId, assignedBranchName, 1, { isBodegueroView: true });
-        return;
-    }
+    const activeBranchId = getActiveBranchId();
+    const activeBranchName = getActiveBranchName();
 
     try {
         const token = getAuthToken();
         const response = await apiRequest({ endpoint: '/sucursales', token });
         const branches = Array.isArray(response) ? response : (Array.isArray(response?.data) ? response.data : []);
-        const assignedBranch = branches.find((branch) => Number(branch.id_sucursal) === assignedBranchId);
-        await renderBranchInventory(assignedBranchId, assignedBranch?.nombreSucursal || 'Sucursal asignada', 1, { isBodegueroView: true });
+
+        const selectedBranch = activeBranchId
+            ? branches.find((branch) => Number(branch.id_sucursal) === Number(activeBranchId))
+            : null;
+
+        if (selectedBranch) {
+            if (!activeBranchName || activeBranchName !== selectedBranch.nombreSucursal) {
+                setActiveBranch({
+                    id: selectedBranch.id_sucursal,
+                    name: selectedBranch.nombreSucursal || ''
+                });
+            }
+
+            await renderBranchInventory(
+                selectedBranch.id_sucursal,
+                selectedBranch.nombreSucursal || activeBranchName || 'Sucursal seleccionada',
+                1,
+                { isBodegueroView: true }
+            );
+            return;
+        }
     } catch (_error) {
-        await renderBranchInventory(assignedBranchId, 'Sucursal asignada', 1, { isBodegueroView: true });
+        if (activeBranchId) {
+            await renderBranchInventory(activeBranchId, activeBranchName || 'Sucursal seleccionada', 1, { isBodegueroView: true });
+            return;
+        }
     }
+
+    contentArea.innerHTML = `
+        <div class="glass-panel">
+            <h2>Sucursal no seleccionada</h2>
+            <p class="text-muted">Ve a Configuración y selecciona la sucursal de trabajo para cargar automáticamente su inventario.</p>
+        </div>
+    `;
 }
 
 function renderBranchCards() {
@@ -147,8 +277,15 @@ function renderBranchCards() {
 }
 
 async function renderBranchInventory(branchId, branchName, page = 1, options = {}) {
+    bindBranchInventoryRefreshListener();
+    bindBranchSelectionListener();
+    if (isBodeguero() && branchId) {
+        setActiveBranch({ id: branchId, name: branchName || '' });
+    }
     const contentArea = document.getElementById('content-area');
     const isBodegueroView = Boolean(options?.isBodegueroView);
+    const stockByBranchHeader = isBodegueroView ? '<th>Stock por sucursal</th>' : '';
+    const tableColspan = isBodegueroView ? 5 : 4;
     adminBranchInventoryPagination.page = Math.max(1, page);
     adminBranchInventoryPagination.branchId = branchId;
     adminBranchInventoryPagination.branchName = branchName;
@@ -181,11 +318,12 @@ async function renderBranchInventory(branchId, branchName, page = 1, options = {
                             <th>Producto</th>
                             <th>Código</th>
                             <th>Stock</th>
+                            ${stockByBranchHeader}
                             <th style="text-align: right;">Acciones</th>
                         </tr>
                     </thead>
                     <tbody id="branch-stock-list">
-                        <tr><td colspan="4" class="text-center py-4 text-gray-500 italic">Cargando inventario...</td></tr>
+                        <tr><td colspan="${tableColspan}" class="text-center py-4 text-gray-500 italic">Cargando inventario...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -220,10 +358,30 @@ async function renderBranchInventory(branchId, branchName, page = 1, options = {
     try {
         const token = getAuthToken();
         const response = await apiRequest({ endpoint: `/productos/inventario?id_sucursal=${branchId}`, token });
-        window.currentBranchStock = Array.isArray(response) ? response : (Array.isArray(response?.data) ? response.data : []);
+        const branchInventory = Array.isArray(response) ? response : (Array.isArray(response?.data) ? response.data : []);
+
+        if (isBodegueroView) {
+            const branchesResponse = await apiRequest({ endpoint: '/sucursales', token });
+            const branches = Array.isArray(branchesResponse?.data) ? branchesResponse.data : [];
+            const inventoryResults = await Promise.all(
+                branches.map((branch) => apiRequest({ endpoint: `/productos/inventario?id_sucursal=${branch.id_sucursal}`, token }))
+            );
+            const stockMatrix = buildBranchStockMatrix(branches, inventoryResults);
+
+            window.currentBranchStock = branchInventory.map((item) => ({
+                ...item,
+                stockPorSucursal: (stockMatrix.get(Number(item.id_producto)) || []).sort((left, right) =>
+                    String(left.branchName || '').localeCompare(String(right.branchName || ''), 'es', { sensitivity: 'base' })
+                )
+            }));
+        } else {
+            window.currentBranchStock = branchInventory;
+        }
         renderBranchInventoryRows();
+        startBranchInventoryRefreshTimer();
     } catch (e) {
-        document.getElementById('branch-stock-list').innerHTML = `<tr><td colspan="4" class="text-center py-20 text-red-500 font-black uppercase text-xs">Error de Sincronización: ${e.message}</td></tr>`;
+        clearBranchInventoryRefreshTimer();
+        document.getElementById('branch-stock-list').innerHTML = `<tr><td colspan="${tableColspan}" class="text-center py-20 text-red-500 font-black uppercase text-xs">Error de Sincronización: ${e.message}</td></tr>`;
     }
 }
 
@@ -233,9 +391,10 @@ function renderBranchInventoryRows() {
 
     const filtered = getFilteredBranchStock();
     const total = filtered.length;
+    const isBodegueroView = adminBranchInventoryPagination.isBodegueroView;
 
     if (!total) {
-        list.innerHTML = `<tr><td colspan="4" class="text-center py-10 text-gray-400">No hay productos que coincidan</td></tr>`;
+        list.innerHTML = `<tr><td colspan="${adminBranchInventoryPagination.isBodegueroView ? 5 : 4}" class="text-center py-10 text-gray-400">No hay productos que coincidan</td></tr>`;
         updateBranchInventoryPaginationUi(0);
         return;
     }
@@ -254,6 +413,7 @@ function renderBranchInventoryRows() {
                 <td class="font-bold text-gray-900">${item.nombreProducto}</td>
                 <td><code class="text-gray-400">${item.codigoBarras || 'SIN CÓDIGO'}</code></td>
                 <td><span class="badge ${stockClass} text-[10px] font-bold">${formatBranchStock(item)}</span></td>
+                ${isBodegueroView ? `<td>${formatBranchStockBreakdown(item)}</td>` : ''}
                 <td style="text-align: right;">
                     <div class="flex justify-end gap-2">
                         <button class="h-8 w-8 rounded-lg bg-orange-50 text-orange-600 hover:bg-orange-100 flex items-center justify-center transition-colors" 
@@ -311,7 +471,7 @@ function openAdjustmentFormByProductId(productId, branchId, branchName, stayInAs
                     <label class="block text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">NUEVA CANTIDAD FÍSICA EN ESTANTE</label>
                     <div class="relative group">
                         <i class="bi bi-box-seam absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-orange-600 transition-colors"></i>
-                        <input type="number" id="adj-qty" class="w-full pl-14 pr-6 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-lg font-black shadow-sm focus:border-orange-200 outline-none transition-all" value="${item.esPesable ? currentQty : Math.round(currentQty)}" step="${item.esPesable ? '0.001' : '1'}">
+                        <input type="number" id="adj-qty" class="w-full pl-14 pr-6 py-4 bg-gray-50 border border-gray-100 rounded-2xl text-lg font-black shadow-sm focus:border-orange-200 outline-none transition-all" value="${isWeightedProduct(item.esPesable) ? currentQty : Math.round(currentQty)}" step="${isWeightedProduct(item.esPesable) ? '0.001' : '1'}">
                     </div>
                     <p class="text-[10px] text-gray-400 font-medium mt-3 italic leading-relaxed">Nota: Esta acción sobrescribirá el stock actual por el valor ingresado. Úselo tras auditorías de conteo.</p>
                 </div>
@@ -358,6 +518,15 @@ function openAdjustmentFormByProductId(productId, branchId, branchName, stayInAs
 
         if (res.ok) {
             Toast.fire({ icon: 'success', title: 'Stock actualizado' });
+            window.dispatchEvent(new CustomEvent('valmu:inventory-changed', {
+                detail: {
+                    source: 'branches',
+                    type: 'ajuste',
+                    branchIds: [branchId],
+                    productIds: [item.id_producto],
+                    at: Date.now()
+                }
+            }));
             closeModal();
             renderBranchInventory(branchId, branchName, adminBranchInventoryPagination.page, { isBodegueroView: stayInAssignedBranchView });
         } else {

@@ -187,6 +187,7 @@ export const dispatchState = {
     selectedDocumentTypeId: 3, // Vale interno por defecto
     selectedCustomerId: null,
     manualAddress: '',
+    manualPayment: 'en_ruta',
     searchQuery: '',
     cart: [],
     records: []

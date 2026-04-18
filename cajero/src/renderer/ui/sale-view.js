@@ -114,7 +114,7 @@ export function renderCartView({ cart, products }) {
     let totalItems = 0;
     let totalDiscount = 0;
 
-    cartList.innerHTML = cart.map((item) => {
+    cartList.innerHTML = [...cart].reverse().map((item) => {
         const product = products.find((entry) => entry.id === item.productId);
         if (!product) {
             return '';

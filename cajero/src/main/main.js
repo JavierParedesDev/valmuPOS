@@ -64,6 +64,7 @@ function buildAppMenu() {
 }
 
 let siiDataDir = '';
+let localAuditDir = '';
 
 function ensureSiiDataDir() {
     if (!siiDataDir) {
@@ -72,6 +73,58 @@ function ensureSiiDataDir() {
     if (!fsSync.existsSync(siiDataDir)) {
         fsSync.mkdirSync(siiDataDir, { recursive: true });
     }
+}
+
+function ensureLocalAuditDir() {
+    if (!localAuditDir) {
+        localAuditDir = path.join(app.getPath('userData'), 'local_audit');
+    }
+    if (!fsSync.existsSync(localAuditDir)) {
+        fsSync.mkdirSync(localAuditDir, { recursive: true });
+    }
+}
+
+function getLocalAuditPath() {
+    ensureLocalAuditDir();
+    return path.join(localAuditDir, 'current-turn-sales-audit.json');
+}
+
+function buildDefaultLocalAudit() {
+    return {
+        turnId: null,
+        openedAt: null,
+        resetAt: new Date().toISOString(),
+        updatedAt: null,
+        openingCash: 0,
+        salesCount: 0,
+        totals: {
+            cash: 0,
+            card: 0,
+            transfer: 0
+        },
+        entries: []
+    };
+}
+
+async function readLocalAuditFile() {
+    try {
+        const filePath = getLocalAuditPath();
+        if (!fsSync.existsSync(filePath)) {
+            const initialData = buildDefaultLocalAudit();
+            await fs.writeFile(filePath, JSON.stringify(initialData, null, 2), 'utf8');
+            return initialData;
+        }
+
+        return JSON.parse(await fs.readFile(filePath, 'utf8'));
+    } catch (error) {
+        console.error('Local audit read error:', error);
+        return buildDefaultLocalAudit();
+    }
+}
+
+async function writeLocalAuditFile(payload) {
+    const filePath = getLocalAuditPath();
+    await fs.writeFile(filePath, JSON.stringify(payload || buildDefaultLocalAudit(), null, 2), 'utf8');
 }
 
 const invoiceFolders = ['facturas', 'boletas'];
@@ -403,6 +456,86 @@ function registerIpcHandlers() {
         const isFullScreen = mainWindow.isFullScreen();
         mainWindow.setFullScreen(!isFullScreen);
         return !isFullScreen;
+    });
+
+    ipcMain.handle('local-audit:get', async () => {
+        try {
+            return {
+                success: true,
+                path: getLocalAuditPath(),
+                data: await readLocalAuditFile()
+            };
+        } catch (error) {
+            return { success: false, error: error?.message || 'local_audit_get_failed' };
+        }
+    });
+
+    ipcMain.handle('local-audit:reset', async (_event, payload) => {
+        try {
+            const openingCash = Number(payload?.openingCash || 0);
+            const nextData = {
+                ...buildDefaultLocalAudit(),
+                turnId: payload?.turnId || null,
+                openedAt: payload?.openedAt || null,
+                resetAt: new Date().toISOString(),
+                openingCash,
+                totals: {
+                    cash: openingCash,
+                    card: 0,
+                    transfer: 0
+                }
+            };
+            await writeLocalAuditFile(nextData);
+            return {
+                success: true,
+                path: getLocalAuditPath(),
+                data: nextData
+            };
+        } catch (error) {
+            console.error('Local audit reset error:', error);
+            return { success: false, error: error?.message || 'local_audit_reset_failed' };
+        }
+    });
+
+    ipcMain.handle('local-audit:append-sale', async (_event, payload) => {
+        try {
+            const currentData = await readLocalAuditFile();
+            const paymentMethod = String(payload?.paymentMethod || '').toUpperCase();
+            const cash = Number(payload?.cash || 0);
+            const card = Number(payload?.card || 0);
+            const transfer = Number(payload?.transfer || 0);
+            const total = Number(payload?.total || 0);
+            const entry = {
+                id: String(payload?.saleId || `local-${Date.now()}`),
+                createdAt: new Date().toISOString(),
+                paymentMethod,
+                total,
+                cash,
+                card,
+                transfer,
+                documentType: String(payload?.documentType || 'Venta'),
+                origin: String(payload?.origin || 'CAJA').toUpperCase()
+            };
+
+            currentData.salesCount = Number(currentData.salesCount || 0) + 1;
+            currentData.totals = {
+                cash: Number(currentData?.totals?.cash || 0) + cash,
+                card: Number(currentData?.totals?.card || 0) + card,
+                transfer: Number(currentData?.totals?.transfer || 0) + transfer
+            };
+            currentData.entries = [entry, ...(Array.isArray(currentData.entries) ? currentData.entries : [])].slice(0, 500);
+            currentData.updatedAt = new Date().toISOString();
+
+            await writeLocalAuditFile(currentData);
+            return {
+                success: true,
+                path: getLocalAuditPath(),
+                data: currentData
+            };
+        } catch (error) {
+            console.error('Local audit append error:', error);
+            return { success: false, error: error?.message || 'local_audit_append_failed' };
+        }
     });
 
     ipcMain.handle('sii:get-config', async () => {

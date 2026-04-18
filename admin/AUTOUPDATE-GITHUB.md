@@ -53,7 +53,7 @@ npm run dist:publish
 Eso genera:
 
 - instalador NSIS de Windows
-- archivos `latest.yml`
+- archivos `admin.yml` para el canal de `Valmu Admin`
 - publicacion en GitHub Releases del repo `JavierParedesDev/valmuPOS`
 
 ## Importante

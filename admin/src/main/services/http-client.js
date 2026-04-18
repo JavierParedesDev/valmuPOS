@@ -13,7 +13,7 @@ function buildApiUrl(endpointOrUrl) {
     return `${API_BASE_URL}${normalizedEndpoint}`;
 }
 
-async function parseResponse(response) {
+async function parseResponse(response, options = {}) {
     const text = await response.text();
     const headers = Object.fromEntries(response.headers.entries());
     const contentType = String(response.headers.get('content-type') || '').toLowerCase();
@@ -29,7 +29,9 @@ async function parseResponse(response) {
     try {
         return { ok: response.ok, status: response.status, data: JSON.parse(text), headers };
     } catch (error) {
-        console.error('Non-JSON response from server:', text.slice(0, 500));
+        if (!options.silentNonJson) {
+            console.error('Non-JSON response from server:', text.slice(0, 500));
+        }
         return {
             ok: false,
             status: response.status,
@@ -39,7 +41,7 @@ async function parseResponse(response) {
     }
 }
 
-async function requestJson({ endpoint, url, method = 'GET', body, token }) {
+async function requestJson({ endpoint, url, method = 'GET', body, token, silentNonJson = false }) {
     try {
         const headers = { 'Content-Type': 'application/json' };
 
@@ -53,7 +55,7 @@ async function requestJson({ endpoint, url, method = 'GET', body, token }) {
             body: body ? JSON.stringify(body) : undefined
         });
 
-        return parseResponse(response);
+        return parseResponse(response, { silentNonJson });
     } catch (error) {
         console.error('Network/Fetch Error:', error);
         return { ok: false, error: error.message };

@@ -7,14 +7,14 @@ const ROLE_CONFIGS = {
         defaultPage: 'dashboard'
     },
     3: {
-        allowedPages: ['dashboard', 'products', 'wastage', 'branches', 'settings'],
+        allowedPages: ['dashboard', 'products', 'branches', 'wastage', 'settings'],
         defaultPage: 'dashboard',
         brandName: 'Bodega',
         navLabels: {
             dashboard: 'Resumen Bodega',
             products: 'Ingreso de Stock',
+            branches: 'Inventario',
             wastage: 'Mermas',
-            branches: 'Mi Sucursal',
             settings: 'Configuracion'
         },
         sectionLabels: ['Bodega', 'Operacion']

@@ -1531,6 +1531,269 @@ select.input-control:focus+.select-chevron {
     padding: 1.5rem !important;
 }
 
+.close-cash-header {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    margin-bottom: 1rem;
+}
+
+.close-cash-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.close-cash-overview {
+    padding: 1rem;
+    border-radius: 22px;
+    background: linear-gradient(180deg, rgba(255, 248, 241, 0.96) 0%, rgba(255, 252, 248, 0.98) 100%);
+    border: 1px solid rgba(249, 115, 22, 0.18);
+}
+
+.close-cash-overview-top {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 0.9rem;
+}
+
+.close-cash-meta {
+    padding: 0.85rem 0.9rem;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(249, 115, 22, 0.12);
+}
+
+.close-cash-meta span {
+    display: block;
+    font-size: 0.78rem;
+    color: var(--text-soft);
+    margin-bottom: 0.25rem;
+}
+
+.close-cash-meta strong {
+    font-size: 1.1rem;
+    color: var(--text-main);
+}
+
+.close-cash-method-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.85rem;
+}
+
+.close-cash-method-card {
+    padding: 1rem;
+    border-radius: 20px;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.close-cash-method-card strong {
+    font-size: 1.6rem;
+    line-height: 1;
+    color: var(--text-main);
+}
+
+.close-cash-method-card small {
+    color: var(--text-soft);
+    font-size: 0.8rem;
+}
+
+.close-cash-method-label {
+    font-size: 0.82rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.close-cash-method-card.is-cash {
+    background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+    border-color: rgba(249, 115, 22, 0.24);
+}
+
+.close-cash-method-card.is-card {
+    background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+    border-color: rgba(59, 130, 246, 0.18);
+}
+
+.close-cash-method-card.is-transfer {
+    background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 100%);
+    border-color: rgba(16, 185, 129, 0.18);
+}
+
+.close-cash-entry-card {
+    padding: 1rem;
+    border-radius: 22px;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.close-cash-main-input {
+    height: 68px;
+    font-size: 1.75rem;
+    font-weight: 800;
+    text-align: right;
+    padding: 0 1rem;
+}
+
+.close-cash-readonly-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.close-cash-readonly-item {
+    padding: 0.85rem 0.95rem;
+    border-radius: 18px;
+    background: #fafaf9;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+.close-cash-readonly-item span {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--text-soft);
+    margin-bottom: 0.25rem;
+}
+
+.close-cash-readonly-item strong {
+    font-size: 1.15rem;
+}
+
+.close-cash-differences {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.close-cash-difference-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.7rem 0.85rem;
+    border-radius: 16px;
+    background: #fffaf5;
+    border: 1px solid rgba(249, 115, 22, 0.08);
+}
+
+.close-cash-total-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.9rem 1rem;
+    border-radius: 20px;
+    background: #f8fafc;
+    border: 2px solid #e2e8f0;
+}
+
+.close-cash-total-row span {
+    font-size: 0.95rem;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.close-cash-total-row strong {
+    font-size: 1.7rem;
+    letter-spacing: -0.03em;
+}
+
+.local-audit-modal {
+    width: min(96vw, 860px);
+    padding: 1.5rem !important;
+}
+
+.local-audit-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.85rem;
+    margin-bottom: 1rem;
+}
+
+.local-audit-card {
+    padding: 1rem;
+    border-radius: 20px;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.local-audit-card span {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-soft);
+}
+
+.local-audit-card strong {
+    font-size: 1.7rem;
+    line-height: 1;
+}
+
+.local-audit-card.is-cash {
+    background: linear-gradient(180deg, #fff7ed 0%, #ffffff 100%);
+    border-color: rgba(249, 115, 22, 0.22);
+}
+
+.local-audit-card.is-card {
+    background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+    border-color: rgba(59, 130, 246, 0.18);
+}
+
+.local-audit-card.is-transfer {
+    background: linear-gradient(180deg, #ecfdf5 0%, #ffffff 100%);
+    border-color: rgba(16, 185, 129, 0.18);
+}
+
+.local-audit-meta-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+}
+
+.local-audit-path {
+    margin-bottom: 0.9rem;
+    padding: 0.8rem 0.95rem;
+    border-radius: 16px;
+    background: #fafaf9;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    font-size: 0.82rem;
+    color: var(--text-soft);
+    word-break: break-all;
+}
+
+.local-audit-list-shell {
+    border-radius: 20px;
+    background: #fff;
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    padding: 0.9rem;
+}
+
+.local-audit-list-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+    color: var(--text-soft);
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+.local-audit-list {
+    max-height: 320px;
+}
+
 .weighted-modal h3 {
     margin: 0 0 0.35rem;
 }
@@ -1573,6 +1836,10 @@ select.input-control:focus+.select-chevron {
     grid-template-columns: 1fr 1fr;
     gap: 0.75rem;
     margin-top: 1rem;
+}
+
+.close-cash-modal .weighted-actions {
+    grid-template-columns: 1fr 1fr 1fr;
 }
 
 /* NEW CHECKOUT LAYOUT */
@@ -3520,27 +3787,79 @@ select.input-control:focus+.select-chevron {
     }
 }
 
-/* Mixed Payment UI */
-#payment-mixed-group {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
-    transition: all 0.3s ease;
+/* Rediseño Modal de Cobro - Premium Flow */
+.payment-flow-modal {
+    width: min(100%, 650px) !important;
+    padding: 2.5rem 3rem !important;
 }
 
-#payment-mixed-group div {
+.payment-main-summary {
+    margin: 0 0 1.5rem 0;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
+    border-radius: 20px;
+    border: 1px solid #fed7aa;
+    text-align: center;
+}
+
+.payment-summary-total {
     display: flex;
     flex-direction: column;
     gap: 0.25rem;
 }
 
-#payment-mixed-group .input-control {
-    background: #fff;
-    border-color: #cbd5e1;
+.payment-summary-total span {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #9a3412;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
 }
 
-#payment-mixed-group .input-control:focus {
-    border-color: var(--primary-color);
-    box-shadow: 0 0 0 3px rgba(var(--primary-rgb), 0.1);
+.payment-summary-total strong {
+    font-size: 2.75rem;
+    color: #7c2d12;
+    letter-spacing: -0.04em;
+}
+
+.payment-details-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+}
+
+.payment-details-grid .settings-info-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.2rem;
+    padding: 0;
+    border: none;
+}
+
+.payment-details-grid .settings-info-row span {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.payment-details-grid .settings-info-row strong {
+    font-size: 0.95rem;
+    color: var(--text-main);
+}
+
+.payment-method-shell {
+    margin-bottom: 1rem;
+}
+
+#payment-mixed-group {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#payment-remaining-label.paid {
+    color: #10b981 !important;
 }
 
 .diff-good {

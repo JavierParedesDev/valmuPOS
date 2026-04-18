@@ -579,6 +579,8 @@ function updateSettingsUpdateCard(state) {
     const latestVersionLabel = document.getElementById('settings-latest-version-label');
     const checkedAtLabel = document.getElementById('settings-update-checked-at');
     const actionButton = document.getElementById('download-update-btn');
+    const errorRow = document.getElementById('settings-update-error-row');
+    const errorLabel = document.getElementById('settings-update-error');
 
     if (statusLabel) {
         statusLabel.textContent = state?.statusMessage || 'Aun no se ha comprobado si hay actualizaciones.';
@@ -590,6 +592,14 @@ function updateSettingsUpdateCard(state) {
 
     if (checkedAtLabel) {
         checkedAtLabel.textContent = state?.checkedAt ? formatDateTime(state.checkedAt) : 'Aun sin revision';
+    }
+
+    if (errorRow) {
+        const hasError = Boolean(state?.errorMessage);
+        errorRow.style.display = hasError ? '' : 'none';
+        if (hasError && errorLabel) {
+            errorLabel.textContent = state.errorMessage;
+        }
     }
 
     if (actionButton) {
@@ -758,6 +768,9 @@ function bindDispatchView() {
     });
     document.getElementById('dispatch-address-input')?.addEventListener('input', (event) => {
         dispatchState.manualAddress = String(event.target?.value || '').trim();
+    });
+    document.getElementById('dispatch-payment-input')?.addEventListener('change', (event) => {
+        dispatchState.manualPayment = event.target?.value || 'en_ruta';
     });
     document.getElementById('dispatch-add-manual-btn')?.addEventListener('click', addFirstDispatchSearchResult);
     document.getElementById('dispatch-clear-btn')?.addEventListener('click', clearDispatchDraft);
@@ -938,6 +951,12 @@ function bindInfoModal() {
             closeInfoModal();
         }
     });
+    document.getElementById('local-audit-close-btn')?.addEventListener('click', closeLocalAuditSummaryModal);
+    document.getElementById('local-audit-modal-backdrop')?.addEventListener('click', (event) => {
+        if (event.target.id === 'local-audit-modal-backdrop') {
+            closeLocalAuditSummaryModal();
+        }
+    });
 }
 
 let currentConfirmResolve = null;
@@ -1030,6 +1049,7 @@ function clearCurrentSale() {
 function bindCloseCashModal() {
     document.getElementById('close-cash-session-btn')?.addEventListener('click', openCloseCashModal);
     document.getElementById('close-cash-cancel-btn')?.addEventListener('click', closeCloseCashModal);
+    document.getElementById('close-cash-local-btn')?.addEventListener('click', openLocalAuditSummaryModal);
     document.getElementById('close-cash-confirm-btn')?.addEventListener('click', confirmCloseCashSession);
     document.getElementById('close-counted-cash-input')?.addEventListener('input', renderCloseCashDifference);
     document.getElementById('close-counted-card-input')?.addEventListener('input', renderCloseCashDifference);
@@ -1464,6 +1484,309 @@ function openInfoModal(title, message) {
 
 function closeInfoModal() {
     closeInfoModalView();
+}
+
+const LOCAL_AUDIT_STORAGE_KEY = 'valmu-local-sales-audit';
+
+function buildDefaultLocalAuditState() {
+    return {
+        turnId: null,
+        openedAt: null,
+        resetAt: new Date().toISOString(),
+        updatedAt: null,
+        openingCash: 0,
+        salesCount: 0,
+        totals: {
+            cash: 0,
+            card: 0,
+            transfer: 0
+        },
+        entries: []
+    };
+}
+
+function isMissingLocalAuditHandlerError(error) {
+    const message = String(error?.message || error || '');
+    return message.includes("No handler registered for 'local-audit:");
+}
+
+function readLocalAuditFallback() {
+    try {
+        const raw = window.localStorage.getItem(LOCAL_AUDIT_STORAGE_KEY);
+        if (!raw) {
+            return buildDefaultLocalAuditState();
+        }
+
+        const parsed = JSON.parse(raw);
+        return {
+            ...buildDefaultLocalAuditState(),
+            ...parsed,
+            totals: {
+                ...buildDefaultLocalAuditState().totals,
+                ...(parsed?.totals || {})
+            },
+            entries: Array.isArray(parsed?.entries) ? parsed.entries : []
+        };
+    } catch (error) {
+        console.error('Local audit fallback read error:', error);
+        return buildDefaultLocalAuditState();
+    }
+}
+
+function writeLocalAuditFallback(data) {
+    try {
+        const nextData = {
+            ...buildDefaultLocalAuditState(),
+            ...(data || {}),
+            totals: {
+                ...buildDefaultLocalAuditState().totals,
+                ...(data?.totals || {})
+            },
+            entries: Array.isArray(data?.entries) ? data.entries : []
+        };
+        window.localStorage.setItem(LOCAL_AUDIT_STORAGE_KEY, JSON.stringify(nextData));
+        return nextData;
+    } catch (error) {
+        console.error('Local audit fallback write error:', error);
+        return buildDefaultLocalAuditState();
+    }
+}
+
+async function resetLocalAuditFallbackForTurn() {
+    const openingCash = Number(cashSessionState.openingAmount || 0);
+    const nextData = {
+        ...buildDefaultLocalAuditState(),
+        turnId: cashSessionState.turnId,
+        openedAt: cashSessionState.openedAt,
+        resetAt: new Date().toISOString(),
+        openingCash,
+        totals: {
+            cash: openingCash,
+            card: 0,
+            transfer: 0
+        }
+    };
+
+    return {
+        success: true,
+        path: 'Respaldo local del navegador',
+        source: 'fallback',
+        data: writeLocalAuditFallback(nextData)
+    };
+}
+
+async function appendLocalAuditFallbackEntry({ saleId, paymentMethod, total, cash, card, transfer, documentType }) {
+    const currentData = readLocalAuditFallback();
+    const entry = {
+        id: String(saleId || `local-${Date.now()}`),
+        createdAt: new Date().toISOString(),
+        paymentMethod: String(paymentMethod || 'EFECTIVO').toUpperCase(),
+        total: Number(total || 0),
+        cash: Number(cash || 0),
+        card: Number(card || 0),
+        transfer: Number(transfer || 0),
+        documentType: String(documentType || 'Venta'),
+        origin: 'CAJA'
+    };
+
+    const nextData = {
+        ...currentData,
+        salesCount: Number(currentData.salesCount || 0) + 1,
+        updatedAt: new Date().toISOString(),
+        totals: {
+            cash: Number(currentData?.totals?.cash || 0) + Number(entry.cash || 0),
+            card: Number(currentData?.totals?.card || 0) + Number(entry.card || 0),
+            transfer: Number(currentData?.totals?.transfer || 0) + Number(entry.transfer || 0)
+        },
+        entries: [entry, ...(Array.isArray(currentData.entries) ? currentData.entries : [])].slice(0, 500)
+    };
+
+    return {
+        success: true,
+        path: 'Respaldo local del navegador',
+        source: 'fallback',
+        data: writeLocalAuditFallback(nextData)
+    };
+}
+
+async function resetLocalSalesAuditForTurn() {
+    if (typeof window.cajeroAPI?.resetLocalAudit !== 'function') {
+        return resetLocalAuditFallbackForTurn();
+    }
+
+    try {
+        return await window.cajeroAPI.resetLocalAudit({
+            turnId: cashSessionState.turnId,
+            openedAt: cashSessionState.openedAt,
+            openingCash: Number(cashSessionState.openingAmount || 0)
+        });
+    } catch (error) {
+        if (isMissingLocalAuditHandlerError(error)) {
+            return resetLocalAuditFallbackForTurn();
+        }
+        console.error('Local audit reset error:', error);
+        return null;
+    }
+}
+
+async function appendLocalSalesAuditEntry({ saleId, method, total, mixedData, documentType }) {
+    if (typeof window.cajeroAPI?.appendLocalAuditSale !== 'function') {
+        return appendLocalAuditFallbackEntry({
+            saleId,
+            paymentMethod: method,
+            total,
+            cash: 0,
+            card: 0,
+            transfer: 0,
+            documentType
+        });
+    }
+
+    const normalizedMethod = String(method || '').toLowerCase();
+    const cash = normalizedMethod === 'mixto'
+        ? Number(mixedData?.cash || 0)
+        : normalizedMethod === 'efectivo'
+            ? Number(total || 0)
+            : 0;
+    const card = normalizedMethod === 'mixto'
+        ? Number(mixedData?.card || 0)
+        : normalizedMethod === 'tarjeta'
+            ? Number(total || 0)
+            : 0;
+    const transfer = normalizedMethod === 'mixto'
+        ? Number(mixedData?.transfer || 0)
+        : normalizedMethod === 'transferencia'
+            ? Number(total || 0)
+            : 0;
+
+    try {
+        return await window.cajeroAPI.appendLocalAuditSale({
+            saleId,
+            paymentMethod: normalizedMethod === 'mixto' ? 'MIXTO' : capitalizePaymentMethod(normalizedMethod).toUpperCase(),
+            total: Number(total || 0),
+            cash,
+            card,
+            transfer,
+            documentType,
+            origin: 'CAJA'
+        });
+    } catch (error) {
+        if (isMissingLocalAuditHandlerError(error)) {
+            return appendLocalAuditFallbackEntry({
+                saleId,
+                paymentMethod: normalizedMethod === 'mixto' ? 'MIXTO' : capitalizePaymentMethod(normalizedMethod).toUpperCase(),
+                total: Number(total || 0),
+                cash,
+                card,
+                transfer,
+                documentType
+            });
+        }
+        console.error('Local audit append error:', error);
+        return null;
+    }
+}
+
+async function openLocalAuditSummaryModal() {
+    if (typeof window.cajeroAPI?.getLocalAudit !== 'function') {
+        const fallbackResult = {
+            success: true,
+            path: 'Respaldo local del navegador',
+            source: 'fallback',
+            data: readLocalAuditFallback()
+        };
+        renderLocalAuditSummaryModal(fallbackResult);
+        return;
+    }
+
+    try {
+        const result = await window.cajeroAPI.getLocalAudit();
+        if (!result?.success) {
+            throw new Error(result?.error || 'No se pudo leer el auditor local.');
+        }
+        renderLocalAuditSummaryModal(result);
+    } catch (error) {
+        if (isMissingLocalAuditHandlerError(error)) {
+            renderLocalAuditSummaryModal({
+                success: true,
+                path: 'Respaldo local del navegador',
+                source: 'fallback',
+                data: readLocalAuditFallback()
+            });
+            return;
+        }
+
+        openInfoModal('Auditor local', error?.message || 'No se pudo leer el auditor local.');
+    }
+}
+
+function renderLocalAuditSummaryModal(result) {
+    const data = result?.data || {};
+    const totals = data?.totals || {};
+    const entries = Array.isArray(data?.entries) ? data.entries : [];
+    const openingCash = Number(data?.openingCash || 0);
+    const cashTotal = document.getElementById('local-audit-cash-total');
+    const cardTotal = document.getElementById('local-audit-card-total');
+    const transferTotal = document.getElementById('local-audit-transfer-total');
+    const turnLabel = document.getElementById('local-audit-turn-label');
+    const salesCountLabel = document.getElementById('local-audit-sales-count');
+    const updatedAtLabel = document.getElementById('local-audit-updated-at');
+    const pathLabel = document.getElementById('local-audit-path');
+    const listCountLabel = document.getElementById('local-audit-list-count');
+    const list = document.getElementById('local-audit-list');
+
+    if (cashTotal) {
+        cashTotal.textContent = `$${formatCurrency(Number(totals.cash || 0))}`;
+        cashTotal.title = `Incluye fondo inicial de $${formatCurrency(openingCash)}`;
+    }
+    if (cardTotal) {
+        cardTotal.textContent = `$${formatCurrency(Number(totals.card || 0))}`;
+    }
+    if (transferTotal) {
+        transferTotal.textContent = `$${formatCurrency(Number(totals.transfer || 0))}`;
+    }
+    if (turnLabel) {
+        turnLabel.textContent = String(data?.turnId || 'Sin turno');
+    }
+    if (salesCountLabel) {
+        salesCountLabel.textContent = String(Number(data?.salesCount || 0));
+    }
+    if (updatedAtLabel) {
+        updatedAtLabel.textContent = data?.updatedAt
+            ? formatDateTime(data.updatedAt)
+            : (data?.resetAt ? formatDateTime(data.resetAt) : 'Sin datos');
+    }
+    if (pathLabel) {
+        pathLabel.textContent = `Archivo: ${result?.path || 'no disponible'}`;
+    }
+    if (listCountLabel) {
+        listCountLabel.textContent = `${entries.length} registro${entries.length === 1 ? '' : 's'}`;
+    }
+    if (list) {
+        list.innerHTML = entries.length
+            ? entries.map((entry) => `
+                <article class="turn-history-item">
+                    <div class="turn-history-meta">
+                        <strong>Venta #${escapeHtml(entry?.id || 'sin id')}</strong>
+                        <span>${entry?.createdAt ? formatDateTime(entry.createdAt) : 'Sin fecha'}</span>
+                    </div>
+                    <div class="sale-history-badges">
+                        <span class="sale-history-badge is-payment">${escapeHtml(entry?.paymentMethod || 'Sin pago')}</span>
+                        <span class="sale-history-badge ${String(entry?.documentType || '').toLowerCase().includes('factura') || String(entry?.documentType || '').toLowerCase().includes('boleta') ? 'is-fiscal' : 'is-internal'}">${escapeHtml(entry?.documentType || 'Venta')}</span>
+                    </div>
+                    <div class="turn-history-detail">
+                        Total $${formatCurrency(Number(entry?.total || 0))} | Efectivo $${formatCurrency(Number(entry?.cash || 0))} | Tarjeta $${formatCurrency(Number(entry?.card || 0))} | Transferencia $${formatCurrency(Number(entry?.transfer || 0))}
+                    </div>
+                </article>
+            `).join('')
+            : '<div class="turn-history-empty">Aun no hay ventas registradas en el auditor local.</div>';
+    }
+
+    document.getElementById('local-audit-modal-backdrop')?.classList.remove('hidden');
+}
+
+function closeLocalAuditSummaryModal() {
+    document.getElementById('local-audit-modal-backdrop')?.classList.add('hidden');
 }
 
 async function loadCategoryOptions() {
@@ -1938,7 +2261,7 @@ function legacyRenderSalesHistory() {
     return;
 }
 
-async function loadSalesHistory() {
+async function legacyLoadSalesHistory() {
     const apiBaseUrl = normalizeApiBaseUrl(getApiBaseUrl());
     const token = getAuthToken();
 
@@ -1960,19 +2283,21 @@ async function loadSalesHistory() {
         const currentUser = getCurrentUser();
         const currentUserId = Number(currentUser?.id_usuario || currentUser?.idUsuario || currentUser?.id || 0);
 
-        // Filter by current shift if open AND by current user
-        if (cashSessionState.isOpen && cashSessionState.openedAt) {
-            const openedAtDate = new Date(cashSessionState.openedAt);
-            salesHistoryState.items = visibleSales.filter(sale => {
-                const saleDate = new Date(sale.rawDate);
-                const isFromTodayShift = saleDate.getTime() >= (openedAtDate.getTime() - 5000);
-                const isFromCurrentUser = sale.userId === currentUserId;
-                return isFromTodayShift && isFromCurrentUser;
-            });
-        } else {
-            // If no shift open, still filter by user if possible
-            salesHistoryState.items = visibleSales.filter(sale => sale.userId === currentUserId);
-        }
+        // Filter ONLY by current user and current day (ventas del dia), limit to 100 elements to prevent UI lag.
+        const todayTzStr = new Date().toLocaleDateString('es-CL');
+
+        salesHistoryState.items = visibleSales.filter(sale => {
+            if (sale.userId !== currentUserId) return false;
+            if (!sale.rawDate) return true;
+
+            try {
+                const saleTzStr = new Date(sale.rawDate).toLocaleDateString('es-CL');
+                return todayTzStr === saleTzStr;
+            } catch (e) {
+                // Si la fecha es inválida, se devuelve true temporalmente para que no se oculte.
+                return true;
+            }
+        }).slice(0, 150);
     } catch (error) {
         console.error('Sales history error:', error);
         salesHistoryState.items = [];
@@ -1981,6 +2306,143 @@ async function loadSalesHistory() {
     }
 
     renderSalesHistory();
+}
+
+function getDispatchRelatedSaleIds() {
+    return new Set(
+        Object.values(dispatchReceiptState.records || {})
+            .map((record) => Number(record?.saleId || 0))
+            .filter((saleId) => saleId > 0)
+    );
+}
+
+async function loadSalesHistory() {
+    const apiBaseUrl = normalizeApiBaseUrl(getApiBaseUrl());
+    const token = getAuthToken();
+
+    if (!apiBaseUrl || !token) {
+        salesHistoryState.items = [];
+        salesHistoryState.cancelledItems = [];
+        salesHistoryState.currentTab = 'active';
+        renderSalesHistory();
+        return;
+    }
+
+    try {
+        const payload = await fetchSalesHistory({ apiBaseUrl, token });
+        const allSales = normalizeSalesHistory(payload, formatDateTime);
+        const currentUser = getCurrentUser();
+        const currentUserId = Number(currentUser?.id_usuario || currentUser?.idUsuario || currentUser?.id || 0);
+        const dispatchSaleIds = getDispatchRelatedSaleIds();
+        const turnScopedSales = allSales.filter((sale) => isSaleInsideCurrentTurn(sale, {
+            currentUserId,
+            dispatchSaleIds,
+            turnOpenedAt: cashSessionState.openedAt
+        }));
+        const visibleSales = salesHistoryState.showAllDocuments
+            ? turnScopedSales
+            : turnScopedSales.filter((sale) => sale.isFiscal);
+
+        salesHistoryState.items = visibleSales.slice(0, 150);
+        syncTurnSummaryFromSales(turnScopedSales);
+    } catch (error) {
+        console.error('Sales history error:', error);
+        salesHistoryState.items = [];
+        salesHistoryState.cancelledItems = [];
+        setBackendStatus(error?.message || 'No se pudo cargar el historial de ventas.');
+    }
+
+    renderSalesHistory();
+}
+
+function isSaleInsideCurrentTurn(sale, { currentUserId, dispatchSaleIds, turnOpenedAt }) {
+    const saleOrigin = String(sale?.origin || '').toUpperCase();
+
+    if (!sale) {
+        return false;
+    }
+
+    if (saleOrigin === 'DESPACHO' || dispatchSaleIds.has(Number(sale.id || 0))) {
+        return false;
+    }
+
+    if (currentUserId > 0 && Number(sale.userId || 0) !== currentUserId) {
+        return false;
+    }
+
+    if (!sale.rawDate) {
+        return true;
+    }
+
+    const saleTimestamp = new Date(sale.rawDate).getTime();
+    if (!Number.isFinite(saleTimestamp)) {
+        return true;
+    }
+
+    if (turnOpenedAt) {
+        const turnTimestamp = new Date(turnOpenedAt).getTime();
+        if (Number.isFinite(turnTimestamp)) {
+            return saleTimestamp >= turnTimestamp;
+        }
+    }
+
+    const todayTzStr = new Date().toLocaleDateString('es-CL');
+    return new Date(sale.rawDate).toLocaleDateString('es-CL') === todayTzStr;
+}
+
+function buildTurnSummaryFromSales(sales) {
+    return (Array.isArray(sales) ? sales : []).reduce((summary, sale) => {
+        const paymentMethod = String(sale.paymentMethod || '').toUpperCase();
+        const total = Number(sale.total || 0);
+        const paymentCash = Number(sale.paymentCash || 0);
+        const paymentCard = Number(sale.paymentCard || 0);
+        const paymentTransfer = Number(sale.paymentTransfer || 0);
+
+        summary.salesCount += 1;
+
+        if (paymentMethod === 'MIXTO') {
+            summary.totalCash += paymentCash;
+            summary.totalCard += paymentCard;
+            summary.totalTransfer += paymentTransfer;
+        } else if (paymentMethod === 'EFECTIVO') {
+            summary.totalCash += total;
+        } else if (paymentMethod === 'TARJETA') {
+            summary.totalCard += total;
+        } else if (paymentMethod === 'TRANSFERENCIA') {
+            summary.totalTransfer += total;
+        }
+
+        if (sale.document === 'Vale interno') {
+            summary.totalInternal += total;
+        }
+
+        return summary;
+    }, {
+        salesCount: 0,
+        totalCash: 0,
+        totalCard: 0,
+        totalTransfer: 0,
+        totalInternal: 0
+    });
+}
+
+function syncTurnSummaryFromSales(sales) {
+    if (!cashSessionState.isOpen) {
+        return;
+    }
+
+    const preservedWithdrawals = Number(turnSummaryState.totalWithdrawals || 0);
+    const rebuilt = buildTurnSummaryFromSales(sales);
+
+    turnSummaryState.salesCount = rebuilt.salesCount;
+    turnSummaryState.totalCash = rebuilt.totalCash;
+    turnSummaryState.totalCard = rebuilt.totalCard;
+    turnSummaryState.totalTransfer = rebuilt.totalTransfer;
+    turnSummaryState.totalInternal = rebuilt.totalInternal;
+    turnSummaryState.totalWithdrawals = preservedWithdrawals;
+
+    persistTurnSummary();
+    renderTurnSummary();
 }
 
 function renderSalesHistory() {
@@ -2012,6 +2474,9 @@ function buildReceiptRecord({
     customerLabel = null,
     footerMessage = null,
     addressLabel = null,
+    paymentCash = null,
+    paymentCard = null,
+    paymentTransfer = null,
     origin = 'sale'
 }) {
     const saleDate = new Date().toISOString();
@@ -2063,8 +2528,8 @@ function buildReceiptRecord({
         `Fecha: ${formatDateTime(saleDate)}`,
         `Cliente: ${resolvedCustomerLabel}`,
         `Pago: ${resolvedPaymentLabel}`,
+        ...(addressLabel ? [`Dirección: ${addressLabel}`] : []),
         '--------------------------------',
-        ...(addressLabel ? [`Dirección: ${addressLabel}`, '--------------------------------'] : []),
         'DETALLE'
     ];
 
@@ -2127,6 +2592,9 @@ function buildReceiptRecord({
         preview: previewLines.join('\n'),
         footerMessage: resolvedFooterMessage,
         addressLabel,
+        paymentCash,
+        paymentCard,
+        paymentTransfer,
         origin,
         emisor: dteMetadata?.emisor || null,
         xmlContent: dteMetadata?.xmlContent || null,
@@ -2225,7 +2693,7 @@ async function openSaleReceiptModal(saleId) {
                     unitPrice: Number(item.precioVenta),
                     subtotal: Number(item.subtotalLinea || (item.cantidad * item.precioVenta))
                 }));
-                
+
                 // Actualizamos el cache local del Cajero para futuras vistas
                 saveReceiptRecord(record);
             }
@@ -2324,7 +2792,7 @@ async function prepareReceiptReprint() {
     }
 }
 
-function buildDispatchReceiptRecord({ dispatchId, saleId, carrier, snapshot, branchName, addressLabel = '' }) {
+function buildDispatchReceiptRecord({ dispatchId, saleId, carrier, snapshot, branchName, addressLabel = '', paymentLabel = 'En ruta' }) {
     const createdAt = new Date().toISOString();
     const lineItems = snapshot.lines.map((line) => ({
         name: line.productName,
@@ -2375,8 +2843,8 @@ function buildDispatchReceiptRecord({ dispatchId, saleId, carrier, snapshot, bra
         referenceLabel: `Despacho #DSP-${dispatchId}`,
         documentType: 'Vale de despacho',
         isFiscal: false,
-        customerLabel: addressLabel || `${carrier.name} · ${carrier.plate}`,
-        paymentMethod: 'En ruta',
+        customerLabel: `${carrier.name} · ${carrier.plate}`,
+        paymentMethod: paymentLabel,
         subtotal,
         iva,
         total: Number(snapshot.total || 0),
@@ -2384,7 +2852,8 @@ function buildDispatchReceiptRecord({ dispatchId, saleId, carrier, snapshot, bra
         lineItems,
         preview: previewLines.join('\n'),
         footerMessage: 'Mercaderia cargada a ruta. La rendicion se revisa fuera del arqueo de caja.',
-        branchName
+        branchName,
+        addressLabel
     };
 }
 
@@ -2830,6 +3299,7 @@ async function confirmCashSession() {
         cashSessionState.openedAt = data?.caja?.horaApertura || new Date().toISOString();
         setSessionValue('cajaAbierta', 'true');
         resetTurnScopedRuntimeState(true);
+        await resetLocalSalesAuditForTurn();
         addTurnHistoryEntry({
             title: 'Turno iniciado',
             detail: `Fondo de caja declarado: $${formatCurrency(cashSessionState.openingAmount)}`
@@ -3094,10 +3564,19 @@ function handlePaymentMethodChange() {
     });
 
     document.getElementById('payment-mixed-group')?.classList.toggle('hidden', !isMixed);
+
     if (isMixed) {
-        document.getElementById('payment-mixed-cash').value = '';
+        // Inicializar con efectivo el total restante para facilitar el flujo
+        document.getElementById('payment-mixed-cash').value = snapshot.total;
         document.getElementById('payment-mixed-card').value = '';
         document.getElementById('payment-mixed-transfer').value = '';
+
+        // Enfocar el primer campo para empezar a repartir el pago
+        setTimeout(() => {
+            const mixedCash = document.getElementById('payment-mixed-cash');
+            mixedCash?.focus();
+            mixedCash?.select();
+        }, 50);
     }
 
     renderPaymentChange();
@@ -3198,6 +3677,8 @@ async function confirmPaymentFlow() {
 
         const effectiveReceived = isMixed ? receivedValue : (receivedValue || snapshot.total);
 
+        // Validación estricta para mixto: el monto debe ser igual o superior al total
+        // (En mixto usualmente se espera exacto, pero permitimos superior si hay efectivo incluido)
         if (effectiveReceived < snapshot.total) {
             Swal.fire({
                 icon: 'warning',
@@ -3281,7 +3762,10 @@ async function confirmPaymentFlow() {
             customer: saleState.customer,
             documentType: saleState.documentType,
             cart: saleState.cart,
-            dteMetadata: dteResult
+            dteMetadata: dteResult,
+            paymentCash: mixedData?.cash || null,
+            paymentCard: mixedData?.card || null,
+            paymentTransfer: mixedData?.transfer || null
         });
 
         // Actualizar totales de turno
@@ -3304,6 +3788,13 @@ async function confirmPaymentFlow() {
         turnSummaryState.salesCount += 1;
         persistTurnSummary();
         renderTurnSummary();
+        await appendLocalSalesAuditEntry({
+            saleId: result.saleId,
+            method,
+            total: snapshot.total,
+            mixedData,
+            documentType: saleState.documentType
+        });
         decreaseLocalStockFromCart();
 
         addTurnHistoryEntry({
@@ -3698,16 +4189,32 @@ async function confirmCloseCashSession() {
 
     const apiBaseUrl = normalizeApiBaseUrl(getApiBaseUrl());
     const token = getAuthToken();
-    const expectedCash = getExpectedCashAmount();
-    const cashDifference = countedCash - expectedCash;
-    const cardDifference = countedCard - Number(turnSummaryState.totalCard || 0);
-    const transferDifference = countedTransfer - Number(turnSummaryState.totalTransfer || 0);
-    const totalDifference = cashDifference + cardDifference + transferDifference;
 
     if (!apiBaseUrl || !token) {
         setBackendStatus('No hay conexion activa para cerrar la caja.');
         return;
     }
+
+    await loadSalesHistory();
+    await syncCashWithdrawalsFromBackend();
+
+    const countedCardInput = document.getElementById('close-counted-card-input');
+    const countedTransferInput = document.getElementById('close-counted-transfer-input');
+    const autoCard = Number(turnSummaryState.totalCard || 0);
+    const autoTransfer = Number(turnSummaryState.totalTransfer || 0);
+
+    if (countedCardInput) {
+        countedCardInput.value = String(Math.round(autoCard));
+    }
+    if (countedTransferInput) {
+        countedTransferInput.value = String(Math.round(autoTransfer));
+    }
+
+    const expectedCash = getExpectedCashAmount();
+    const cashDifference = countedCash - expectedCash;
+    const cardDifference = 0;
+    const transferDifference = 0;
+    const totalDifference = cashDifference;
 
     if (boletaEnvelopeState.items.length) {
         const shouldForceSend = await openConfirm({
@@ -3739,8 +4246,8 @@ async function confirmCloseCashSession() {
             token,
             totals: {
                 cash: countedCash,
-                card: countedCard,
-                transfer: countedTransfer,
+                card: autoCard,
+                transfer: autoTransfer,
                 internal: Number(turnSummaryState.totalInternal || 0)
             },
             differences: {
@@ -3753,7 +4260,7 @@ async function confirmCloseCashSession() {
 
         addTurnHistoryEntry({
             title: 'Turno cerrado',
-            detail: `Efectivo contado $${formatCurrency(countedCash)} (${formatDifferenceLabel(cashDifference)}), tarjeta $${formatCurrency(countedCard)} (${formatDifferenceLabel(cardDifference)}), transferencias $${formatCurrency(countedTransfer)} (${formatDifferenceLabel(transferDifference)}), retiros $${formatCurrency(turnSummaryState.totalWithdrawals || 0)}. Diferencia total ${formatDifferenceLabel(totalDifference)}.`
+            detail: `Efectivo contado $${formatCurrency(countedCash)} (${formatDifferenceLabel(cashDifference)}), tarjeta $${formatCurrency(autoCard)} (${formatDifferenceLabel(cardDifference)}), transferencias $${formatCurrency(autoTransfer)} (${formatDifferenceLabel(transferDifference)}), retiros $${formatCurrency(turnSummaryState.totalWithdrawals || 0)}. Diferencia total ${formatDifferenceLabel(totalDifference)}.`
         });
         addAuditEntry({
             type: totalDifference === 0 ? 'success' : 'warning',
@@ -3766,8 +4273,8 @@ async function confirmCloseCashSession() {
             await printTurnSummaryReceipt({
                 totals: {
                     cash: countedCash,
-                    card: countedCard,
-                    transfer: countedTransfer
+                    card: autoCard,
+                    transfer: autoTransfer
                 },
                 expected: {
                     cash: expectedCash,
@@ -3788,6 +4295,7 @@ async function confirmCloseCashSession() {
         }
 
         closeCloseCashModal();
+        await resetLocalSalesAuditForTurn();
         resetCashierRuntimeState();
         closeCustomerDisplayWindow();
         setLoginStatus(`Turno cerrado. Diferencia total: ${formatDifferenceLabel(totalDifference)}. Ingresa de nuevo para iniciar otra caja.`);
@@ -5004,7 +5512,7 @@ function buildCustomerDisplayPayload() {
                 : activeCart.length
                     ? 'Revise su compra'
                     : 'Escanee sus productos',
-        cart: activeCart.map((item) => {
+        cart: [...activeCart].reverse().map((item) => {
             const product = findProductById(catalogState.products, item.productId);
 
             if (!product) {
@@ -5465,6 +5973,10 @@ function renderDispatchSection() {
     if (dispatchAddressInput && dispatchAddressInput.value !== dispatchState.manualAddress) {
         dispatchAddressInput.value = dispatchState.manualAddress || '';
     }
+    const dispatchPaymentInput = document.getElementById('dispatch-payment-input');
+    if (dispatchPaymentInput && dispatchPaymentInput.value !== dispatchState.manualPayment) {
+        dispatchPaymentInput.value = dispatchState.manualPayment || 'en_ruta';
+    }
 
     renderDispatchCarrierSummary(getSelectedDispatchCarrier());
     renderDispatchCarrierSummary(getSelectedDispatchCarrier(), 'dispatch-inline-carrier-summary');
@@ -5730,7 +6242,8 @@ async function generateDispatchRecord() {
             carrierId: carrier.id,
             documentTypeId: documentType,
             customerId: customerId,
-            folioDocumento: dteResult?.folio || null
+            folioDocumento: dteResult?.folio || null,
+            manualPayment: dispatchState.manualPayment
         });
 
         const result = await generateDispatchRequest({
@@ -5775,12 +6288,12 @@ async function generateDispatchRecord() {
                     folioDocumento: dteResult.folio
                 },
                 snapshot,
-                method: 'efectivo',
+                method: dispatchState.manualPayment === 'en_ruta' ? 'efectivo' : dispatchState.manualPayment,
                 customer: docTypeLabel === 'Factura' ? customer : null,
                 documentType: docTypeLabel,
                 cart: dispatchState.cart,
                 dteMetadata: dteResult,
-                paymentLabel: 'En ruta',
+                paymentLabel: dispatchState.manualPayment === 'en_ruta' ? 'En ruta' : capitalizePaymentMethod(dispatchState.manualPayment),
                 footerMessage: 'Documento emitido para despacho en ruta. No se considera en el arqueo de caja.',
                 addressLabel: dispatchAddress,
                 origin: 'dispatch'
@@ -5803,7 +6316,8 @@ async function generateDispatchRecord() {
             carrier,
             snapshot,
             branchName: getSelectedBranchName(),
-            addressLabel: Number(documentType) === 3 ? dispatchAddress : ''
+            addressLabel: dispatchAddress,
+            paymentLabel: dispatchState.manualPayment === 'en_ruta' ? 'En ruta' : capitalizePaymentMethod(dispatchState.manualPayment)
         });
 
         dispatchState.records.unshift(record);
@@ -5812,6 +6326,7 @@ async function generateDispatchRecord() {
         dispatchState.cart = [];
         dispatchState.searchQuery = '';
         dispatchState.manualAddress = '';
+        dispatchState.manualPayment = 'en_ruta';
         saveDispatchReceiptRecord(dispatchReceiptRecord);
 
         const searchInput = document.getElementById('dispatch-search-input');

@@ -74,7 +74,8 @@ export function updateDispatchAddressVisibility(selectedTypeId) {
         return;
     }
 
-    addressShell.classList.toggle('hidden', Number(selectedTypeId) !== 3);
+    // El usuario solicito poder ingresar la direccion siempre, para vales, boletas y facturas
+    addressShell.classList.remove('hidden');
 }
 
 export function updateDispatchDocumentTypeUI(selectedTypeId) {

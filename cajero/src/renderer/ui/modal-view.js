@@ -168,16 +168,25 @@ export function openCloseCashModalView({
     document.getElementById('close-total-cash').textContent = `$${formatCurrency(totalCash)}`;
     document.getElementById('close-total-card').textContent = `$${formatCurrency(totalCard)}`;
     document.getElementById('close-total-transfer').textContent = `$${formatCurrency(totalTransfer)}`;
+    const expectedCardLabel = document.getElementById('close-card-expected');
+    const expectedTransferLabel = document.getElementById('close-transfer-expected');
     document.getElementById('close-total-internal').textContent = `$${formatCurrency(totalInternal)}`;
     const withdrawalsLabel = document.getElementById('close-total-withdrawals');
     if (withdrawalsLabel) {
         withdrawalsLabel.textContent = `$${formatCurrency(totalWithdrawals || 0)}`;
     }
+    if (expectedCardLabel) {
+        expectedCardLabel.textContent = `$${formatCurrency(totalCard)}`;
+    }
+    if (expectedTransferLabel) {
+        expectedTransferLabel.textContent = `$${formatCurrency(totalTransfer)}`;
+    }
     document.getElementById('close-expected-cash').textContent = `$${formatCurrency(expectedCash)}`;
     document.getElementById('close-counted-cash-input').value = '0';
-    document.getElementById('close-counted-card-input').value = '0';
-    document.getElementById('close-counted-transfer-input').value = '0';
+    document.getElementById('close-counted-card-input').value = String(Math.round(totalCard || 0));
+    document.getElementById('close-counted-transfer-input').value = String(Math.round(totalTransfer || 0));
     document.getElementById('close-cash-modal-backdrop')?.classList.remove('hidden');
+    document.getElementById('close-counted-cash-input')?.focus();
 }
 
 export function closeCloseCashModalView() {

@@ -1,4 +1,10 @@
 const FINANZAS_PER_PAGE = 20;
+const FINANZAS_TIMEZONE = 'America/Santiago';
+
+function getChileFinanceDateKey(dateValue = new Date()) {
+    const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+    return new Intl.DateTimeFormat('sv-SE', { timeZone: FINANZAS_TIMEZONE }).format(date);
+}
 // Utility to parse localized numeric strings (e.g. "1.234.567" or "1.234,56")
 function parseNumber(val) {
     if (val === null || val === undefined) return 0;
@@ -39,7 +45,7 @@ async function renderFinances() {
     const contentArea = document.getElementById('content-area');
     if (!contentArea) return;
 
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = getChileFinanceDateKey(new Date());
 
     contentArea.innerHTML = `
         <div class="space-y-8 animate-fade-in pb-10">
@@ -343,7 +349,7 @@ function finanzasAplicarFiltros() {
 }
 
 function finanzasActualizarEfectivoHoy() {
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = getChileFinanceDateKey(new Date());
     const sucursal = document.getElementById('fin-filtro-sucursal')?.value || '';
     const sucursalLabel = document.getElementById('fin-filtro-sucursal')?.selectedOptions?.[0]?.textContent?.trim() || '';
     const medioFiltro = document.getElementById('fin-filtro-medio')?.value || '';
@@ -518,8 +524,8 @@ function initFinancesMonthChart(labels, data) {
 }
 
 function finanzasActualizarKPIs() {
-    const hoy = new Date().toISOString().slice(0, 10);
-    const mes = new Date().toISOString().slice(0, 7);
+    const hoy = getChileFinanceDateKey(new Date());
+    const mes = hoy.slice(0, 7);
     const selectedMonth = document.getElementById('fin-filtro-mes')?.value || '';
 
     let montoHoy = 0, countHoy = 0, montoMes = 0, countMes = 0, montoTotal = 0;

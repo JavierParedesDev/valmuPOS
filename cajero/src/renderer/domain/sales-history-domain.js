@@ -4,6 +4,10 @@ export function normalizeSalesHistory(payload, formatDateTime) {
         total: Number(sale.total || 0),
         document: String(sale.tipoDoc || 'Venta'),
         paymentMethod: String(sale.metodoPago || 'Sin pago'),
+        origin: String(sale.origenVenta || sale.origen_venta || 'CAJA').toUpperCase(),
+        paymentCash: Number(sale.pago_efectivo || sale.pagoEfectivo || 0),
+        paymentCard: Number(sale.pago_tarjeta || sale.pagoTarjeta || 0),
+        paymentTransfer: Number(sale.pago_transferencia || sale.pagoTransferencia || 0),
         isFiscal: Boolean(sale.esFiscal),
         folioDocumento: sale.folioDocumento || sale.folio || sale.numeroFolio || null,
         tipoDte: Number(sale.tipoDte || sale.tipo_dte || sale.dteType || 0) || null,
@@ -25,6 +29,9 @@ export function applyCancelledSaleToSummary({ sale, turnSummaryState, persistTur
 
     const paymentMethod = String(sale.paymentMethod || '').toUpperCase();
     const total = Number(sale.total || 0);
+    const paymentCash = Number(sale.paymentCash || 0);
+    const paymentCard = Number(sale.paymentCard || 0);
+    const paymentTransfer = Number(sale.paymentTransfer || 0);
 
     if (paymentMethod === 'EFECTIVO') {
         turnSummaryState.totalCash = Math.max(0, turnSummaryState.totalCash - total);
@@ -32,6 +39,10 @@ export function applyCancelledSaleToSummary({ sale, turnSummaryState, persistTur
         turnSummaryState.totalCard = Math.max(0, turnSummaryState.totalCard - total);
     } else if (paymentMethod === 'TRANSFERENCIA') {
         turnSummaryState.totalTransfer = Math.max(0, turnSummaryState.totalTransfer - total);
+    } else if (paymentMethod === 'MIXTO') {
+        turnSummaryState.totalCash = Math.max(0, turnSummaryState.totalCash - paymentCash);
+        turnSummaryState.totalCard = Math.max(0, turnSummaryState.totalCard - paymentCard);
+        turnSummaryState.totalTransfer = Math.max(0, turnSummaryState.totalTransfer - paymentTransfer);
     }
 
     if (sale.document === 'Vale interno') {

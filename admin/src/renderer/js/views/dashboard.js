@@ -1,6 +1,333 @@
 let dashboardRefreshTimer = null;
+const DASHBOARD_LIVE_REFRESH_MS = 8000;
+let dashboardInventoryRefreshListenerBound = false;
+const ADMIN_TIMEZONE = 'America/Santiago';
+
+function isWeightedDashboardProduct(value) {
+    return value === true || value === 1 || value === '1';
+}
+
+function bindDashboardInventoryRefreshListener() {
+    if (dashboardInventoryRefreshListenerBound) return;
+
+    window.addEventListener('valmu:inventory-changed', () => {
+        if (currentPage !== 'dashboard' || !isBodeguero()) {
+            return;
+        }
+
+        void hydrateBodegueroDashboard();
+    });
+
+    dashboardInventoryRefreshListenerBound = true;
+}
+
+function normalizeBodegaLookupValue(value) {
+    return String(value || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+        .trim();
+}
+
+function formatBodegaLookupStock(quantity, esPesable) {
+    const numericValue = Number(quantity || 0);
+    return isWeightedDashboardProduct(esPesable)
+        ? `${numericValue.toFixed(3)} Kg`
+        : `${Math.round(numericValue).toLocaleString('es-CL')} un.`;
+}
+
+function parseInventoryStockValue(value) {
+    if (value === null || value === undefined || value === '') return 0;
+    if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : 0;
+    }
+
+    const rawValue = String(value).trim();
+    if (!rawValue) return 0;
+
+    const cleanedValue = rawValue.replace(/[^0-9.,-]/g, '');
+    if (!cleanedValue) return 0;
+
+    const hasComma = cleanedValue.includes(',');
+    const hasDot = cleanedValue.includes('.');
+
+    let normalizedValue = cleanedValue;
+
+    if (hasComma && hasDot) {
+        if (cleanedValue.lastIndexOf(',') > cleanedValue.lastIndexOf('.')) {
+            normalizedValue = cleanedValue.replace(/\./g, '').replace(/,/g, '.');
+        } else {
+            normalizedValue = cleanedValue.replace(/,/g, '');
+        }
+    } else if (hasComma) {
+        normalizedValue = cleanedValue.replace(/,/g, '.');
+    }
+
+    const parsedValue = Number(normalizedValue);
+    return Number.isFinite(parsedValue) ? parsedValue : 0;
+}
+
+function formatBodegaLookupPrice(value) {
+    const numericValue = Number(value || 0);
+    return `$${Math.round(numericValue).toLocaleString('es-CL')}`;
+}
+
+function renderBodegaLookupResults(term = '') {
+    const container = document.getElementById('bodega-lookup-results');
+    const status = document.getElementById('bodega-lookup-status');
+    if (!container || !status) return;
+
+    const normalizedTerm = normalizeBodegaLookupValue(term);
+    if (!normalizedTerm) {
+        status.textContent = 'Escanea con pistola o escribe nombre/código para consultar stock.';
+        container.innerHTML = '<div class="text-sm text-gray-400">Aún no hay búsqueda activa.</div>';
+        return;
+    }
+
+    const catalog = Array.isArray(window.bodegaLookupCatalog) ? window.bodegaLookupCatalog : [];
+    const branchMatrix = window.bodegaLookupBranchMatrix instanceof Map ? window.bodegaLookupBranchMatrix : new Map();
+    const tokens = normalizedTerm.split(/\s+/).filter(Boolean);
+
+    const matches = catalog
+        .map((product) => {
+            const normalizedName = normalizeBodegaLookupValue(product?.nombreProducto);
+            const normalizedCode = normalizeBodegaLookupValue(product?.codigoBarras);
+            const haystack = [normalizedName, normalizedCode].filter(Boolean).join(' ');
+            if (!tokens.every((token) => haystack.includes(token))) return null;
+
+            let score = 0;
+            if (normalizedCode === normalizedTerm) score += 100;
+            if (normalizedName === normalizedTerm) score += 80;
+            if (normalizedCode.startsWith(normalizedTerm)) score += 30;
+            if (normalizedName.startsWith(normalizedTerm)) score += 20;
+
+            return { product, score };
+        })
+        .filter(Boolean)
+        .sort((left, right) => {
+            if (right.score !== left.score) return right.score - left.score;
+            return String(left.product?.nombreProducto || '').localeCompare(String(right.product?.nombreProducto || ''), 'es', { sensitivity: 'base' });
+        })
+        .slice(0, 8);
+
+    if (!matches.length) {
+        status.textContent = `Sin resultados para "${term}".`;
+        container.innerHTML = '<div class="text-sm text-red-500 font-medium">No se encontró ningún producto con ese nombre o código.</div>';
+        return;
+    }
+
+    status.textContent = `${matches.length} coincidencia(s) encontradas para "${term}".`;
+    container.innerHTML = matches.map(({ product }) => {
+        const stockEntries = (branchMatrix.get(Number(product.id_producto)) || []).sort((left, right) =>
+            String(left.branchName || '').localeCompare(String(right.branchName || ''), 'es', { sensitivity: 'base' })
+        );
+        const detailPrice = Number(product?.precioDetalle ?? product?.precio ?? 0);
+        const wholesalePrice = Number(product?.precioMayor ?? 0);
+        const offerPrice = Number(product?.precioOferta ?? 0);
+        const priceCards = [
+            `
+                <div class="rounded-xl px-3 py-2 border border-orange-100 bg-orange-50/70">
+                    <div class="text-[10px] uppercase tracking-widest text-gray-400 font-black">Precio venta</div>
+                    <div class="text-sm font-black text-orange-700">${formatBodegaLookupPrice(detailPrice)}</div>
+                </div>
+            `
+        ];
+
+        if (wholesalePrice > 0) {
+            priceCards.push(`
+                <div class="rounded-xl px-3 py-2 border border-blue-100 bg-blue-50/80">
+                    <div class="text-[10px] uppercase tracking-widest text-gray-400 font-black">Mayorista</div>
+                    <div class="text-sm font-black text-blue-700">${formatBodegaLookupPrice(wholesalePrice)}</div>
+                </div>
+            `);
+        }
+
+        if (offerPrice > 0) {
+            priceCards.push(`
+                <div class="rounded-xl px-3 py-2 border border-pink-100 bg-pink-50/80">
+                    <div class="text-[10px] uppercase tracking-widest text-gray-400 font-black">Oferta</div>
+                    <div class="text-sm font-black text-pink-700">${formatBodegaLookupPrice(offerPrice)}</div>
+                </div>
+            `);
+        }
+
+        return `
+            <div class="rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+                <div class="flex items-start justify-between gap-3 mb-3">
+                    <div>
+                        <div class="font-black text-gray-900">${product.nombreProducto}</div>
+                        <div class="text-[11px] text-gray-400 font-mono">${product.codigoBarras || 'Sin código'}</div>
+                    </div>
+                    <span class="text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-full ${isWeightedDashboardProduct(product.esPesable) ? 'bg-amber-50 text-amber-700' : 'bg-slate-100 text-slate-600'}">
+                        ${isWeightedDashboardProduct(product.esPesable) ? 'Pesable' : 'Unidad'}
+                    </span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mb-3">
+                    ${priceCards.join('')}
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    ${stockEntries.length ? stockEntries.map((entry) => `
+                        <div class="rounded-xl px-3 py-2 border ${Number(entry.stock || 0) > 0 ? 'border-emerald-100 bg-emerald-50/70' : 'border-red-100 bg-red-50/70'}">
+                            <div class="text-[10px] uppercase tracking-widest text-gray-400 font-black">${entry.branchName}</div>
+                            <div class="text-sm font-black ${Number(entry.stock || 0) > 0 ? 'text-emerald-700' : 'text-red-700'}">${formatBodegaLookupStock(entry.stock, entry.esPesable)}</div>
+                        </div>
+                    `).join('') : '<div class="text-sm text-gray-400">Sin stock registrado en sucursales.</div>'}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+function bindBodegaLookup() {
+    const input = document.getElementById('bodega-lookup-input');
+    if (!input) return;
+
+    let timer = null;
+    input.addEventListener('input', () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => {
+            renderBodegaLookupResults(input.value);
+        }, 180);
+    });
+
+    input.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        renderBodegaLookupResults(input.value);
+    });
+
+    input.focus();
+}
+
+function formatDashboardMoney(value) {
+    return `$${Math.round(Number(value || 0)).toLocaleString('es-CL')}`;
+}
+
+function getChileDateKey(dateValue = new Date()) {
+    const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+    return new Intl.DateTimeFormat('sv-SE', { timeZone: ADMIN_TIMEZONE }).format(date);
+}
+
+function parseDashboardDateValue(rawDate) {
+    const value = String(rawDate || '').trim();
+    if (!value) return null;
+
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(value)) {
+        return new Date(value.replace(' ', 'T'));
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return new Date(`${value}T12:00:00`);
+    }
+
+    if (/^\d{2}-\d{2}-\d{4}/.test(value)) {
+        const p = value.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
+        if (p) {
+            return new Date(`${p[3]}-${p[2]}-${p[1]}T12:00:00`);
+        }
+    }
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function resolveApiData(payload) {
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (payload?.data && typeof payload.data === 'object') return payload.data;
+    if (Array.isArray(payload)) return payload;
+    if (payload && typeof payload === 'object') return payload;
+    return null;
+}
+
+function renderAdminSalesSplitCards(target, metrics = {}) {
+    if (!target) return;
+
+    const caja = metrics?.caja || {};
+    const despacho = metrics?.despacho || {};
+
+    target.innerHTML = `
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div class="rounded-2xl border border-orange-100 bg-gradient-to-br from-orange-50 to-white p-5 shadow-sm">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <p class="text-[11px] font-black uppercase tracking-[0.2em] text-orange-500">Caja</p>
+                        <h3 class="text-xl font-black text-gray-900">Total caja de sucursales</h3>
+                    </div>
+                    <div class="h-11 w-11 rounded-2xl bg-orange-500 text-white flex items-center justify-center text-xl shadow-md">
+                        <i class="bi bi-shop"></i>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div class="rounded-xl border border-orange-100 bg-white px-4 py-3">
+                        <span class="text-[10px] uppercase tracking-widest font-black text-gray-400">SII</span>
+                        <strong class="block text-lg font-black text-gray-900 mt-1">${formatDashboardMoney(caja.ventasSII)}</strong>
+                        <small class="block text-[11px] text-gray-400 mt-1">Solo caja</small>
+                    </div>
+                    <div class="rounded-xl border border-orange-100 bg-white px-4 py-3">
+                        <span class="text-[10px] uppercase tracking-widest font-black text-gray-400">Internas</span>
+                        <strong class="block text-lg font-black text-gray-900 mt-1">${formatDashboardMoney(caja.ventasInternas)}</strong>
+                        <small class="block text-[11px] text-gray-400 mt-1">Solo caja</small>
+                    </div>
+                    <div class="rounded-xl border border-orange-100 bg-white px-4 py-3">
+                        <span class="text-[10px] uppercase tracking-widest font-black text-gray-400">Ganancia</span>
+                        <strong class="block text-lg font-black text-emerald-600 mt-1">${formatDashboardMoney(caja.gananciaNeta)}</strong>
+                        <small class="block text-[11px] text-gray-400 mt-1">Solo caja</small>
+                    </div>
+                </div>
+            </div>
+            <div class="rounded-2xl border border-sky-100 bg-gradient-to-br from-sky-50 to-white p-5 shadow-sm">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <p class="text-[11px] font-black uppercase tracking-[0.2em] text-sky-500">Despacho</p>
+                        <h3 class="text-xl font-black text-gray-900">Ventas por transporte</h3>
+                    </div>
+                    <div class="h-11 w-11 rounded-2xl bg-sky-500 text-white flex items-center justify-center text-xl shadow-md">
+                        <i class="bi bi-truck"></i>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div class="rounded-xl border border-sky-100 bg-white px-4 py-3">
+                        <span class="text-[10px] uppercase tracking-widest font-black text-gray-400">SII</span>
+                        <strong class="block text-lg font-black text-gray-900 mt-1">${formatDashboardMoney(despacho.ventasSII)}</strong>
+                        <small class="block text-[11px] text-gray-400 mt-1">Despacho + en ruta</small>
+                    </div>
+                    <div class="rounded-xl border border-sky-100 bg-white px-4 py-3">
+                        <span class="text-[10px] uppercase tracking-widest font-black text-gray-400">Internas</span>
+                        <strong class="block text-lg font-black text-gray-900 mt-1">${formatDashboardMoney(despacho.ventasInternas)}</strong>
+                        <small class="block text-[11px] text-gray-400 mt-1">Despacho + en ruta</small>
+                    </div>
+                    <div class="rounded-xl border border-sky-100 bg-white px-4 py-3">
+                        <span class="text-[10px] uppercase tracking-widest font-black text-gray-400">Ganancia</span>
+                        <strong class="block text-lg font-black text-emerald-600 mt-1">${formatDashboardMoney(despacho.gananciaNeta)}</strong>
+                        <small class="block text-[11px] text-gray-400 mt-1">Despacho + en ruta</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+function renderAdminBranchSplitTable(target, rows = []) {
+    if (!target) return;
+
+    target.innerHTML = rows.length ? rows.map((row) => `
+        <tr class="hover:bg-slate-50/80 transition-colors">
+            <td class="py-3">
+                <div class="font-bold text-gray-900">${row.nombreSucursal || 'Sucursal'}</div>
+                <div class="text-[10px] text-gray-400">ID ${row.id_sucursal || '-'}</div>
+            </td>
+            <td class="py-3 text-right font-semibold text-orange-700">${formatDashboardMoney(row.ventasSIICaja)}</td>
+            <td class="py-3 text-right font-semibold text-orange-700">${formatDashboardMoney(row.ventasInternasCaja)}</td>
+            <td class="py-3 text-right font-semibold text-emerald-600">${formatDashboardMoney(row.gananciaCaja)}</td>
+            <td class="py-3 text-right font-semibold text-sky-700">${formatDashboardMoney(row.ventasSIIDespacho)}</td>
+            <td class="py-3 text-right font-semibold text-sky-700">${formatDashboardMoney(row.ventasInternasDespacho)}</td>
+            <td class="py-3 text-right font-semibold text-emerald-600">${formatDashboardMoney(row.gananciaDespacho)}</td>
+        </tr>
+    `).join('') : '<tr><td colspan="7" class="text-center py-10 text-gray-400 italic">No hay ventas registradas para hoy.</td></tr>';
+}
 
 async function renderDashboard() {
+    bindDashboardInventoryRefreshListener();
     if (dashboardRefreshTimer) {
         clearInterval(dashboardRefreshTimer);
         dashboardRefreshTimer = null;
@@ -73,6 +400,28 @@ async function renderDashboard() {
                     </button>
                 </div>
 
+                <div class="bg-white rounded-xl border border-gray-200 shadow-sm mb-6 overflow-hidden">
+                    <div class="px-6 py-4 border-b border-gray-100 bg-slate-50/80 flex items-center justify-between gap-4">
+                        <div>
+                            <h3 class="font-bold text-gray-900 flex items-center gap-2">
+                                <i class="bi bi-upc-scan text-sky-600"></i>
+                                Consultador de Productos
+                            </h3>
+                            <p class="text-xs text-gray-500 mt-1">Compatible con escáner tipo pistola: escanea o escribe el código y presiona Enter.</p>
+                        </div>
+                    </div>
+                    <div class="p-6">
+                        <div class="flex flex-col lg:flex-row gap-3 mb-3">
+                            <input type="text" id="bodega-lookup-input" class="form-control" placeholder="Escanear o buscar por nombre/código de barras">
+                            <button class="btn btn-primary" type="button" onclick="renderBodegaLookupResults(document.getElementById('bodega-lookup-input')?.value || '')">Consultar</button>
+                        </div>
+                        <p id="bodega-lookup-status" class="text-xs text-gray-500 mb-4">Preparando catálogo para consulta...</p>
+                        <div id="bodega-lookup-results" class="grid gap-3">
+                            <div class="text-sm text-gray-400">Cargando productos para consulta...</div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Stats Grid Bodeguero -->
                 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                     <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
@@ -94,16 +443,6 @@ async function renderDashboard() {
                         </div>
                         <h3 id="stat-low-stock" class="text-2xl font-black text-red-600">0</h3>
                         <p class="text-xs text-red-400 mt-1 font-medium">Requieren reposición</p>
-                    </div>
-                    <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-                        <div class="flex items-center justify-between mb-3">
-                            <span class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Ingresos Hoy</span>
-                            <div class="h-8 w-8 rounded-lg bg-green-50 text-green-600 flex items-center justify-center">
-                                <i class="bi bi-arrow-down-circle"></i>
-                            </div>
-                        </div>
-                        <h3 id="stat-bodega-ingresos-hoy" class="text-2xl font-black text-green-600">0</h3>
-                        <p class="text-xs text-gray-400 mt-1">Movimientos de entrada</p>
                     </div>
                     <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
                         <div class="flex items-center justify-between mb-3">
@@ -154,7 +493,7 @@ async function renderDashboard() {
                 clearInterval(dashboardRefreshTimer);
                 dashboardRefreshTimer = null;
             }
-        }, 60000);
+        }, DASHBOARD_LIVE_REFRESH_MS);
 
         return;
     }
@@ -249,6 +588,46 @@ async function renderDashboard() {
                 </div>
             </div>
 
+            <div class="mt-6 bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                <div class="flex items-center justify-between gap-3 mb-5">
+                    <div>
+                        <h3 class="font-bold text-gray-900">Reporte Separado por Canal</h3>
+                        <p class="text-sm text-gray-500 mt-1">Resumen diferenciado entre ventas de caja y ventas por despacho.</p>
+                    </div>
+                    <span class="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Admin</span>
+                </div>
+                <div id="dashboard-sales-split-cards">
+                    <div class="text-sm text-gray-400">Cargando resumen por canal...</div>
+                </div>
+            </div>
+
+            <div class="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+                <div class="px-6 py-4 border-b border-gray-100 bg-slate-50/80 flex items-center justify-between gap-3">
+                    <div>
+                        <h3 class="font-bold text-gray-900">Detalle por Sucursal</h3>
+                        <p class="text-sm text-gray-500 mt-1">Separación de Casa Matriz, Bodega y despacho dentro de cada sucursal.</p>
+                    </div>
+                </div>
+                <div class="table-shell" style="max-height: 320px; overflow-y: auto;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Sucursal</th>
+                                <th style="text-align: right;">Caja SII</th>
+                                <th style="text-align: right;">Caja Internas</th>
+                                <th style="text-align: right;">Caja Ganancia</th>
+                                <th style="text-align: right;">Despacho SII</th>
+                                <th style="text-align: right;">Despacho Internas</th>
+                                <th style="text-align: right;">Despacho Ganancia</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashboard-branch-split-list">
+                            <tr><td colspan="7" class="text-center py-10 text-gray-400 italic">Cargando resumen por sucursal...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- New Row: Critical Stock -->
             <div class="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm">
                 <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-red-50/30">
@@ -292,12 +671,19 @@ async function renderDashboard() {
 
 async function hydrateDashboard() {
     const token = getAuthToken();
-    const today = new Date();
-    const hoyStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const hoyStr = getChileDateKey(new Date());
     const bodegueroMode = isBodeguero();
     const activeBranchId = getActiveBranchId();
 
     try {
+        const [kpisRes, branchSalesRes] = await Promise.all([
+            apiRequest({ endpoint: '/reportes/kpis-diarios', token }),
+            apiRequest({ endpoint: '/reportes/ventas-por-sucursal', token })
+        ]);
+
+        const splitMetrics = resolveApiData(kpisRes) || {};
+        const branchSplitRows = resolveApiData(branchSalesRes) || [];
+
         // Helper: parse localized numbers like "9.215.063.872" or "1,234.56"
         const parseNumber = (v) => {
             if (v === null || v === undefined) return 0;
@@ -383,7 +769,8 @@ async function hydrateDashboard() {
                         ...item,
                         id_sucursal: branch.id_sucursal,
                         branchName: branch.nombreSucursal,
-                        stock
+                        stock,
+                        esPesable: isWeightedDashboardProduct(item?.esPesable)
                     });
                 }
             });
@@ -400,7 +787,8 @@ async function hydrateDashboard() {
         for (let i = 6; i >= 0; i--) {
             const d = new Date();
             d.setDate(d.getDate() - i);
-            last7Days.push(d.toISOString().slice(0, 10));
+            d.setHours(12, 0, 0, 0);
+            last7Days.push(getChileDateKey(d));
         }
         const salesByDay = last7Days.reduce((acc, date) => ({ ...acc, [date]: 0 }), {});
 
@@ -408,19 +796,10 @@ async function hydrateDashboard() {
             const rawDate = (s.fecha_venta || s.fechaVenta || s.created_at || '');
             if (!rawDate) return;
 
-            // Robust UTC-aware parsing
-            let normalizedDate = rawDate;
-            if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(rawDate)) {
-                normalizedDate = rawDate.replace(' ', 'T') + 'Z'; // Force UTC
-            } else if (/^\d{2}-\d{2}-\d{4}/.test(rawDate)) {
-                const p = rawDate.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
-                normalizedDate = `${p[3]}-${p[2]}-${p[1]}T00:00:00Z`;
-            }
+            const dateObj = parseDashboardDateValue(rawDate);
+            if (!dateObj) return;
 
-            const dateObj = new Date(normalizedDate);
-            if (isNaN(dateObj.getTime())) return;
-
-            const date = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
+            const date = getChileDateKey(dateObj);
             const total = Number(s.total || s.monto_total || 0);
 
             if (salesByDay[date] !== undefined) {
@@ -441,6 +820,8 @@ async function hydrateDashboard() {
         const profitEl = document.getElementById('stat-profit-today');
         const inventoryEl = document.getElementById('stat-inventory-value');
         const lowStockEl = document.getElementById('stat-low-stock');
+        const splitCards = document.getElementById('dashboard-sales-split-cards');
+        const branchSplitTable = document.getElementById('dashboard-branch-split-list');
 
         if (salesEl) salesEl.textContent = `$${todaySales.toLocaleString('es-CL')}`;
         if (countEl) countEl.textContent = `${todayCount} tickets registrados`;
@@ -450,6 +831,8 @@ async function hydrateDashboard() {
             inventoryEl.textContent = `$${fmt.format(Math.round(totalValue))}`;
         }
         if (lowStockEl) lowStockEl.textContent = productsWithLowStock;
+        renderAdminSalesSplitCards(splitCards, splitMetrics);
+        renderAdminBranchSplitTable(branchSplitTable, Array.isArray(branchSplitRows) ? branchSplitRows : []);
 
         // Recent Sales List
         const recentList = document.getElementById('dashboard-recent-list');
@@ -486,8 +869,8 @@ async function hydrateDashboard() {
                     <td class="py-3 text-sm text-gray-600">${item.branchName}</td>
                     <td class="py-3 text-right">
                         <span class="px-2 py-0.5 rounded text-sm font-black text-red-600 bg-red-50 border border-red-100">
-                            ${item.esPesable ? item.stock.toFixed(3) : Math.round(item.stock)} 
-                            <small class="font-normal opacity-50">${item.esPesable ? 'Kg' : 'un.'}</small>
+                            ${isWeightedDashboardProduct(item.esPesable) ? item.stock.toFixed(3) : Math.round(item.stock)} 
+                            <small class="font-normal opacity-50">${isWeightedDashboardProduct(item.esPesable) ? 'Kg' : 'un.'}</small>
                         </span>
                     </td>
                     <td class="py-3 text-center">
@@ -496,7 +879,7 @@ async function hydrateDashboard() {
                                 data-id="${item.id_producto}" 
                                 data-branch="${item.id_sucursal}"
                                 data-name="${item.nombreProducto}"
-                                data-pesable="${item.esPesable ? '1' : '0'}"
+                                data-pesable="${isWeightedDashboardProduct(item.esPesable) ? '1' : '0'}"
                                 data-stock="${item.stock}"
                                 title="Agregar stock">
                             <i class="bi bi-plus-lg"></i> Agregar
@@ -677,27 +1060,6 @@ async function hydrateBodegueroDashboard() {
     const token = getAuthToken();
     const activeBranchId = getActiveBranchId();
 
-    const parseNumber = (v) => {
-        if (v === null || v === undefined) return 0;
-        if (typeof v === 'number') return v;
-        let s = String(v).trim();
-        if (s === '') return 0;
-        s = s.replace(/[^0-9.,-]/g, '');
-        if (s.indexOf('.') !== -1 && s.indexOf(',') !== -1) {
-            s = s.replace(/\./g, '');
-            s = s.replace(/,/g, '.');
-        } else if (s.indexOf(',') !== -1 && s.indexOf('.') === -1) {
-            s = s.replace(/,/g, '.');
-        } else {
-            const parts = s.split('.');
-            if (parts.length > 1 && parts[parts.length - 1].length === 3) {
-                s = s.replace(/\./g, '');
-            }
-        }
-        const n = parseFloat(s);
-        return Number.isFinite(n) ? n : 0;
-    };
-
     try {
         // Obtener sucursales y filtrar por la asignada
         const branchRes = await apiRequest({ endpoint: '/sucursales', token });
@@ -705,12 +1067,42 @@ async function hydrateBodegueroDashboard() {
         const branches = activeBranchId
             ? allBranches.filter((branch) => Number(branch.id_sucursal) === Number(activeBranchId))
             : allBranches;
+        const lookupBranches = allBranches;
 
         // Obtener inventario
         const inventoryPromises = branches.map(b =>
             apiRequest({ endpoint: `/productos/inventario?id_sucursal=${b.id_sucursal}`, token })
         );
         const invResults = await Promise.all(inventoryPromises);
+        const lookupInventoryPromises = lookupBranches.map((branch) =>
+            apiRequest({ endpoint: `/productos/inventario?id_sucursal=${branch.id_sucursal}`, token })
+        );
+        const lookupInventoryResults = await Promise.all(lookupInventoryPromises);
+        const productRes = await apiRequest({ endpoint: '/productos?limit=10000&page=1&offset=0', token });
+        const lookupCatalog = Array.isArray(productRes?.data) ? productRes.data : [];
+        const lookupMatrix = new Map();
+
+        lookupInventoryResults.forEach((res, index) => {
+            const branch = lookupBranches[index];
+            const stockItems = Array.isArray(res?.data) ? res.data : [];
+
+            stockItems.forEach((item) => {
+                const productId = Number(item?.id_producto);
+                if (!productId) return;
+
+                const currentEntries = lookupMatrix.get(productId) || [];
+                currentEntries.push({
+                    id_sucursal: branch?.id_sucursal,
+                    branchName: branch?.nombreSucursal || 'Sucursal',
+                    stock: parseInventoryStockValue(item.stockActual ?? item.cantidad ?? item.stock ?? 0),
+                    esPesable: isWeightedDashboardProduct(item?.esPesable)
+                });
+                lookupMatrix.set(productId, currentEntries);
+            });
+        });
+
+        window.bodegaLookupCatalog = lookupCatalog;
+        window.bodegaLookupBranchMatrix = lookupMatrix;
 
         // Contar productos y stock crítico
         const lowStockThreshold = parseInt(localStorage.getItem('valmu_low_stock_threshold') || '10', 10);
@@ -723,7 +1115,7 @@ async function hydrateBodegueroDashboard() {
             totalProductos += stockItems.length;
 
             stockItems.forEach(item => {
-                const stock = parseNumber(item.stockActual || item.cantidad || item.stock || 0);
+                const stock = parseInventoryStockValue(item.stockActual ?? item.cantidad ?? item.stock ?? 0);
                 if (stock >= 0 && stock <= lowStockThreshold) {
                     criticalItems.push({
                         ...item,
@@ -738,40 +1130,23 @@ async function hydrateBodegueroDashboard() {
         // Actualizar stats
         const statTotalProductos = document.getElementById('stat-bodega-total-productos');
         const statLowStock = document.getElementById('stat-low-stock');
-        const statIngresosHoy = document.getElementById('stat-bodega-ingresos-hoy');
         const statMermasMes = document.getElementById('stat-bodega-mermas-mes');
 
         if (statTotalProductos) statTotalProductos.textContent = totalProductos.toLocaleString('es-CL');
         if (statLowStock) statLowStock.textContent = criticalItems.length;
 
-        // Intentar obtener movimientos de hoy (ingresos)
-        try {
-            const today = new Date().toISOString().slice(0, 10);
-            const movRes = await apiRequest({ endpoint: '/movimientos', token });
-            const movimientos = Array.isArray(movRes?.data) ? movRes.data : (Array.isArray(movRes) ? movRes : []);
-
-            const ingresosHoy = movimientos.filter(m => {
-                const fecha = (m.fecha || m.created_at || '').slice(0, 10);
-                const tipo = (m.tipo || m.tipoMovimiento || '').toUpperCase();
-                return fecha === today && (tipo === 'ENTRADA' || tipo === 'INGRESO' || tipo === 'SOBRANTE');
-            }).length;
-
-            if (statIngresosHoy) statIngresosHoy.textContent = ingresosHoy;
-        } catch (_e) {
-            if (statIngresosHoy) statIngresosHoy.textContent = '-';
-        }
-
         // Intentar obtener mermas del mes
         try {
-            const mermasRes = await apiRequest({ endpoint: '/mermas', token });
+            const mermasRes = await apiRequest({ endpoint: '/productos/mermas', token, silentNonJson: true });
             const mermas = Array.isArray(mermasRes?.data) ? mermasRes.data : (Array.isArray(mermasRes) ? mermasRes : []);
 
             const now = new Date();
             const mesActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
             const mermasMes = mermas.filter(m => {
-                const fecha = (m.fecha || m.created_at || '').slice(0, 7);
-                return fecha === mesActual;
+                const fecha = String(m.fechaMov || m.fecha || m.created_at || '').slice(0, 7);
+                const tipo = String(m.tipoMovimiento || m.tipo || '').toUpperCase();
+                return fecha === mesActual && tipo === 'MERMA';
             }).length;
 
             if (statMermasMes) statMermasMes.textContent = mermasMes;
@@ -791,8 +1166,8 @@ async function hydrateBodegueroDashboard() {
                     <td class="py-3 text-sm text-gray-600">${item.branchName}</td>
                     <td class="py-3 text-right">
                         <span class="px-2 py-0.5 rounded text-sm font-black text-red-600 bg-red-50 border border-red-100">
-                            ${item.esPesable ? item.stock.toFixed(3) : Math.round(item.stock)} 
-                            <small class="font-normal opacity-50">${item.esPesable ? 'Kg' : 'un.'}</small>
+                            ${isWeightedDashboardProduct(item.esPesable) ? item.stock.toFixed(3) : Math.round(item.stock)} 
+                            <small class="font-normal opacity-50">${isWeightedDashboardProduct(item.esPesable) ? 'Kg' : 'un.'}</small>
                         </span>
                     </td>
                     <td class="py-3 text-center">
@@ -801,7 +1176,7 @@ async function hydrateBodegueroDashboard() {
                                 data-id="${item.id_producto}" 
                                 data-branch="${item.id_sucursal}"
                                 data-name="${item.nombreProducto}"
-                                data-pesable="${item.esPesable ? '1' : '0'}"
+                                data-pesable="${isWeightedDashboardProduct(item.esPesable) ? '1' : '0'}"
                                 data-stock="${item.stock}"
                                 title="Agregar stock">
                             <i class="bi bi-plus-lg"></i> Agregar
@@ -812,6 +1187,9 @@ async function hydrateBodegueroDashboard() {
 
             bindDashboardAddStockButtons();
         }
+
+        bindBodegaLookup();
+        renderBodegaLookupResults(document.getElementById('bodega-lookup-input')?.value || '');
 
     } catch (error) {
         console.error('Error hydrating bodeguero dashboard:', error);

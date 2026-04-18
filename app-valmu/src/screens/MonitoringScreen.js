@@ -28,6 +28,11 @@ export default function MonitoringScreen({ token, navigateTo }) {
         lowStockCount: 0,
         salesCount: 0
     });
+    const [salesSplit, setSalesSplit] = useState({
+        caja: { ventasSII: 0, ventasInternas: 0, gananciaNeta: 0 },
+        despacho: { ventasSII: 0, ventasInternas: 0, gananciaNeta: 0 }
+    });
+    const [branchSplitRows, setBranchSplitRows] = useState([]);
     const [recentSales, setRecentSales] = useState([]);
     const [criticalItems, setCriticalItems] = useState([]);
 
@@ -44,17 +49,20 @@ export default function MonitoringScreen({ token, navigateTo }) {
     const [savingStock, setSavingStock] = useState(false);
 
     const fetchData = async () => {
-        // ... (resto del fetchData igual)
         try {
-            const [prodRes, salesRes, branchRes] = await Promise.all([
+            const [prodRes, salesRes, branchRes, kpisRes, branchSplitRes] = await Promise.all([
                 apiRequest({ endpoint: '/productos?limit=10000', token }),
                 apiRequest({ endpoint: '/ventas', token }),
-                apiRequest({ endpoint: '/sucursales', token })
+                apiRequest({ endpoint: '/sucursales', token }),
+                apiRequest({ endpoint: '/reportes/kpis-diarios', token }),
+                apiRequest({ endpoint: '/reportes/ventas-por-sucursal', token })
             ]);
 
             const products = Array.isArray(prodRes?.data) ? prodRes.data : [];
             const allSales = Array.isArray(salesRes?.data) ? salesRes.data : (Array.isArray(salesRes) ? salesRes : []);
             const branches = Array.isArray(branchRes?.data) ? branchRes.data : [];
+            const kpiData = kpisRes?.ok && kpisRes?.data ? kpisRes.data : null;
+            const branchSplitData = branchSplitRes?.ok && Array.isArray(branchSplitRes?.data) ? branchSplitRes.data : [];
 
             // Hoy (local)
             const today = new Date();
@@ -134,13 +142,30 @@ export default function MonitoringScreen({ token, navigateTo }) {
             });
 
             setStats({
-                salesToday: todaySales,
-                profitToday: todayProfit,
+                salesToday: kpiData
+                    ? Number(kpiData.ventasSII || 0) + Number(kpiData.ventasInternas || 0)
+                    : todaySales,
+                profitToday: kpiData
+                    ? Number(kpiData.gananciaNeta || 0)
+                    : todayProfit,
                 inventoryValue: totalValue,
                 lowStockCount: tempCritical.length,
                 salesCount: todayCount,
                 salesByBranch // New field
             });
+            setSalesSplit({
+                caja: {
+                    ventasSII: Number(kpiData?.caja?.ventasSII || 0),
+                    ventasInternas: Number(kpiData?.caja?.ventasInternas || 0),
+                    gananciaNeta: Number(kpiData?.caja?.gananciaNeta || 0)
+                },
+                despacho: {
+                    ventasSII: Number(kpiData?.despacho?.ventasSII || 0),
+                    ventasInternas: Number(kpiData?.despacho?.ventasInternas || 0),
+                    gananciaNeta: Number(kpiData?.despacho?.gananciaNeta || 0)
+                }
+            });
+            setBranchSplitRows(branchSplitData);
 
             setRecentSales(allSales.slice(0, 10));
             setCriticalItems(tempCritical.slice(0, 15));
@@ -241,9 +266,9 @@ export default function MonitoringScreen({ token, navigateTo }) {
 
                 <View style={styles.grid}>
                     <StatCard
-                        label="Ventas Hoy"
+                        label="Ventas hoy consolidadas"
                         value={formatCurrency(stats.salesToday)}
-                        caption={`${stats.salesCount} tickets`}
+                        caption={`${stats.salesCount} tickets de sucursales`}
                         icon="cash-outline"
                         color={brandColors.accent}
                     />
@@ -270,9 +295,83 @@ export default function MonitoringScreen({ token, navigateTo }) {
                     />
                 </View>
 
-                {stats.salesByBranch && stats.salesByBranch.length > 0 && (
+                <View style={styles.section}>
+                    <SectionHeader
+                        title="Canales de venta"
+                        subtitle="Caja y despacho separados como en Admin"
+                        compact
+                    />
+                    <SplitChannelCard
+                        tone="caja"
+                        title="Total caja de sucursales"
+                        subtitle="Solo caja"
+                        icon="storefront-outline"
+                        data={salesSplit.caja}
+                    />
+                    <SplitChannelCard
+                        tone="despacho"
+                        title="Total despacho de sucursales"
+                        subtitle="Despacho + en ruta"
+                        icon="bus-outline"
+                        data={salesSplit.despacho}
+                    />
+                </View>
+
+                {branchSplitRows && branchSplitRows.length > 0 ? (
                     <View style={styles.section}>
-                        <SectionHeader title="Ventas por Sucursal" compact />
+                        <SectionHeader
+                            title="Detalle por sucursal"
+                            subtitle="Caja y despacho separados por local"
+                            compact
+                        />
+                        <Card style={styles.branchContainer}>
+                            {branchSplitRows.map((branch, idx) => (
+                                <View key={branch.id_sucursal || idx} style={[styles.branchSplitBlock, idx === branchSplitRows.length - 1 && { borderBottomWidth: 0 }]}>
+                                    <View style={styles.branchSplitHeader}>
+                                        <View style={styles.branchInfo}>
+                                            <Text style={styles.branchName}>{branch.nombreSucursal || 'Desconocida'}</Text>
+                                            <Text style={styles.branchCount}>Separacion por canal del dia</Text>
+                                        </View>
+                                    </View>
+                                    <View style={styles.branchSplitGrid}>
+                                        <BranchMetricCard
+                                            label="Caja SII"
+                                            value={branch.ventasSIICaja}
+                                            tone="caja"
+                                        />
+                                        <BranchMetricCard
+                                            label="Caja Internas"
+                                            value={branch.ventasInternasCaja}
+                                            tone="caja"
+                                        />
+                                        <BranchMetricCard
+                                            label="Caja Ganancia"
+                                            value={branch.gananciaCaja}
+                                            tone="gain"
+                                        />
+                                        <BranchMetricCard
+                                            label="Despacho SII"
+                                            value={branch.ventasSIIDespacho}
+                                            tone="despacho"
+                                        />
+                                        <BranchMetricCard
+                                            label="Despacho Internas"
+                                            value={branch.ventasInternasDespacho}
+                                            tone="despacho"
+                                        />
+                                        <BranchMetricCard
+                                            label="Despacho Ganancia"
+                                            value={branch.gananciaDespacho}
+                                            tone="gain"
+                                        />
+                                    </View>
+                                </View>
+                            ))}
+                        </Card>
+                    </View>
+                ) : stats.salesByBranch && stats.salesByBranch.length > 0 ? (
+                    <View style={styles.section}>
+                        <SectionHeader title="Totales por sucursal" compact />
                         <Card style={styles.branchContainer}>
                             {stats.salesByBranch.map((b, idx) => (
                                 <View key={idx} style={[styles.branchRow, idx === stats.salesByBranch.length - 1 && { borderBottomWidth: 0 }]}>
@@ -285,7 +384,7 @@ export default function MonitoringScreen({ token, navigateTo }) {
                             ))}
                         </Card>
                     </View>
-                )}
+                ) : null}
 
                 <View style={styles.section}>
                     <SectionHeader title="Productos Críticos" compact />
@@ -453,6 +552,78 @@ function StatCard({ label, value, caption, icon, color }) {
     );
 }
 
+function SplitChannelCard({ title, subtitle, icon, data, tone = 'caja' }) {
+    const toneStyles = getChannelToneStyles(tone);
+
+    return (
+        <Card style={styles.splitCard}>
+            <View style={styles.splitCardHeader}>
+                <View style={styles.splitTitleBlock}>
+                    <Text style={[styles.splitEyebrow, { color: toneStyles.accent }]}>
+                        {tone === 'despacho' ? 'DESPACHO' : 'CAJA'}
+                    </Text>
+                    <Text style={styles.splitTitle}>{title}</Text>
+                    <Text style={styles.splitSubtitle}>{subtitle}</Text>
+                </View>
+                <View style={[styles.splitIconWrap, { backgroundColor: toneStyles.soft }]}>
+                    <Ionicons name={icon} size={20} color={toneStyles.accent} />
+                </View>
+            </View>
+
+            <View style={styles.splitMetricsRow}>
+                <MiniMetric label="SII" value={data?.ventasSII} accent={toneStyles.accent} />
+                <MiniMetric label="Internas" value={data?.ventasInternas} accent={toneStyles.accent} />
+                <MiniMetric label="Ganancia" value={data?.gananciaNeta} accent={brandColors.success} />
+            </View>
+        </Card>
+    );
+}
+
+function MiniMetric({ label, value, accent }) {
+    return (
+        <View style={styles.miniMetric}>
+            <Text style={styles.miniMetricLabel}>{label}</Text>
+            <Text style={[styles.miniMetricValue, { color: accent || brandColors.text }]}>
+                {formatCurrency(Number(value || 0))}
+            </Text>
+        </View>
+    );
+}
+
+function BranchMetricCard({ label, value, tone = 'caja' }) {
+    const toneStyles = getChannelToneStyles(tone);
+
+    return (
+        <View style={[styles.branchMetricCard, { backgroundColor: toneStyles.soft }]}>
+            <Text style={styles.branchMetricLabel}>{label}</Text>
+            <Text style={[styles.branchMetricValue, { color: toneStyles.accent }]}>
+                {formatCurrency(Number(value || 0))}
+            </Text>
+        </View>
+    );
+}
+
+function getChannelToneStyles(tone) {
+    if (tone === 'despacho') {
+        return {
+            accent: '#0284C7',
+            soft: '#E0F2FE'
+        };
+    }
+
+    if (tone === 'gain') {
+        return {
+            accent: brandColors.success,
+            soft: '#DCFCE7'
+        };
+    }
+
+    return {
+        accent: brandColors.accent,
+        soft: brandColors.accentSoft
+    };
+}
+
 function CriticalRow({ item, onAddStock }) {
     return (
         <TouchableOpacity style={styles.row} onPress={onAddStock} activeOpacity={0.7}>
@@ -541,6 +712,66 @@ const styles = StyleSheet.create({
     section: {
         marginTop: 24
     },
+    splitCard: {
+        padding: 16,
+        marginBottom: 12
+    },
+    splitCardHeader: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        marginBottom: 14
+    },
+    splitTitleBlock: {
+        flex: 1,
+        marginRight: 12
+    },
+    splitEyebrow: {
+        fontSize: 10,
+        fontWeight: '900',
+        letterSpacing: 1.2,
+        marginBottom: 6
+    },
+    splitTitle: {
+        fontSize: 18,
+        fontWeight: '900',
+        color: brandColors.text
+    },
+    splitSubtitle: {
+        marginTop: 3,
+        fontSize: 12,
+        color: brandColors.textMuted,
+        fontWeight: '600'
+    },
+    splitIconWrap: {
+        width: 42,
+        height: 42,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center'
+    },
+    splitMetricsRow: {
+        flexDirection: 'row',
+        gap: 10
+    },
+    miniMetric: {
+        flex: 1,
+        backgroundColor: brandColors.backgroundAlt,
+        borderRadius: 16,
+        paddingVertical: 12,
+        paddingHorizontal: 12
+    },
+    miniMetricLabel: {
+        fontSize: 10,
+        fontWeight: '900',
+        color: brandColors.textMuted,
+        textTransform: 'uppercase'
+    },
+    miniMetricValue: {
+        fontSize: 14,
+        fontWeight: '900',
+        marginTop: 6
+    },
     row: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -586,6 +817,36 @@ const styles = StyleSheet.create({
     branchContainer: {
         padding: 0,
         overflow: 'hidden'
+    },
+    branchSplitBlock: {
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: brandColors.background
+    },
+    branchSplitHeader: {
+        marginBottom: 12
+    },
+    branchSplitGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 10
+    },
+    branchMetricCard: {
+        width: '48%',
+        borderRadius: 16,
+        paddingVertical: 12,
+        paddingHorizontal: 12
+    },
+    branchMetricLabel: {
+        fontSize: 10,
+        fontWeight: '900',
+        color: brandColors.textMuted,
+        textTransform: 'uppercase'
+    },
+    branchMetricValue: {
+        fontSize: 14,
+        fontWeight: '900',
+        marginTop: 6
     },
     branchRow: {
         flexDirection: 'row',

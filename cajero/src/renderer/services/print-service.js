@@ -24,6 +24,9 @@ export async function printReceiptRecord({
             isFiscal: record.isFiscal,
             customerLabel: record.customerLabel,
             paymentMethod: record.paymentMethod,
+            paymentCash: record.paymentCash,
+            paymentCard: record.paymentCard,
+            paymentTransfer: record.paymentTransfer,
             subtotal: record.subtotal,
             iva: record.iva,
             total: record.total,
@@ -31,6 +34,7 @@ export async function printReceiptRecord({
             lineItems: Array.isArray(record.lineItems) ? record.lineItems : [],
             preview: record.preview,
             footerMessage: record.footerMessage,
+            addressLabel: record.addressLabel,
             origin: record.origin,
             emisor: record.emisor,
             dte: {

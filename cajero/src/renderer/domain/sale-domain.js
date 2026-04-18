@@ -69,6 +69,7 @@ export function buildSalePayload({
         id_cliente: customerId,
         id_tipoDoc: idTipoDoc,
         id_sucursal: branchId ? Number(branchId) : null,
+        origenVenta: 'CAJA',
         folioDocumento: folioDocumento || null,
         subtotal,
         descuento: snapshot.discount || 0,

@@ -93,6 +93,22 @@ export function renderPaymentMethodView({ isCash, total }) {
 export function renderPaymentChangeView({ method, total, received }) {
     const row = document.getElementById('payment-change-row');
     const label = document.getElementById('payment-change-label');
+    const remainingRow = document.getElementById('payment-remaining-row');
+    const remainingLabel = document.getElementById('payment-remaining-label');
+
+    if (method === 'mixto') {
+        row?.classList.add('hidden');
+        remainingRow?.classList.remove('hidden');
+
+        const remaining = total - received;
+        if (remainingLabel) {
+            remainingLabel.textContent = `$${formatCurrency(Math.max(0, remaining))}`;
+            remainingLabel.classList.toggle('paid', remaining <= 0);
+        }
+        return;
+    }
+
+    remainingRow?.classList.add('hidden');
 
     if (method !== 'efectivo') {
         row?.classList.add('hidden');

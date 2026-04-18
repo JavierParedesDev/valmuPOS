@@ -183,6 +183,14 @@ function bindSettingsEvents() {
             name: selectedOption?.textContent || ''
         });
 
+        window.dispatchEvent(new CustomEvent('valmu:active-branch-changed', {
+            detail: {
+                branchId: Number(branchId),
+                branchName: selectedOption?.textContent || '',
+                at: Date.now()
+            }
+        }));
+
         Toast.fire({ icon: 'success', title: 'Sucursal guardada correctamente' });
     });
 }

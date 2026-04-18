@@ -91,4 +91,64 @@ router.post('/traslado', verificarToken, async (req, res) => {
     }
 });
 
+// --- ENDPOINT: AJUSTE / MERMA DE INVENTARIO ---
+// PUT /api/productos/inventario
+router.put('/inventario', verificarToken, async (req, res) => {
+    const conexion = await db.getConnection();
+    try {
+        await conexion.beginTransaction();
+
+        const { id_producto, id_sucursal, nuevaCantidad, motivoAjuste, id_usuario } = req.body;
+
+        const [stockActualRows] = await conexion.execute(
+            'SELECT cantidad FROM STOCK_INVENTARIO WHERE id_producto = ? AND id_sucursal = ? FOR UPDATE',
+            [id_producto, id_sucursal]
+        );
+
+        const cantidadAnterior = stockActualRows.length ? Number(stockActualRows[0].cantidad || 0) : 0;
+        const cantidadNueva = Number(nuevaCantidad || 0);
+        const diferencia = cantidadNueva - cantidadAnterior;
+
+        await conexion.execute(`
+            INSERT INTO STOCK_INVENTARIO (id_producto, id_sucursal, cantidad)
+            VALUES (?, ?, ?)
+            ON DUPLICATE KEY UPDATE cantidad = VALUES(cantidad)
+        `, [id_producto, id_sucursal, cantidadNueva]);
+
+        if (diferencia !== 0) {
+            const tipoMovimiento = diferencia < 0 ? 'MERMA' : 'AJUSTE';
+            const cantidadMovimiento = Math.abs(diferencia);
+
+            await conexion.execute(`
+                INSERT INTO MOVIMIENTO_MERCADERIA
+                (id_producto, id_usuario, id_sucursalOrigen, id_sucursalDestino, tipoMovimiento, cantidadMov, comprobanteMov)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            `, [
+                id_producto,
+                id_usuario || req.usuario.id_usuario,
+                id_sucursal,
+                id_sucursal,
+                tipoMovimiento,
+                cantidadMovimiento,
+                motivoAjuste || (tipoMovimiento === 'MERMA' ? 'MERMA_MANUAL' : 'AJUSTE_MANUAL')
+            ]);
+        }
+
+        await conexion.commit();
+        res.json({
+            ok: true,
+            mensaje: 'Inventario actualizado correctamente',
+            cantidadAnterior,
+            nuevaCantidad: cantidadNueva,
+            diferencia
+        });
+    } catch (error) {
+        await conexion.rollback();
+        console.error('Error Inventario/Merma:', error);
+        res.status(500).json({ error: 'Error al actualizar inventario' });
+    } finally {
+        conexion.release();
+    }
+});
+
 module.exports = router;

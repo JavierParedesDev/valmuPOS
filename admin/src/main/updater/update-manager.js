@@ -2,6 +2,7 @@ const { IPC_CHANNELS } = require('../ipc/channels');
 
 function createUpdateManager({ app, getMainWindow }) {
     const { autoUpdater } = require('electron-updater');
+    const UPDATE_CHANNEL = 'admin';
     let manualUpdateCheck = false;
     const updateState = {
         currentVersion: app.getVersion(),
@@ -105,10 +106,11 @@ function createUpdateManager({ app, getMainWindow }) {
         } catch (error) {
             console.error('Check for updates failed:', error);
             manualUpdateCheck = false;
+            const friendlyError = getFriendlyUpdateError(error);
             setUpdateState({
                 status: 'error',
-                statusMessage: 'No se pudo comprobar si hay actualizaciones.',
-                errorMessage: getFriendlyUpdateError(error),
+                statusMessage: `No se pudo comprobar si hay actualizaciones. ${friendlyError}`,
+                errorMessage: friendlyError,
                 checkedAt: new Date().toISOString()
             });
             return serializeUpdateState();
@@ -124,16 +126,18 @@ function createUpdateManager({ app, getMainWindow }) {
             return;
         }
 
+        autoUpdater.channel = UPDATE_CHANNEL;
         autoUpdater.autoDownload = true;
         autoUpdater.autoInstallOnAppQuit = true;
 
         autoUpdater.on('error', (error) => {
             console.error('Auto-update error:', error);
             manualUpdateCheck = false;
+            const friendlyError = getFriendlyUpdateError(error);
             setUpdateState({
                 status: 'error',
-                statusMessage: 'No se pudo completar la comprobacion de actualizaciones.',
-                errorMessage: getFriendlyUpdateError(error),
+                statusMessage: `No se pudo completar la comprobacion de actualizaciones. ${friendlyError}`,
+                errorMessage: friendlyError,
                 checkedAt: new Date().toISOString()
             });
         });

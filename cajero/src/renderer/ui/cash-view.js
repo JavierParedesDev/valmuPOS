@@ -202,15 +202,11 @@ export function renderSalesHistoryView({ salesHistoryState, openSaleCancellation
 export function renderCloseCashDifferenceView({ turnSummaryState, countedCash, countedCard, countedTransfer, formatDifferenceLabel }) {
     const expectedCash = getExpectedCashAmount();
     const cashDifference = countedCash - expectedCash;
-    const cardDifference = countedCard - Number(turnSummaryState.totalCard || 0);
-    const transferDifference = countedTransfer - Number(turnSummaryState.totalTransfer || 0);
-    const totalDifference = cashDifference + cardDifference + transferDifference;
+    const totalDifference = cashDifference;
     const cashDifferenceLabel = document.getElementById('close-cash-difference');
-    const cardDifferenceLabel = document.getElementById('close-card-difference');
-    const transferDifferenceLabel = document.getElementById('close-transfer-difference');
     const totalDifferenceLabel = document.getElementById('close-total-difference');
 
-    if (!cashDifferenceLabel || !cardDifferenceLabel || !transferDifferenceLabel || !totalDifferenceLabel) {
+    if (!cashDifferenceLabel || !totalDifferenceLabel) {
         return;
     }
 
@@ -223,12 +219,6 @@ export function renderCloseCashDifferenceView({ turnSummaryState, countedCash, c
 
     cashDifferenceLabel.textContent = formatDifferenceLabel(cashDifference);
     setDiffClass(cashDifferenceLabel, cashDifference);
-
-    cardDifferenceLabel.textContent = formatDifferenceLabel(cardDifference);
-    setDiffClass(cardDifferenceLabel, cardDifference);
-
-    transferDifferenceLabel.textContent = formatDifferenceLabel(transferDifference);
-    setDiffClass(transferDifferenceLabel, transferDifference);
 
     totalDifferenceLabel.textContent = formatDifferenceLabel(totalDifference);
     setDiffClass(totalDifferenceLabel, totalDifference);

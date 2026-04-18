@@ -5,11 +5,27 @@ let adminProductRequestId = 0;
 let adminProductsCache = [];
 let adminExpandedProductId = null;
 let adminInboundRowSequence = 0;
+let adminTransferRowSequence = 0;
+let adminProductLookupCatalogPromise = null;
 const adminProductPagination = {
     page: 1,
     hasMore: false,
     lastTerm: ''
 };
+
+function isWeightedAdminProduct(value) {
+    return value === true || value === 1 || value === '1';
+}
+
+function emitInventoryChanged(detail = {}) {
+    window.dispatchEvent(new CustomEvent('valmu:inventory-changed', {
+        detail: {
+            source: 'products',
+            at: Date.now(),
+            ...detail
+        }
+    }));
+}
 
 function buildAdminProductEndpoint(term = '', limit = ADMIN_PRODUCT_LIMIT, page = 1) {
     const params = new URLSearchParams();
@@ -390,6 +406,88 @@ function paginateAdminProducts(products, page, pageSize) {
     return products.slice(start, start + pageSize);
 }
 
+async function getAdminProductLookupCatalog(forceRefresh = false) {
+    if (!forceRefresh && Array.isArray(window.adminProductLookupCatalog) && window.adminProductLookupCatalog.length) {
+        return window.adminProductLookupCatalog;
+    }
+
+    if (!forceRefresh && adminProductLookupCatalogPromise) {
+        return adminProductLookupCatalogPromise;
+    }
+
+    adminProductLookupCatalogPromise = (async () => {
+        const token = getAuthToken();
+        const response = await apiRequest({
+            endpoint: '/productos?limit=10000&page=1&offset=0',
+            method: 'GET',
+            token
+        });
+
+        const products = response.ok && Array.isArray(response.data) ? response.data : [];
+        window.adminProductLookupCatalog = products;
+        adminProductLookupCatalogPromise = null;
+        return products;
+    })().catch((error) => {
+        adminProductLookupCatalogPromise = null;
+        throw error;
+    });
+
+    return adminProductLookupCatalogPromise;
+}
+
+function searchAdminProductCatalog(term = '', source = []) {
+    const normalizedTerm = normalizeAdminSearchValue(term);
+    if (!normalizedTerm) return [];
+
+    const tokens = normalizedTerm.split(/\s+/).filter(Boolean);
+
+    return (Array.isArray(source) ? source : [])
+        .map((product) => {
+            const normalizedName = normalizeAdminSearchValue(product?.nombreProducto);
+            const normalizedCode = normalizeAdminSearchValue(product?.codigoBarras);
+            const haystack = [
+                normalizedName,
+                normalizedCode,
+                normalizeAdminSearchValue(product?.nombreCategoria),
+                normalizeAdminSearchValue(product?.nombreProveedor),
+                normalizeAdminSearchValue(product?.familiaPromo)
+            ].filter(Boolean).join(' ');
+
+            if (!tokens.every((token) => haystack.includes(token))) {
+                return null;
+            }
+
+            let score = 0;
+            if (normalizedCode === normalizedTerm) score += 100;
+            if (normalizedName === normalizedTerm) score += 80;
+            if (normalizedCode.startsWith(normalizedTerm)) score += 30;
+            if (normalizedName.startsWith(normalizedTerm)) score += 20;
+
+            return { product, score };
+        })
+        .filter(Boolean)
+        .sort((left, right) => {
+            if (right.score !== left.score) return right.score - left.score;
+            return String(left.product?.nombreProducto || '').localeCompare(
+                String(right.product?.nombreProducto || ''),
+                'es',
+                { sensitivity: 'base' }
+            );
+        })
+        .map((entry) => entry.product);
+}
+
+function findExactAdminProductMatch(term = '', source = []) {
+    const normalizedTerm = normalizeAdminSearchValue(term);
+    if (!normalizedTerm) return null;
+
+    return (Array.isArray(source) ? source : []).find((product) => {
+        const normalizedName = normalizeAdminSearchValue(product?.nombreProducto);
+        const normalizedCode = normalizeAdminSearchValue(product?.codigoBarras);
+        return normalizedName === normalizedTerm || normalizedCode === normalizedTerm;
+    }) || null;
+}
+
 function updateAdminProductPaginationUi({ totalShown = 0, page = 1, hasMore = false, totalLocal = null }) {
     const paginationSummary = document.getElementById('products-pagination-summary');
     const prevButton = document.getElementById('products-prev-page');
@@ -688,6 +786,7 @@ async function openProductForm(product = null) {
 
         if (response.ok) {
             Toast.fire({ icon: 'success', title: isEdit ? 'Producto actualizado' : 'Producto creado' });
+            window.adminProductLookupCatalog = null;
             closeModal();
             loadAdminProductTable(document.getElementById('products-search')?.value || '', adminProductPagination.page);
         } else {
@@ -720,6 +819,7 @@ async function deleteProduct(id, event) {
 
     if (response.ok) {
         Toast.fire({ icon: 'success', title: 'Producto eliminado' });
+        window.adminProductLookupCatalog = null;
         loadAdminProductTable(document.getElementById('products-search')?.value || '', adminProductPagination.page);
     } else {
         Swal.fire('Error', response.data?.error || response.error || 'No se pudo eliminar', 'error');
@@ -821,6 +921,12 @@ async function openStockInboundForm(initialProduct = null) {
         }
 
         Toast.fire({ icon: 'success', title: `Ingreso registrado con ${aggregatedLines.length} producto(s)` });
+        window.adminProductLookupCatalog = null;
+        emitInventoryChanged({
+            type: 'ingreso',
+            branchIds: [targetBranchId],
+            productIds: aggregatedLines.map((line) => line.productId)
+        });
         closeModal();
         loadAdminProductTable(document.getElementById('products-search')?.value || '', adminProductPagination.page);
     });
@@ -851,23 +957,12 @@ async function openTransferForm() {
 
     const defaultSourceId = activeBranchId || Number(branches[0]?.id_sucursal) || null;
     const defaultSourceName = activeBranchName || branches.find((branch) => Number(branch.id_sucursal) === defaultSourceId)?.nombreSucursal || 'Sucursal origen';
+    const inventoryMapPromise = fetchTransferInventoryMap(Number(defaultSourceId), token);
 
     const content = `
         <div class="form-group">
             <label>Sucursal de Origen</label>
             <input type="text" class="form-control" value="${defaultSourceName}" disabled>
-        </div>
-        <div class="form-group">
-            <label>Buscar Producto a Trasladar</label>
-            <input type="text" id="tra-product-search" class="form-control" placeholder="Escribe nombre o codigo">
-            <input type="hidden" id="tra-product-id">
-        </div>
-        <div id="tra-product-results" style="display:grid; gap:0.5rem; margin-bottom:1rem;"></div>
-        <div id="tra-product-selected" class="text-muted" style="margin-bottom:0.5rem;">Sin producto seleccionado</div>
-        <div id="tra-stock-info" style="display:none; margin-bottom:1rem; padding:0.75rem; background:#f0fdf4; border:1px solid #86efac; border-radius:0.5rem;">
-            <span style="font-size:0.85rem; color:#166534;">
-                <i class="bi bi-box-seam"></i> Stock disponible: <strong id="tra-stock-qty">0</strong>
-            </span>
         </div>
         <div class="form-group">
             <label>Sucursal de Destino</label>
@@ -876,66 +971,133 @@ async function openTransferForm() {
         <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">
             El traslado mueve stock de <strong id="tra-origin-name">${defaultSourceName}</strong> hacia otra sucursal.
         </p>
-        <div class="form-group">
-            <label>Cantidad a Trasladar</label>
-            <input type="number" id="tra-qty" class="form-control" placeholder="0" step="1">
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; margin-bottom:0.85rem; flex-wrap:wrap;">
+            <div>
+                <strong style="color:var(--text-main);">Productos a trasladar</strong>
+                <div class="text-muted" style="font-size:0.8rem;">Agrega varios items y registralos en una sola pasada.</div>
+            </div>
+            <button type="button" class="btn btn-ghost btn-sm" id="tra-add-line-btn">+ Agregar item</button>
         </div>
+        <div id="tra-lines" style="display:grid; gap:0.85rem;"></div>
     `;
 
     showModal('Traslado entre Sucursales', content, async () => {
         const currentUser = getCurrentUser();
-        const data = {
-            id_producto: parseInt(document.getElementById('tra-product-id').value, 10),
-            id_usuario: currentUser?.id_usuario || null,
-            id_sucursalOrigen: Number(defaultSourceId),
-            id_sucursalDestino: parseInt(document.getElementById('tra-dest').value, 10),
-            cantidadMov: parseFloat(document.getElementById('tra-qty').value)
-        };
+        const destinationId = parseInt(document.getElementById('tra-dest').value, 10);
 
-        if (isNaN(data.id_producto) || isNaN(data.id_sucursalOrigen) || isNaN(data.id_sucursalDestino)) {
-            Swal.fire('Error', 'Debes seleccionar producto, sucursal origen y sucursal destino.', 'error');
+        if (isNaN(Number(defaultSourceId)) || isNaN(destinationId)) {
+            Swal.fire('Error', 'Debes seleccionar sucursal origen y sucursal destino.', 'error');
             return;
         }
 
-        if (isNaN(data.cantidadMov) || data.cantidadMov <= 0) {
-            Swal.fire('Error', 'Cantidad invalida', 'error');
-            return;
-        }
-
-        if (data.id_sucursalOrigen === data.id_sucursalDestino) {
+        if (Number(defaultSourceId) === destinationId) {
             Swal.fire('Error', 'La sucursal de origen y destino deben ser distintas.', 'error');
             return;
         }
 
-        const response = await apiRequest({
-            endpoint: '/productos/traslado',
-            method: 'POST',
-            body: data,
-            token
-        });
+        const rowElements = Array.from(document.querySelectorAll('.tra-line-row'));
+        const rawLines = rowElements.map((row) => ({
+            productId: parseInt(row.querySelector('.tra-line-product-id')?.value || '', 10),
+            quantity: Number(row.querySelector('.tra-line-qty')?.value || 0),
+            label: row.querySelector('.tra-line-selected')?.textContent || 'Sin producto seleccionado',
+            isWeighted: row.querySelector('.tra-line-search')?.dataset.pesable === '1'
+        }));
 
-        if (response.ok) {
-            Toast.fire({ icon: 'success', title: 'Traslado realizado con exito' });
-            closeModal();
-            loadAdminProductTable(document.getElementById('products-search')?.value || '', adminProductPagination.page);
-        } else {
-            showMovementError(response.data?.error || response.error || 'Error');
+        const validLines = rawLines.filter((line) => Number.isFinite(line.productId) && Number.isFinite(line.quantity) && line.quantity > 0);
+        if (!validLines.length) {
+            Swal.fire('Error', 'Agrega al menos un producto con cantidad valida para trasladar.', 'error');
+            return;
         }
+
+        const aggregatedLines = Array.from(validLines.reduce((map, line) => {
+            const current = map.get(line.productId) || {
+                productId: line.productId,
+                quantity: 0,
+                label: line.label,
+                isWeighted: line.isWeighted
+            };
+            current.quantity += line.quantity;
+            map.set(line.productId, current);
+            return map;
+        }, new Map()).values());
+
+        const sourceInventoryMap = await inventoryMapPromise;
+        const stockIssues = aggregatedLines
+            .map((line) => {
+                const stockItem = sourceInventoryMap.get(line.productId);
+                const availableStock = Number(stockItem?.stock || 0);
+                if (line.quantity <= availableStock) return null;
+
+                const availableLabel = stockItem
+                    ? formatTransferStockLabel(availableStock, stockItem.esPesable)
+                    : '0 un.';
+
+                return `${line.label}: solicitaste ${formatTransferStockLabel(line.quantity, line.isWeighted)} y solo hay ${availableLabel}`;
+            })
+            .filter(Boolean);
+
+        if (stockIssues.length) {
+            Swal.fire('Stock insuficiente', stockIssues.join('<br>'), 'error');
+            return;
+        }
+
+        const transferredProductIds = [];
+        const destinationLabel = document.getElementById('tra-dest')?.selectedOptions?.[0]?.textContent || `Sucursal #${destinationId}`;
+
+        for (const line of aggregatedLines) {
+            const data = {
+                id_producto: line.productId,
+                id_usuario: currentUser?.id_usuario || null,
+                id_sucursalOrigen: Number(defaultSourceId),
+                id_sucursalDestino: destinationId,
+                cantidadMov: line.quantity
+            };
+
+            const response = await apiRequest({
+                endpoint: '/productos/traslado',
+                method: 'POST',
+                body: data,
+                token
+            });
+
+            if (!response.ok) {
+                const backendMessage = response.data?.error || response.error || 'Error';
+                const partialMessage = transferredProductIds.length
+                    ? `\n\nSe alcanzaron a trasladar ${transferredProductIds.length} producto(s) antes del error.`
+                    : '';
+
+                showMovementError(
+                    `${backendMessage}${partialMessage}\n\n` +
+                    `Origen validado: #${data.id_sucursalOrigen} (${defaultSourceName})\n` +
+                    `Destino seleccionado: #${data.id_sucursalDestino} (${destinationLabel})\n` +
+                    `Producto: ${line.label}\n` +
+                    `Cantidad: ${line.quantity}`
+                );
+                return;
+            }
+
+            transferredProductIds.push(line.productId);
+        }
+
+        Toast.fire({ icon: 'success', title: `Traslado realizado con ${aggregatedLines.length} producto(s)` });
+        window.adminProductLookupCatalog = null;
+        emitInventoryChanged({
+            type: 'traslado',
+            branchIds: [Number(defaultSourceId), destinationId],
+            productIds: transferredProductIds
+        });
+        closeModal();
+        loadAdminProductTable(document.getElementById('products-search')?.value || '', adminProductPagination.page);
     });
 
-    document.getElementById('modal-save-btn').textContent = 'Registrar traslado';
+    document.getElementById('modal-save-btn').textContent = 'Registrar traslados';
     syncTransferDestinationOptions(branches, Number(defaultSourceId));
 
-    initAdminProductPicker({
-        searchInputId: 'tra-product-search',
-        resultsId: 'tra-product-results',
-        hiddenId: 'tra-product-id',
-        selectedLabelId: 'tra-product-selected',
-        quantityInputId: 'tra-qty',
-        stockInfoId: 'tra-stock-info',
-        stockQtyId: 'tra-stock-qty',
-        sourceBranchId: Number(defaultSourceId)
+    document.getElementById('tra-add-line-btn')?.addEventListener('click', () => {
+        appendTransferLineRow(Number(defaultSourceId), inventoryMapPromise);
     });
+
+    appendTransferLineRow(Number(defaultSourceId), inventoryMapPromise);
 }
 
 function initAdminProductPicker({ searchInputId, resultsId, hiddenId, selectedLabelId, quantityInputId, stockInfoId, stockQtyId, sourceBranchId }) {
@@ -948,6 +1110,7 @@ function initAdminProductPicker({ searchInputId, resultsId, hiddenId, selectedLa
     const stockQtySpan = stockQtyId ? document.getElementById(stockQtyId) : null;
 
     let timer = null;
+    let lastMatches = [];
 
     // Función para obtener stock del producto en la sucursal origen
     const fetchProductStock = async (productId) => {
@@ -962,7 +1125,7 @@ function initAdminProductPicker({ searchInputId, resultsId, hiddenId, selectedLa
             const inventario = Array.isArray(invRes?.data) ? invRes.data : [];
             const item = inventario.find(i => Number(i.id_producto) === Number(productId));
             const stock = item ? (Number(item.stockActual || item.cantidad || item.stock || 0)) : 0;
-            const esPesable = item?.esPesable;
+            const esPesable = isWeightedAdminProduct(item?.esPesable);
             
             stockQtySpan.textContent = esPesable ? `${stock.toFixed(3)} Kg` : `${Math.round(stock)} unidades`;
             stockInfoDiv.style.display = 'block';
@@ -983,6 +1146,40 @@ function initAdminProductPicker({ searchInputId, resultsId, hiddenId, selectedLa
         }
     };
 
+    const selectProduct = (product) => {
+        if (!product) return;
+
+        hiddenInput.value = product.id_producto;
+        selectedLabel.textContent = `${product.nombreProducto || 'Producto'} (${product.codigoBarras || 'Sin codigo'})`;
+        searchInput.value = product.codigoBarras || product.nombreProducto || '';
+        searchInput.dataset.pesable = isWeightedAdminProduct(product.esPesable) ? '1' : '0';
+        results.innerHTML = '';
+        lastMatches = [];
+        updateProductQuantityStep(isWeightedAdminProduct(product.esPesable), qtyInput);
+        void fetchProductStock(product.id_producto);
+        qtyInput?.focus?.();
+    };
+
+    const renderMatches = (products) => {
+        lastMatches = Array.isArray(products) ? products : [];
+        results.innerHTML = lastMatches.map((product) => `
+            <button
+                type="button"
+                class="btn btn-ghost"
+                data-index="${product.id_producto}"
+                style="justify-content:flex-start; text-align:left;"
+            >
+                <strong>${product.nombreProducto}</strong> <span style="margin-left:0.5rem; color:var(--text-muted);">${product.codigoBarras || 'Sin codigo'}</span>
+            </button>
+        `).join('');
+
+        Array.from(results.querySelectorAll('button')).forEach((button, index) => {
+            button.addEventListener('click', () => {
+                selectProduct(lastMatches[index]);
+            });
+        });
+    };
+
     searchInput.addEventListener('input', () => {
         clearTimeout(timer);
         timer = setTimeout(async () => {
@@ -990,43 +1187,248 @@ function initAdminProductPicker({ searchInputId, resultsId, hiddenId, selectedLa
 
             if (!term) {
                 results.innerHTML = '';
+                lastMatches = [];
                 hiddenInput.value = '';
                 selectedLabel.textContent = 'Sin producto seleccionado';
                 if (stockInfoDiv) stockInfoDiv.style.display = 'none';
                 return;
             }
 
-            const response = await fetchAdminProducts(term, 12, 1);
-            const products = response.ok && Array.isArray(response.data) ? response.data : [];
+            const catalog = await getAdminProductLookupCatalog();
+            const exactMatch = findExactAdminProductMatch(term, catalog);
+            if (exactMatch) {
+                selectProduct(exactMatch);
+                return;
+            }
 
-            results.innerHTML = products.map((product) => `
-                <button
-                    type="button"
-                    class="btn btn-ghost"
-                    data-id="${product.id_producto}"
-                    data-name="${product.nombreProducto}"
-                    data-code="${product.codigoBarras}"
-                    data-pesable="${product.esPesable ? '1' : '0'}"
-                    style="justify-content:flex-start; text-align:left;"
-                >
-                    <strong>${product.nombreProducto}</strong> <span style="margin-left:0.5rem; color:var(--text-muted);">${product.codigoBarras}</span>
-                </button>
-            `).join('');
-
-            Array.from(results.querySelectorAll('button')).forEach((button) => {
-                button.addEventListener('click', () => {
-                    hiddenInput.value = button.dataset.id;
-                    selectedLabel.textContent = `${button.dataset.name} (${button.dataset.code})`;
-                    searchInput.value = button.dataset.name;
-                    results.innerHTML = '';
-                    updateProductQuantityStep(button.dataset.pesable === '1', qtyInput);
-                    
-                    // Obtener y mostrar stock disponible
-                    fetchProductStock(button.dataset.id);
-                });
-            });
+            renderMatches(searchAdminProductCatalog(term, catalog).slice(0, 12));
         }, 300);
     });
+
+    searchInput.addEventListener('keydown', async (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+
+        const term = searchInput.value.trim();
+        if (!term) return;
+
+        const catalog = await getAdminProductLookupCatalog();
+        const match = findExactAdminProductMatch(term, catalog) || lastMatches[0] || searchAdminProductCatalog(term, catalog)[0];
+
+        if (match) {
+            selectProduct(match);
+        }
+    });
+}
+
+async function fetchTransferInventoryMap(sourceBranchId, token = getAuthToken()) {
+    if (!sourceBranchId) return new Map();
+
+    const inventoryResponse = await apiRequest({
+        endpoint: `/productos/inventario?id_sucursal=${sourceBranchId}`,
+        token
+    });
+    const inventoryItems = Array.isArray(inventoryResponse?.data) ? inventoryResponse.data : [];
+
+    return new Map(inventoryItems.map((item) => [
+        Number(item.id_producto),
+        {
+            stock: Number(item.stockActual ?? item.cantidad ?? item.stock ?? 0),
+            esPesable: isWeightedAdminProduct(item?.esPesable)
+        }
+    ]));
+}
+
+function formatTransferStockLabel(quantity, isPesable) {
+    const numericValue = Number(quantity || 0);
+    return isPesable
+        ? `${numericValue.toFixed(3)} Kg`
+        : `${Math.round(numericValue).toLocaleString('es-CL')} un.`;
+}
+
+function appendTransferLineRow(sourceBranchId, inventoryMapPromise, product = null) {
+    const linesContainer = document.getElementById('tra-lines');
+    if (!linesContainer) return;
+
+    adminTransferRowSequence += 1;
+    const rowId = adminTransferRowSequence;
+    const row = document.createElement('div');
+    row.className = 'tra-line-row';
+    row.dataset.rowId = String(rowId);
+    row.style.cssText = 'border:1px solid var(--line-soft); border-radius:16px; padding:1rem; background:rgba(255,255,255,0.75);';
+    row.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; margin-bottom:0.85rem;">
+            <strong style="color:var(--text-main);">Item ${rowId}</strong>
+            <button type="button" class="btn btn-ghost btn-sm tra-remove-line-btn">Quitar</button>
+        </div>
+        <div class="form-group" style="margin-bottom:0.8rem;">
+            <label>Buscar producto</label>
+            <input type="text" class="form-control tra-line-search" placeholder="Escribe nombre o codigo" autocomplete="off">
+            <input type="hidden" class="tra-line-product-id">
+        </div>
+        <div class="tra-line-results" style="display:grid; gap:0.45rem; margin-bottom:0.8rem;"></div>
+        <div class="text-muted tra-line-selected" style="margin-bottom:0.5rem;">Sin producto seleccionado</div>
+        <div class="tra-line-stock" style="display:none; margin-bottom:0.8rem; padding:0.75rem; background:#f0fdf4; border:1px solid #86efac; border-radius:0.5rem;">
+            <span style="font-size:0.85rem; color:#166534;">
+                Stock disponible: <strong class="tra-line-stock-qty">0</strong>
+            </span>
+        </div>
+        <div class="form-group" style="margin-bottom:0;">
+            <label>Cantidad a trasladar</label>
+            <input type="number" class="form-control tra-line-qty" placeholder="0" step="1" min="0">
+        </div>
+    `;
+
+    linesContainer.appendChild(row);
+    bindTransferLineRow(row, sourceBranchId, inventoryMapPromise, product);
+}
+
+function bindTransferLineRow(row, sourceBranchId, inventoryMapPromise, product = null) {
+    const searchInput = row.querySelector('.tra-line-search');
+    const hiddenInput = row.querySelector('.tra-line-product-id');
+    const results = row.querySelector('.tra-line-results');
+    const selectedLabel = row.querySelector('.tra-line-selected');
+    const qtyInput = row.querySelector('.tra-line-qty');
+    const stockInfoDiv = row.querySelector('.tra-line-stock');
+    const stockQtySpan = row.querySelector('.tra-line-stock-qty');
+    const removeButton = row.querySelector('.tra-remove-line-btn');
+    let timer = null;
+    let lastMatches = [];
+
+    const paintStock = async (productId, isPesable) => {
+        if (!stockInfoDiv || !stockQtySpan || !sourceBranchId) return;
+
+        const inventoryMap = await inventoryMapPromise;
+        const inventoryItem = inventoryMap.get(Number(productId));
+        const stock = Number(inventoryItem?.stock || 0);
+        const weighted = inventoryItem?.esPesable ?? isPesable;
+
+        stockQtySpan.textContent = formatTransferStockLabel(stock, weighted);
+        stockInfoDiv.style.display = 'block';
+
+        const labelSpan = stockQtySpan.parentElement;
+        if (stock <= 0) {
+            stockInfoDiv.style.background = '#fef2f2';
+            stockInfoDiv.style.borderColor = '#fca5a5';
+            if (labelSpan) labelSpan.style.color = '#991b1b';
+            return;
+        }
+
+        stockInfoDiv.style.background = '#f0fdf4';
+        stockInfoDiv.style.borderColor = '#86efac';
+        if (labelSpan) labelSpan.style.color = '#166534';
+    };
+
+    const selectProduct = (selectedProduct) => {
+        if (!selectedProduct) return;
+
+        const weighted = isWeightedAdminProduct(selectedProduct.esPesable);
+        hiddenInput.value = selectedProduct.id_producto;
+        searchInput.value = selectedProduct.codigoBarras || selectedProduct.nombreProducto || '';
+        searchInput.dataset.pesable = weighted ? '1' : '0';
+        selectedLabel.textContent = `${selectedProduct.nombreProducto || 'Producto'} (${selectedProduct.codigoBarras || 'Sin codigo'})`;
+        results.innerHTML = '';
+        lastMatches = [];
+        updateProductQuantityStep(weighted, qtyInput);
+        void paintStock(selectedProduct.id_producto, weighted);
+        qtyInput?.focus?.();
+    };
+
+    const renderMatches = (products) => {
+        lastMatches = Array.isArray(products) ? products : [];
+        results.innerHTML = lastMatches.map((item) => `
+            <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                style="justify-content:flex-start; text-align:left;"
+            >
+                <strong>${item.nombreProducto}</strong>
+                <span style="margin-left:0.5rem; color:var(--text-muted);">${item.codigoBarras || 'Sin codigo'}</span>
+            </button>
+        `).join('');
+
+        Array.from(results.querySelectorAll('button')).forEach((button, index) => {
+            button.addEventListener('click', () => {
+                selectProduct(lastMatches[index]);
+            });
+        });
+    };
+
+    removeButton?.addEventListener('click', () => {
+        const allRows = document.querySelectorAll('.tra-line-row');
+        if (allRows.length === 1) {
+            clearTransferLineRow(row);
+            return;
+        }
+        row.remove();
+    });
+
+    searchInput?.addEventListener('input', () => {
+        clearTimeout(timer);
+        timer = setTimeout(async () => {
+            const term = searchInput.value.trim();
+
+            if (!term) {
+                results.innerHTML = '';
+                lastMatches = [];
+                hiddenInput.value = '';
+                searchInput.dataset.pesable = '0';
+                selectedLabel.textContent = 'Sin producto seleccionado';
+                if (stockInfoDiv) stockInfoDiv.style.display = 'none';
+                return;
+            }
+
+            const catalog = await getAdminProductLookupCatalog();
+            const exactMatch = findExactAdminProductMatch(term, catalog);
+            if (exactMatch) {
+                selectProduct(exactMatch);
+                return;
+            }
+
+            renderMatches(searchAdminProductCatalog(term, catalog).slice(0, 12));
+        }, 250);
+    });
+
+    searchInput?.addEventListener('keydown', async (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+
+        const term = searchInput.value.trim();
+        if (!term) return;
+
+        const catalog = await getAdminProductLookupCatalog();
+        const match = findExactAdminProductMatch(term, catalog) || lastMatches[0] || searchAdminProductCatalog(term, catalog)[0];
+
+        if (match) {
+            selectProduct(match);
+        }
+    });
+
+    if (product?.id_producto) {
+        selectProduct(product);
+    }
+}
+
+function clearTransferLineRow(row) {
+    const searchInput = row.querySelector('.tra-line-search');
+    const hiddenInput = row.querySelector('.tra-line-product-id');
+    const results = row.querySelector('.tra-line-results');
+    const selectedLabel = row.querySelector('.tra-line-selected');
+    const qtyInput = row.querySelector('.tra-line-qty');
+    const stockInfoDiv = row.querySelector('.tra-line-stock');
+
+    if (searchInput) {
+        searchInput.value = '';
+        searchInput.dataset.pesable = '0';
+    }
+    if (hiddenInput) hiddenInput.value = '';
+    if (results) results.innerHTML = '';
+    if (selectedLabel) selectedLabel.textContent = 'Sin producto seleccionado';
+    if (qtyInput) {
+        qtyInput.value = '';
+        updateProductQuantityStep(false, qtyInput);
+    }
+    if (stockInfoDiv) stockInfoDiv.style.display = 'none';
 }
 
 function updateProductQuantityStep(isPesable, input) {
@@ -1091,6 +1493,40 @@ function bindInboundLineRow(row, product = null) {
     const qtyInput = row.querySelector('.mov-line-qty');
     const removeButton = row.querySelector('.mov-remove-line-btn');
     let timer = null;
+    let lastMatches = [];
+
+    const selectProduct = (selectedProduct) => {
+        if (!selectedProduct) return;
+
+        hiddenInput.value = selectedProduct.id_producto;
+        searchInput.value = selectedProduct.codigoBarras || selectedProduct.nombreProducto || '';
+        searchInput.dataset.pesable = isWeightedAdminProduct(selectedProduct.esPesable) ? '1' : '0';
+        selectedLabel.textContent = `${selectedProduct.nombreProducto || 'Producto'} (${selectedProduct.codigoBarras || 'Sin codigo'})`;
+        results.innerHTML = '';
+        lastMatches = [];
+        updateProductQuantityStep(isWeightedAdminProduct(selectedProduct.esPesable), qtyInput);
+        qtyInput.focus();
+    };
+
+    const renderMatches = (products) => {
+        lastMatches = Array.isArray(products) ? products : [];
+        results.innerHTML = lastMatches.map((item) => `
+            <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                style="justify-content:flex-start; text-align:left;"
+            >
+                <strong>${item.nombreProducto}</strong>
+                <span style="margin-left:0.5rem; color:var(--text-muted);">${item.codigoBarras || 'Sin codigo'}</span>
+            </button>
+        `).join('');
+
+        Array.from(results.querySelectorAll('button')).forEach((button, index) => {
+            button.addEventListener('click', () => {
+                selectProduct(lastMatches[index]);
+            });
+        });
+    };
 
     removeButton?.addEventListener('click', () => {
         const allRows = document.querySelectorAll('.mov-line-row');
@@ -1108,50 +1544,41 @@ function bindInboundLineRow(row, product = null) {
 
             if (!term) {
                 results.innerHTML = '';
+                lastMatches = [];
                 hiddenInput.value = '';
                 searchInput.dataset.pesable = '0';
                 selectedLabel.textContent = 'Sin producto seleccionado';
                 return;
             }
 
-            const response = await fetchAdminProducts(term, 12, 1);
-            const products = response.ok && Array.isArray(response.data) ? response.data : [];
+            const catalog = await getAdminProductLookupCatalog();
+            const exactMatch = findExactAdminProductMatch(term, catalog);
+            if (exactMatch) {
+                selectProduct(exactMatch);
+                return;
+            }
 
-            results.innerHTML = products.map((item) => `
-                <button
-                    type="button"
-                    class="btn btn-ghost btn-sm"
-                    data-id="${item.id_producto}"
-                    data-name="${item.nombreProducto}"
-                    data-code="${item.codigoBarras || ''}"
-                    data-pesable="${item.esPesable ? '1' : '0'}"
-                    style="justify-content:flex-start; text-align:left;"
-                >
-                    <strong>${item.nombreProducto}</strong>
-                    <span style="margin-left:0.5rem; color:var(--text-muted);">${item.codigoBarras || 'Sin codigo'}</span>
-                </button>
-            `).join('');
-
-            Array.from(results.querySelectorAll('button')).forEach((button) => {
-                button.addEventListener('click', () => {
-                    hiddenInput.value = button.dataset.id;
-                    searchInput.value = button.dataset.name;
-                    searchInput.dataset.pesable = button.dataset.pesable;
-                    selectedLabel.textContent = `${button.dataset.name} (${button.dataset.code || 'Sin codigo'})`;
-                    results.innerHTML = '';
-                    updateProductQuantityStep(button.dataset.pesable === '1', qtyInput);
-                    qtyInput.focus();
-                });
-            });
+            renderMatches(searchAdminProductCatalog(term, catalog).slice(0, 12));
         }, 250);
     });
 
+    searchInput?.addEventListener('keydown', async (event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+
+        const term = searchInput.value.trim();
+        if (!term) return;
+
+        const catalog = await getAdminProductLookupCatalog();
+        const match = findExactAdminProductMatch(term, catalog) || lastMatches[0] || searchAdminProductCatalog(term, catalog)[0];
+
+        if (match) {
+            selectProduct(match);
+        }
+    });
+
     if (product?.id_producto) {
-        hiddenInput.value = product.id_producto;
-        searchInput.value = product.nombreProducto || '';
-        searchInput.dataset.pesable = product.esPesable ? '1' : '0';
-        selectedLabel.textContent = `${product.nombreProducto || 'Producto'} (${product.codigoBarras || 'Sin codigo'})`;
-        updateProductQuantityStep(Boolean(product.esPesable), qtyInput);
+        selectProduct(product);
     }
 }
 

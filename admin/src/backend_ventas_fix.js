@@ -1,6 +1,5 @@
 // =========================================================================
 // MÓDULO E: RUTAS DE VENTAS Y POS (CON VALIDACIÓN DE STOCK)
-// ARCHIVO DE REFERENCIA - COPIA ESTE CÓDIGO A TU BACKEND
 // =========================================================================
 const express = require('express');
 const db = require('../config/db');
@@ -54,18 +53,11 @@ router.post('/', verificarToken, async (req, res) => {
                 VALUES (?, ?, ?, ?, ?, ?)
             `, [id_venta, item.id_producto, item.cantidad, item.precioVenta, costoHistorico, item.subtotalLinea]);
 
-            // C. Descontar Stock de INVENTARIO
+            // C. Descontar Stock de INVENTARIO (Seguro, porque ya validamos en el Paso 1)
             await conexion.execute(`
                 UPDATE STOCK_INVENTARIO SET cantidad = cantidad - ? 
                 WHERE id_producto = ? AND id_sucursal = ?
             `, [item.cantidad, item.id_producto, id_sucursal]);
-
-            // D. AUDITORÍA: Registrar movimiento de mercadería
-            await conexion.execute(`
-                INSERT INTO MOVIMIENTO_MERCADERIA 
-                (id_producto, id_usuario, id_sucursalOrigen, id_sucursalDestino, tipoMovimiento, cantidadMov, comprobanteMov)
-                VALUES (?, ?, ?, ?, 'VENTA', ?, ?)
-            `, [item.id_producto, id_usuario, id_sucursal, id_sucursal, item.cantidad, folioDocumento || id_venta]);
         }
 
         // 4. Registrar el Pago
@@ -89,45 +81,82 @@ router.post('/', verificarToken, async (req, res) => {
 
 // --- ENDPOINT: HISTORIAL DE VENTAS ---
 // GET /api/ventas
-// GET /api/ventas?all=true (para administradores, trae todas las sucursales)
 router.get('/', verificarToken, async (req, res) => {
     try {
         const { id_sucursal, rol } = req.usuario;
-        const { all } = req.query; // Parámetro para traer todas las ventas
 
         let query = `
-            SELECT 
-                v.id_venta, 
-                v.id_sucursal, 
-                s.nombreSucursal,
-                v.fechaVenta, 
-                v.total, 
-                v.estado,
-                t.tipoDoc, 
-                t.esFiscal, 
-                p.metodoPago
+            SELECT v.id_venta, v.id_usuario, v.id_sucursal, s.nombreSucursal, v.fechaVenta, v.total, t.tipoDoc, t.esFiscal, p.metodoPago
             FROM VENTA v
             INNER JOIN TIPO_DOC t ON v.id_tipoDoc = t.id_tipoDoc
-            INNER JOIN SUCURSAL s ON v.id_sucursal = s.id_sucursal
             LEFT JOIN PAGO_VENTA p ON v.id_venta = p.id_venta
+            LEFT JOIN SUCURSAL s ON v.id_sucursal = s.id_sucursal
         `;
+        let queryParams = [];
 
-        let params = [];
-
-        // Si el usuario es Administrador y solicita 'all', no filtramos por sucursal
-        if (all === 'true' && (rol === 'Administrador' || rol === 'Admin' || rol === 'admin')) {
-            query += ` ORDER BY v.fechaVenta DESC LIMIT 10000`;
-        } else {
-            // De lo contrario, filtramos por la sucursal del usuario
-            query += ` WHERE v.id_sucursal = ? ORDER BY v.fechaVenta DESC LIMIT 1000`;
-            params = [id_sucursal];
+        // Si NO es Administrador, solo puede ver las ventas de su propia sucursal
+        if (rol !== 'Administrador') {
+            query += ` WHERE v.id_sucursal = ?`;
+            queryParams.push(id_sucursal);
         }
 
-        const [ventas] = await db.execute(query, params);
+        query += ` ORDER BY v.fechaVenta DESC LIMIT 50000`;
+
+        const [ventas] = await db.execute(query, queryParams);
         res.json(ventas);
     } catch (error) {
-        console.error('Error al obtener historial de ventas:', error);
+        console.error('Error al obtener historial:', error);
         res.status(500).json({ error: 'Error al obtener historial de ventas' });
+    }
+});
+
+// --- ENDPOINT: OBTENER DETALLE COMPLETO DE UNA VENTA (PARA IMPRIMIR/VER) ---
+// GET /api/ventas/:id
+router.get('/:id', verificarToken, async (req, res) => {
+    try {
+        const { id } = req.params;
+
+        // 1. Obtener la cabecera de la venta (Datos generales)
+        const [venta] = await db.execute(`
+            SELECT v.*, u.nombreCompleto as nombreCajero, c.nombreCliente, c.rut_cliente, t.tipoDoc
+            FROM VENTA v
+            INNER JOIN USUARIO u ON v.id_usuario = u.id_usuario
+            INNER JOIN TIPO_DOC t ON v.id_tipoDoc = t.id_tipoDoc
+            LEFT JOIN CLIENTE c ON v.id_cliente = c.id_cliente
+            WHERE v.id_venta = ?
+        `, [id]);
+
+        if (venta.length === 0) {
+            return res.status(404).json({ error: 'Venta no encontrada' });
+        }
+
+        // 2. Obtener el detalle de los productos vendidos
+        const [detalles] = await db.execute(`
+            SELECT dv.cantidadVenta, dv.precioVenta, dv.subtotalLinea, p.nombreProducto, p.codigoBarras
+            FROM DETALLE_VENTA dv
+            INNER JOIN PRODUCTO p ON dv.id_producto = p.id_producto
+            WHERE dv.id_venta = ?
+        `, [id]);
+
+        // 3. Obtener los métodos de pago utilizados (Pago Mixto)
+        const [pagos] = await db.execute(`
+            SELECT metodoPago, montoPago
+            FROM PAGO_VENTA
+            WHERE id_venta = ?
+        `, [id]);
+
+        // 4. Armar y enviar el JSON unificado
+        const respuestaCompleta = {
+            cabecera: venta[0],
+            productos: detalles,
+            pagos: pagos
+        };
+
+        res.json(respuestaCompleta);
+
+    } catch (error) {
+        console.error('Error al obtener el detalle de la venta:', error);
+        res.status(500).json({ error: 'Error al obtener el detalle del documento' });
     }
 });
 
@@ -168,42 +197,6 @@ router.put('/:id/anular', verificarToken, async (req, res) => {
         res.status(500).json({ error: 'Error al anular la venta' });
     } finally {
         conexion.release();
-    }
-});
-
-// --- ENDPOINT: OBTENER DETALLE DE UNA VENTA ---
-// GET /api/ventas/:id/detalle
-router.get('/:id/detalle', verificarToken, async (req, res) => {
-    try {
-        const { id } = req.params;
-
-        const query = `
-            SELECT 
-                d.id_detalle,
-                d.id_producto,
-                p.nombreProducto,
-                p.codigoBarras,
-                d.cantidadVenta as cantidad,
-                d.precioVenta,
-                d.subtotalLinea
-            FROM DETALLE_VENTA d
-            INNER JOIN PRODUCTO p ON d.id_producto = p.id_producto
-            WHERE d.id_venta = ?
-        `;
-
-        const [detalles] = await db.execute(query, [id]);
-        
-        // También podríamos querer información del pago
-        const [pagos] = await db.execute('SELECT metodoPago, montoPago FROM PAGO_VENTA WHERE id_venta = ?', [id]);
-
-        res.json({
-            ok: true,
-            items: detalles,
-            pagos: pagos
-        });
-    } catch (error) {
-        console.error('Error al obtener detalle de venta:', error);
-        res.status(500).json({ error: 'Error al obtener el detalle de la venta' });
     }
 });
 
