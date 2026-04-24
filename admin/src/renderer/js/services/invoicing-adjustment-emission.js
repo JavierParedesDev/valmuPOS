@@ -193,7 +193,7 @@ window.ValmuInvoicingAdjustmentEmission = {
                 },
                 Certificado: {
                     Rut: rutEnvia,
-                    Password: config.certPassword || config.passwordCert || ''
+                    Password: config.certPassword || config.passwordCert || 'distribuidoraAlmi2020'
                 },
                 Ambiente: 1,
                 Tipo: 1
@@ -212,7 +212,7 @@ window.ValmuInvoicingAdjustmentEmission = {
             formData.append('input', JSON.stringify(payload));
             formData.append('file', certBlob, 'certificado.pfx');
             formData.append('caf', cafBlob, 'CAF_61.xml');
-            formData.append('password', config.certPassword || config.passwordCert || '');
+            formData.append('password', config.certPassword || config.passwordCert || 'distribuidoraAlmi2020');
 
             const response = await fetch('https://api.simpleapi.cl/api/v1/dte/generar', {
                 method: 'POST',
@@ -454,7 +454,7 @@ window.ValmuInvoicingAdjustmentEmission = {
                 },
                 Certificado: {
                     Rut: rutEnvia,
-                    Password: localConfig.certPassword || localConfig.passwordCert || ''
+                    Password: localConfig.certPassword || localConfig.passwordCert || 'distribuidoraAlmi2020'
                 },
                 Ambiente: 1,
                 Tipo: 1
@@ -473,7 +473,7 @@ window.ValmuInvoicingAdjustmentEmission = {
             formData.append('input', JSON.stringify(payload));
             formData.append('file', certBlob, 'certificado.pfx');
             formData.append('caf', cafBlob, 'CAF_56.xml');
-            formData.append('password', localConfig.certPassword || localConfig.passwordCert || '');
+            formData.append('password', localConfig.certPassword || localConfig.passwordCert || 'distribuidoraAlmi2020');
 
             const response = await fetch('https://api.simpleapi.cl/api/v1/dte/generar', {
                 method: 'POST',

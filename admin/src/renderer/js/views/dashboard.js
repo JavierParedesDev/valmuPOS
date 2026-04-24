@@ -1,4 +1,4 @@
-let dashboardRefreshTimer = null;
+let dashboardRefreshTimer = null; // matched
 const DASHBOARD_LIVE_REFRESH_MS = 8000;
 let dashboardInventoryRefreshListenerBound = false;
 const ADMIN_TIMEZONE = 'America/Santiago';
@@ -498,77 +498,125 @@ async function renderDashboard() {
         return;
     }
 
-    // Vista Admin (original)
+    // Vista Admin (Diseño Moderno)
     contentArea.innerHTML = `
-        <div class="dashboard-v2-container" style="padding: 0.5rem 0;">
-            <!-- Welcome Section -->
-            <div class="mb-6">
-                <h2 class="text-2xl font-bold tracking-tight text-gray-900">Panel de Control</h2>
-                <p class="text-gray-500 text-sm mt-1">Bienvenido de nuevo. Aquí tienes el rendimiento de tu negocio hoy.</p>
+        <div class="dashboard-v2-container flex flex-col gap-8" style="padding: 0.5rem 0;">
+            
+            <!-- ⭐ HERO SECTION (Propaganda) -->
+            <div class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-600 via-orange-500 to-red-500 p-8 text-white shadow-xl">
+                <!-- Abstract patterns -->
+                <div class="absolute top-0 right-0 -mr-20 -mt-20 h-64 w-64 rounded-full bg-white/10 blur-3xl"></div>
+                <div class="absolute bottom-0 left-0 -ml-10 -mb-10 h-40 w-40 rounded-full bg-black/5 blur-2xl"></div>
+                
+                <div class="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
+                    <div class="flex-1 text-center md:text-left">
+                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-[10px] font-black uppercase tracking-widest mb-4">
+                            <span class="flex h-2 w-2 rounded-full bg-white animate-pulse"></span>
+                            Sistema Activo v2.1.3
+                        </div>
+                        <h2 class="text-4xl md:text-5xl font-black mb-4 leading-[1.1] tracking-tight">Potencia tu Negocio con <span class="text-orange-100">Valmu</span></h2>
+                        <p class="text-orange-50 text-lg mb-8 max-w-lg opacity-90 font-medium leading-snug">Gestiona inventario, ventas y publicidad desde un solo lugar. Haz crecer tu marca con herramientas de nivel industrial.</p>
+                        
+                        <div class="flex flex-wrap items-center justify-center md:justify-start gap-4">
+                            <button onclick="window.adminNavigateToPage('advertising')" class="px-8 py-3.5 bg-white text-orange-600 rounded-2xl font-black text-sm shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2">
+                                <i class="bi bi-megaphone-fill"></i> Crear Publicidad
+                            </button>
+                            <button onclick="window.adminNavigateToPage('finances')" class="px-8 py-3.5 bg-black/20 backdrop-blur-md border border-white/30 text-white rounded-2xl font-black text-sm hover:bg-black/30 transition-all">
+                                Explorar Finanzas
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <!-- Stats Grid -->
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+            <!-- 📖 GUÍA DEL ECOSISTEMA (Como se hace) -->
+            <div class="animate-fade-in mb-4">
+                <div class="flex items-center gap-3 mb-6">
+                    <div class="h-8 w-1 bg-orange-600 rounded-full"></div>
+                    <h3 class="text-xl font-black text-gray-900 tracking-tight">¿Cómo funciona el ecosistema Valmu?</h3>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <!-- Paso 1 -->
+                    <div class="group bg-white rounded-3xl p-6 border border-gray-100 shadow-sm hover:shadow-md hover:border-orange-100 transition-all">
+                        <div class="h-12 w-12 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                            <i class="bi bi-pc-display"></i>
+                        </div>
+                        <h4 class="font-black text-gray-900 mb-2">1. Gestión Admin</h4>
+                        <p class="text-gray-500 text-xs leading-relaxed">Cargas tus productos, ajustas stock e imágenes. Todo sincronizado en la nube para tus sucursales.</p>
+                    </div>
+                    <!-- Paso 2 -->
+                    <div class="group bg-white rounded-3xl p-6 border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-100 transition-all">
+                        <div class="h-12 w-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                            <i class="bi bi-cart4"></i>
+                        </div>
+                        <h4 class="font-black text-gray-900 mb-2">2. Punto de Venta</h4>
+                        <p class="text-gray-500 text-xs leading-relaxed">Tus cajeros usan la App Cajero para vender rápido. Emite boletas SII y gestiona el flujo de caja diario.</p>
+                    </div>
+                    <!-- Paso 3 -->
+                    <div class="group bg-white rounded-3xl p-6 border border-gray-100 shadow-sm hover:shadow-md hover:border-purple-100 transition-all">
+                        <div class="h-12 w-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
+                            <i class="bi bi-aspect-ratio"></i>
+                        </div>
+                        <h4 class="font-black text-gray-900 mb-2">3. Pantalla Cliente</h4>
+                        <p class="text-gray-500 text-xs leading-relaxed">Impulsa ventas mostrando tus mejores imágenes y el detalle de compra al cliente en tiempo real.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 📊 STATS (KPIs) -->
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div class="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
                     <div class="flex items-center justify-between mb-3">
-                        <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Ventas Hoy</span>
-                        <div class="h-8 w-8 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center">
+                        <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Ventas de Hoy</span>
+                        <div class="h-8 w-8 rounded-xl bg-orange-50 text-orange-600 flex items-center justify-center">
                             <i class="bi bi-currency-dollar"></i>
                         </div>
                     </div>
-                    <div class="flex items-baseline gap-2">
-                        <h3 id="stat-sales-today" class="text-2xl font-bold text-gray-900">$0</h3>
-                    </div>
-                    <p id="stat-sales-count" class="text-xs text-gray-400 mt-1">Cero transacciones</p>
+                    <h3 id="stat-sales-today" class="text-2xl font-black text-gray-900">$0</h3>
+                    <p id="stat-sales-count" class="text-[10px] text-orange-600 mt-1 font-black">Calculando...</p>
                 </div>
 
-                <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                <div class="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
                     <div class="flex items-center justify-between mb-3">
-                        <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Utilidad bruta</span>
-                        <div class="h-8 w-8 rounded-lg bg-green-50 text-green-600 flex items-center justify-center">
+                        <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Margen Estimado</span>
+                        <div class="h-8 w-8 rounded-xl bg-green-50 text-green-600 flex items-center justify-center">
                             <i class="bi bi-graph-up-arrow"></i>
                         </div>
                     </div>
-                    <div class="flex items-baseline gap-2">
-                        <h3 id="stat-profit-today" class="text-2xl font-bold text-gray-900">$0</h3>
-                    </div>
-                    <p class="text-xs text-green-500 mt-1 font-medium italic">Margen real estimado</p>
+                    <h3 id="stat-profit-today" class="text-2xl font-black text-emerald-600">$0</h3>
+                    <p class="text-[10px] text-gray-400 mt-1 font-medium italic">Margen real bruto</p>
                 </div>
 
-                <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                <div class="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
                     <div class="flex items-center justify-between mb-3">
-                        <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Inversion Stock</span>
-                        <div class="h-8 w-8 rounded-lg bg-orange-50 text-orange-600 flex items-center justify-center">
+                        <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Valor Inventario</span>
+                        <div class="h-8 w-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
                             <i class="bi bi-safe2"></i>
                         </div>
                     </div>
-                    <div class="flex items-baseline gap-2">
-                        <h3 id="stat-inventory-value" class="text-2xl font-bold text-gray-900">$0</h3>
-                    </div>
-                    <p class="text-xs text-gray-400 mt-1">Valorizacion segun costo</p>
+                    <h3 id="stat-inventory-value" class="text-2xl font-black text-gray-900">$0</h3>
+                    <p class="text-[10px] text-gray-400 mt-1 font-medium">Valorización stock</p>
                 </div>
 
-                <div class="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+                <div class="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
                     <div class="flex items-center justify-between mb-3">
-                        <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Stock Critico</span>
-                        <div class="h-8 w-8 rounded-lg bg-red-50 text-red-600 flex items-center justify-center">
+                        <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest">Stock Crítico</span>
+                        <div class="h-8 w-8 rounded-xl bg-red-50 text-red-600 flex items-center justify-center">
                             <i class="bi bi-exclamation-triangle"></i>
                         </div>
                     </div>
-                    <div class="flex items-baseline gap-2">
-                        <h3 id="stat-low-stock" class="text-2xl font-bold text-gray-900">0</h3>
-                    </div>
-                    <p class="text-xs text-red-400 mt-1 font-medium">Requiere reposicion pronto</p>
+                    <h3 id="stat-low-stock" class="text-2xl font-black text-red-600">0</h3>
+                    <p class="text-[10px] text-red-400 mt-1 font-black uppercase tracking-tighter">Requiere reposición</p>
                 </div>
             </div>
 
+            <!-- Gráfico y Actividad -->
             <div class="grid grid-cols-12 gap-6">
-                <!-- Main Chart -->
-                <div class="col-span-12 lg:col-span-8 bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+                <div class="col-span-12 lg:col-span-8 bg-white rounded-3xl border border-gray-100 p-6 shadow-sm">
                     <div class="flex items-center justify-between mb-6">
-                        <h3 class="font-bold text-gray-900">Tendencia Semanal</h3>
-                        <div class="flex gap-2">
-                            <span class="flex items-center gap-1 text-[10px] text-gray-400"><span class="w-2 h-2 rounded-full bg-orange-500"></span>Ventas ($)</span>
+                        <h3 class="font-black text-gray-900 tracking-tight">Tendencia Semanal</h3>
+                        <div class="flex gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                            <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-orange-500"></span>Ventas</span>
                         </div>
                     </div>
                     <div style="height: 300px; position: relative;">
@@ -576,81 +624,78 @@ async function renderDashboard() {
                     </div>
                 </div>
 
-                <!-- Recent Activity List -->
-                <div class="col-span-12 lg:col-span-4 bg-white rounded-xl border border-gray-200 p-6 shadow-sm flex flex-col">
-                    <h3 class="font-bold text-gray-900 mb-6">Ultimas Ventas</h3>
+                <div class="col-span-12 lg:col-span-4 bg-white rounded-3xl border border-gray-100 p-6 shadow-sm flex flex-col">
+                    <div class="flex items-center justify-between mb-6">
+                        <h3 class="font-black text-gray-900 tracking-tight">Últimas Ventas</h3>
+                        <i class="bi bi-clock-history text-orange-500 text-lg"></i>
+                    </div>
                     <div class="flex-1 overflow-y-auto pr-1" style="max-height: 320px;" id="dashboard-recent-list">
-                        <div class="flex flex-col gap-4">
-                            <!-- Items populated JS -->
-                             <p class="text-center text-gray-400 text-sm py-10">Cargando actividad...</p>
-                        </div>
+                         <p class="text-center text-gray-400 text-xs py-10 italic font-medium">Sincronizando actividad...</p>
                     </div>
                 </div>
             </div>
 
-            <div class="mt-6 bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-                <div class="flex items-center justify-between gap-3 mb-5">
+            <!-- Análisis Detallado -->
+            <div class="bg-white rounded-3xl border border-gray-100 p-8 shadow-sm">
+                <div class="flex items-center justify-between gap-3 mb-8 text-center md:text-left">
                     <div>
-                        <h3 class="font-bold text-gray-900">Reporte Separado por Canal</h3>
-                        <p class="text-sm text-gray-500 mt-1">Resumen diferenciado entre ventas de caja y ventas por despacho.</p>
+                        <h3 class="text-xl font-black text-gray-900 tracking-tight">Análisis de Canales</h3>
+                        <p class="text-xs text-gray-500 mt-1 leading-relaxed">Comparativa entre ventas locales y despachos.</p>
                     </div>
-                    <span class="text-[10px] font-black uppercase tracking-[0.2em] text-gray-400">Admin</span>
+                    <div class="hidden md:block px-3 py-1 bg-slate-100 rounded-lg text-[9px] font-black text-gray-400 uppercase tracking-[0.2em] shadow-sm">Consolidado Hoy</div>
                 </div>
                 <div id="dashboard-sales-split-cards">
-                    <div class="text-sm text-gray-400">Cargando resumen por canal...</div>
+                    <div class="text-xs text-gray-400 italic font-medium">Analizando canales...</div>
                 </div>
             </div>
 
-            <div class="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-                <div class="px-6 py-4 border-b border-gray-100 bg-slate-50/80 flex items-center justify-between gap-3">
-                    <div>
-                        <h3 class="font-bold text-gray-900">Detalle por Sucursal</h3>
-                        <p class="text-sm text-gray-500 mt-1">Separación de Casa Matriz, Bodega y despacho dentro de cada sucursal.</p>
+            <!-- Tablas de Detalle -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <!-- Sucursales -->
+                <div class="lg:col-span-7 bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+                    <div class="px-6 py-5 border-b border-gray-50 bg-slate-50/30 flex items-center justify-between">
+                        <h3 class="font-black text-gray-900 tracking-tight">Desempeño Sucursales</h3>
+                    </div>
+                    <div class="table-shell" style="max-height: 360px; overflow-y: auto;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Sucursal</th>
+                                    <th style="text-align: right;">Caja SII</th>
+                                    <th style="text-align: right;">Internas</th>
+                                    <th style="text-align: right;">Despacho</th>
+                                    <th style="text-align: right;">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dashboard-branch-split-list">
+                                <tr><td colspan="5" class="text-center py-12 text-gray-400 italic font-medium">Cargando desglose...</td></tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
-                <div class="table-shell" style="max-height: 320px; overflow-y: auto;">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Sucursal</th>
-                                <th style="text-align: right;">Caja SII</th>
-                                <th style="text-align: right;">Caja Internas</th>
-                                <th style="text-align: right;">Caja Ganancia</th>
-                                <th style="text-align: right;">Despacho SII</th>
-                                <th style="text-align: right;">Despacho Internas</th>
-                                <th style="text-align: right;">Despacho Ganancia</th>
-                            </tr>
-                        </thead>
-                        <tbody id="dashboard-branch-split-list">
-                            <tr><td colspan="7" class="text-center py-10 text-gray-400 italic">Cargando resumen por sucursal...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
 
-            <!-- New Row: Critical Stock -->
-            <div class="mt-6 bg-white rounded-xl border border-gray-200 shadow-sm">
-                <div class="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-red-50/30">
-                    <h3 class="font-bold text-gray-900 flex items-center gap-2">
-                        <i class="bi bi-exclamation-triangle text-red-500"></i>
-                        Productos con Stock Crítico
-                    </h3>
-                    <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Requieren Reposición</span>
-                </div>
-                <div class="table-shell" style="max-height: 300px; overflow-y: auto;">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Producto</th>
-                                <th>Sucursal</th>
-                                <th style="text-align: right;">Stock</th>
-                                <th style="text-align: center;">Acción</th>
-                            </tr>
-                        </thead>
-                        <tbody id="dashboard-low-stock-list">
-                            <tr><td colspan="4" class="text-center py-10 text-gray-400 italic">No hay alertas de stock</td></tr>
-                        </tbody>
-                    </table>
+                <!-- Stock -->
+                <div class="lg:col-span-5 bg-white rounded-3xl border border-red-50 shadow-sm overflow-hidden">
+                    <div class="px-6 py-5 border-b border-red-50 bg-red-50/10 flex items-center justify-between">
+                        <h3 class="font-black text-gray-900 flex items-center gap-2 tracking-tight">
+                            <i class="bi bi-lightning-charge-fill text-red-500"></i>
+                            Stock Crítico
+                        </h3>
+                    </div>
+                    <div class="table-shell" style="max-height: 360px; overflow-y: auto;">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Producto</th>
+                                    <th style="text-align: right;">Stock</th>
+                                    <th style="text-align: center;">Venta</th>
+                                </tr>
+                            </thead>
+                            <tbody id="dashboard-low-stock-list">
+                                <tr><td colspan="3" class="text-center py-12 text-gray-400 italic">Analizando alertas...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
@@ -684,36 +729,28 @@ async function hydrateDashboard() {
         const splitMetrics = resolveApiData(kpisRes) || {};
         const branchSplitRows = resolveApiData(branchSalesRes) || [];
 
-        // Helper: parse localized numbers like "9.215.063.872" or "1,234.56"
+        // Helper: parse localized numbers
         const parseNumber = (v) => {
             if (v === null || v === undefined) return 0;
             if (typeof v === 'number') return v;
             let s = String(v).trim();
             if (s === '') return 0;
-            // remove currency symbols and spaces
             s = s.replace(/[^0-9.,-]/g, '');
-            // If contains both dot and comma, assume dot is thousand and comma decimal (e.g. "1.234,56")
             if (s.indexOf('.') !== -1 && s.indexOf(',') !== -1) {
-                s = s.replace(/\./g, ''); // remove thousand dots
-                s = s.replace(/,/g, '.'); // comma -> decimal
+                s = s.replace(/\./g, '').replace(/,/g, '.');
             } else if (s.indexOf(',') !== -1 && s.indexOf('.') === -1) {
-                // only comma present, assume decimal separator
                 s = s.replace(/,/g, '.');
             } else {
-                // only dots or only digits: remove thousand separators if any (common in locales using dots)
-                // e.g. "1.000" could be 1000 or 1.0; best-effort: if there are more than 1 digit after last dot assume thousand separators
                 const parts = s.split('.');
                 if (parts.length > 1 && parts[parts.length - 1].length === 3) {
-                    // treat dots as thousand separators
                     s = s.replace(/\./g, '');
                 }
             }
             const n = parseFloat(s);
             return Number.isFinite(n) ? n : 0;
         };
-        // 1. Fetch data
+
         const [prodRes, salesRes, branchRes] = await Promise.all([
-            // request a sufficiently large product page to avoid truncation; API should ideally support pagination
             apiRequest({ endpoint: '/productos?limit=10000', token }),
             apiRequest({ endpoint: '/ventas?all=true&limit=100000', token }),
             apiRequest({ endpoint: '/sucursales', token })
@@ -726,15 +763,12 @@ async function hydrateDashboard() {
             ? allBranches.filter((branch) => Number(branch.id_sucursal) === Number(activeBranchId))
             : allBranches;
 
-        // 2. Calculations
         const productMap = {};
         products.forEach(p => {
             productMap[p.id_producto] = { costo: parseNumber(p.precioCosto) || 0, stock: 0 };
         });
 
         let totalValue = 0;
-        let productsWithLowStock = 0;
-
         const inventoryPromises = branches.map(b => apiRequest({ endpoint: `/productos/inventario?id_sucursal=${b.id_sucursal}`, token }));
         const invResults = await Promise.all(inventoryPromises);
 
@@ -743,22 +777,18 @@ async function hydrateDashboard() {
             stockItems.forEach(item => {
                 const stock = parseNumber(item.stockActual || item.cantidad || item.stock || 0);
                 const prodKey = item.id_producto;
-                // Prefer costo/price from inventory item if provided, otherwise fall back to product master data
                 const itemCosto = parseNumber(item.precioCosto || item.precio || item.costo || 0) || (productMap[prodKey] ? productMap[prodKey].costo : 0);
                 if (productMap[prodKey]) {
                     productMap[prodKey].stock += stock;
                     totalValue += (stock * itemCosto);
                 } else {
-                    // If product not found in master list, still include its valuation using itemCosto
                     totalValue += (stock * itemCosto);
                 }
             });
         });
 
-        // Count low stock globally
         const lowStockThreshold = parseInt(localStorage.getItem('valmu_low_stock_threshold') || '10', 10);
         const criticalItems = [];
-
         invResults.forEach((res, index) => {
             const branch = branches[index];
             const stockItems = Array.isArray(res?.data) ? res.data : [];
@@ -776,13 +806,11 @@ async function hydrateDashboard() {
             });
         });
 
-        productsWithLowStock = criticalItems.length;
-
+        const productsWithLowStock = criticalItems.length;
         let todaySales = 0;
         let todayProfit = 0;
         let todayCount = 0;
 
-        // Last 7 days aggregation for chart
         const last7Days = [];
         for (let i = 6; i >= 0; i--) {
             const d = new Date();
@@ -795,26 +823,21 @@ async function hydrateDashboard() {
         sales.forEach(s => {
             const rawDate = (s.fecha_venta || s.fechaVenta || s.created_at || '');
             if (!rawDate) return;
-
             const dateObj = parseDashboardDateValue(rawDate);
             if (!dateObj) return;
-
             const date = getChileDateKey(dateObj);
             const total = Number(s.total || s.monto_total || 0);
-
             if (salesByDay[date] !== undefined) {
                 salesByDay[date] += total;
             }
-
             if (date === hoyStr && (s.estado || s.status || '').toLowerCase() !== 'anulada') {
                 todaySales += total;
                 todayCount++;
-                const cost = Number(s.costo_total) || (total * 0.78); // Estimate if not present
+                const cost = Number(s.costo_total) || (total * 0.78);
                 todayProfit += (total - cost);
             }
         });
 
-        // 3. UI Update
         const salesEl = document.getElementById('stat-sales-today');
         const countEl = document.getElementById('stat-sales-count');
         const profitEl = document.getElementById('stat-profit-today');
@@ -834,7 +857,6 @@ async function hydrateDashboard() {
         renderAdminSalesSplitCards(splitCards, splitMetrics);
         renderAdminBranchSplitTable(branchSplitTable, Array.isArray(branchSplitRows) ? branchSplitRows : []);
 
-        // Recent Sales List
         const recentList = document.getElementById('dashboard-recent-list');
         if (recentList) {
             const recent = sales.slice(0, 10);
@@ -857,7 +879,6 @@ async function hydrateDashboard() {
             `).join('') : '<p class="text-center text-gray-400 py-10">Sin ventas realizadas</p>';
         }
 
-        // Critical Stock List
         const lowStockTbody = document.getElementById('dashboard-low-stock-list');
         if (lowStockTbody) {
             lowStockTbody.innerHTML = criticalItems.length ? criticalItems.map(item => `
@@ -887,14 +908,9 @@ async function hydrateDashboard() {
                     </td>
                 </tr>
             `).join('') : '<tr><td colspan="4" class="text-center py-10 text-gray-400 italic">Inventario saludable • No hay alertas</td></tr>';
-
-            // Bind add stock buttons
             bindDashboardAddStockButtons();
         }
-
-        // Initialize Chart
         initDashboardChart(last7Days, Object.values(salesByDay));
-
     } catch (error) {
         console.error('Error hydrating dashboard:', error);
     }
@@ -941,7 +957,7 @@ function initDashboardChart(labels, data) {
                     titleFont: { size: 12 },
                     bodyFont: { size: 14, weight: 'bold' },
                     callbacks: {
-                        label: (ctx) => ` $${numberFormatter.format(Number(ctx.raw) || 0)}`
+                        label: (ctx) => ` $${numberFormatter.format(Number(ctx.raw) || 0)} `
                     }
                 }
             },
@@ -1031,7 +1047,7 @@ function bindDashboardAddStockButtons() {
                     if (res.ok || res.mensaje || res.message || (res && !res.error)) {
                         Toast.fire({
                             icon: 'success',
-                            title: `+${esPesable ? cantidad.toFixed(3) + ' Kg' : cantidad + ' un.'} agregados`
+                            title: `+ ${esPesable ? cantidad.toFixed(3) + ' Kg' : cantidad + ' un.'} agregados`
                         });
 
                         // Refresh dashboard data según el rol
@@ -1183,7 +1199,7 @@ async function hydrateBodegueroDashboard() {
                         </button>
                     </td>
                 </tr>
-            `).join('') : '<tr><td colspan="4" class="text-center py-10 text-gray-400 italic">Inventario saludable • No hay alertas</td></tr>';
+        `).join('') : '<tr><td colspan="4" class="text-center py-10 text-gray-400 italic">Inventario saludable • No hay alertas</td></tr>';
 
             bindDashboardAddStockButtons();
         }

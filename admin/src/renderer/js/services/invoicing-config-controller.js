@@ -143,7 +143,13 @@ window.ValmuInvoicingConfigController = {
             'conf-folio-final-39',
             'conf-folio-final-61',
             'conf-folio-final-56',
-            'conf-api-key'
+            'conf-api-key',
+            'conf-cert-pass',
+            'conf-rut-emisor',
+            'conf-rut-envia',
+            'conf-email',
+            'conf-razon-social',
+            'conf-direccion'
         ];
 
         autoSaveIds.forEach((id) => {

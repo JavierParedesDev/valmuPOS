@@ -469,6 +469,7 @@ function bindNavigation() {
             }
 
             salesHistoryState.showAllDocuments = false;
+            persistSalesHistoryState();
             renderDocumentType();
             openSaleHistoryModal();
         }, 220);
@@ -483,6 +484,7 @@ function bindNavigation() {
             return;
         }
         salesHistoryState.showAllDocuments = true;
+        persistSalesHistoryState();
         renderDocumentType();
         openSaleHistoryModal();
     });
@@ -816,17 +818,20 @@ function bindSalesHistoryTabs() {
     const historyHeader = document.getElementById('sale-history-header');
     historyHeader?.addEventListener('dblclick', async () => {
         salesHistoryState.showAllDocuments = !salesHistoryState.showAllDocuments;
+        persistSalesHistoryState();
         renderDocumentType();
         await loadSalesHistory();
     });
 
     document.getElementById('sales-tab-active-btn')?.addEventListener('click', () => {
         salesHistoryState.currentTab = 'active';
+        persistSalesHistoryState();
         renderSalesHistory();
     });
 
     document.getElementById('sales-tab-cancelled-btn')?.addEventListener('click', () => {
         salesHistoryState.currentTab = 'cancelled';
+        persistSalesHistoryState();
         renderSalesHistory();
     });
 }
@@ -1488,6 +1493,15 @@ function closeInfoModal() {
 
 const LOCAL_AUDIT_STORAGE_KEY = 'valmu-local-sales-audit';
 
+function buildDefaultSalesHistoryState() {
+    return {
+        items: [],
+        cancelledItems: [],
+        currentTab: 'active',
+        showAllDocuments: false
+    };
+}
+
 function buildDefaultLocalAuditState() {
     return {
         turnId: null,
@@ -1550,6 +1564,93 @@ function writeLocalAuditFallback(data) {
         console.error('Local audit fallback write error:', error);
         return buildDefaultLocalAuditState();
     }
+}
+
+function dedupeSalesHistoryItems(items) {
+    const seenIds = new Set();
+    return (Array.isArray(items) ? items : []).filter((sale) => {
+        const saleId = Number(sale?.id || 0);
+        if (saleId <= 0 || seenIds.has(saleId)) {
+            return false;
+        }
+        seenIds.add(saleId);
+        return true;
+    });
+}
+
+function filterVisibleSalesHistoryItems(items, showAllDocuments = false) {
+    const dedupedItems = dedupeSalesHistoryItems(items);
+    return showAllDocuments
+        ? dedupedItems
+        : dedupedItems.filter((sale) => Boolean(sale?.isFiscal));
+}
+
+function hydrateSalesHistoryState() {
+    const rawState = getScopedSessionData(SESSION_KEYS.salesHistory, getCurrentTurnScope());
+    const nextState = {
+        ...buildDefaultSalesHistoryState(),
+        ...(rawState && typeof rawState === 'object' ? rawState : {})
+    };
+
+    salesHistoryState.currentTab = nextState.currentTab === 'cancelled' ? 'cancelled' : 'active';
+    salesHistoryState.showAllDocuments = Boolean(nextState.showAllDocuments);
+    salesHistoryState.items = filterVisibleSalesHistoryItems(nextState.items, salesHistoryState.showAllDocuments);
+    salesHistoryState.cancelledItems = filterVisibleSalesHistoryItems(nextState.cancelledItems, salesHistoryState.showAllDocuments);
+}
+
+function persistSalesHistoryState() {
+    setScopedSessionData(SESSION_KEYS.salesHistory, getCurrentTurnScope(), {
+        items: dedupeSalesHistoryItems(salesHistoryState.items),
+        cancelledItems: dedupeSalesHistoryItems(salesHistoryState.cancelledItems),
+        currentTab: salesHistoryState.currentTab === 'cancelled' ? 'cancelled' : 'active',
+        showAllDocuments: Boolean(salesHistoryState.showAllDocuments)
+    });
+}
+
+function buildSalesHistoryItemsFromLocalAudit(entries = []) {
+    return entries.map((entry) => {
+        const saleId = Number(entry?.id || 0);
+        if (saleId <= 0) {
+            return null;
+        }
+
+        const documentType = String(entry?.documentType || 'Venta');
+        const normalizedDocumentType = documentType.toLowerCase();
+        return {
+            id: saleId,
+            total: Number(entry?.total || 0),
+            document: documentType,
+            paymentMethod: String(entry?.paymentMethod || 'Sin pago'),
+            origin: String(entry?.origin || 'CAJA').toUpperCase(),
+            paymentCash: Number(entry?.cash || 0),
+            paymentCard: Number(entry?.card || 0),
+            paymentTransfer: Number(entry?.transfer || 0),
+            isFiscal: normalizedDocumentType.includes('boleta') || normalizedDocumentType.includes('factura'),
+            folioDocumento: null,
+            tipoDte: null,
+            rutReceptor: null,
+            customerRut: null,
+            estadoSii: null,
+            trackId: null,
+            fechaDte: entry?.createdAt ? String(entry.createdAt).slice(0, 10) : null,
+            rawDate: entry?.createdAt || null,
+            dateLabel: entry?.createdAt ? formatDateTime(entry.createdAt) : 'Sin fecha',
+            userId: Number(getCurrentUser()?.id_usuario || getCurrentUser()?.idUsuario || getCurrentUser()?.id || 0)
+        };
+    }).filter(Boolean);
+}
+
+function mergeSalesHistorySources(...sources) {
+    return dedupeSalesHistoryItems(
+        sources
+            .flat()
+            .filter(Boolean)
+            .sort((left, right) => {
+                const rightTime = new Date(right?.rawDate || 0).getTime();
+                const leftTime = new Date(left?.rawDate || 0).getTime();
+                return rightTime - leftTime;
+            })
+    );
 }
 
 async function resetLocalAuditFallbackForTurn() {
@@ -1914,6 +2015,10 @@ function setScopedSessionData(key, scope, data) {
 function resetTurnScopedRuntimeState(shouldPersist = true) {
     turnHistoryState.entries = [];
     auditLogState.entries = [];
+    salesHistoryState.items = [];
+    salesHistoryState.cancelledItems = [];
+    salesHistoryState.currentTab = 'active';
+    salesHistoryState.showAllDocuments = false;
     saleReceiptState.records = {};
     saleReceiptState.saleId = null;
     dispatchReceiptState.records = {};
@@ -1926,6 +2031,7 @@ function resetTurnScopedRuntimeState(shouldPersist = true) {
     if (shouldPersist) {
         const turnScope = getCurrentTurnScope();
         setScopedSessionData(SESSION_KEYS.cashHistory, turnScope, null);
+        setScopedSessionData(SESSION_KEYS.salesHistory, turnScope, null);
         setScopedSessionData(SESSION_KEYS.auditLog, turnScope, null);
         setScopedSessionData(SESSION_KEYS.turnSummary, turnScope, null);
         setScopedSessionData(SESSION_KEYS.saleReceipts, turnScope, null);
@@ -1944,6 +2050,7 @@ function hydrateTurnScopedRuntimeState() {
 
     const rawSummary = getScopedSessionData(SESSION_KEYS.turnSummary, turnScope);
     const rawHistory = getScopedSessionData(SESSION_KEYS.cashHistory, turnScope);
+    const rawSalesHistory = getScopedSessionData(SESSION_KEYS.salesHistory, turnScope);
     const rawAuditLog = getScopedSessionData(SESSION_KEYS.auditLog, turnScope);
     const draft = getScopedSessionData(SESSION_KEYS.saleDraft, turnScope);
     const receipts = getScopedSessionData(SESSION_KEYS.saleReceipts, turnScope);
@@ -1968,6 +2075,15 @@ function hydrateTurnScopedRuntimeState() {
 
     if (!historyHydrated) {
         turnHistoryState.entries = [];
+    }
+
+    if (rawSalesHistory && typeof rawSalesHistory === 'object') {
+        hydrateSalesHistoryState();
+    } else {
+        salesHistoryState.items = [];
+        salesHistoryState.cancelledItems = [];
+        salesHistoryState.currentTab = 'active';
+        salesHistoryState.showAllDocuments = false;
     }
 
     if (!auditHydrated) {
@@ -2319,11 +2435,19 @@ function getDispatchRelatedSaleIds() {
 async function loadSalesHistory() {
     const apiBaseUrl = normalizeApiBaseUrl(getApiBaseUrl());
     const token = getAuthToken();
+    const localAuditEntries = filterVisibleSalesHistoryItems(
+        buildSalesHistoryItemsFromLocalAudit(readLocalAuditFallback().entries || []),
+        salesHistoryState.showAllDocuments
+    );
 
     if (!apiBaseUrl || !token) {
-        salesHistoryState.items = [];
+        salesHistoryState.items = mergeSalesHistorySources(
+            filterVisibleSalesHistoryItems(salesHistoryState.items, salesHistoryState.showAllDocuments),
+            localAuditEntries
+        ).slice(0, 150);
         salesHistoryState.cancelledItems = [];
         salesHistoryState.currentTab = 'active';
+        persistSalesHistoryState();
         renderSalesHistory();
         return;
     }
@@ -2343,13 +2467,21 @@ async function loadSalesHistory() {
             ? turnScopedSales
             : turnScopedSales.filter((sale) => sale.isFiscal);
 
-        salesHistoryState.items = visibleSales.slice(0, 150);
+        salesHistoryState.items = mergeSalesHistorySources(
+            visibleSales,
+            filterVisibleSalesHistoryItems(salesHistoryState.items, salesHistoryState.showAllDocuments),
+            localAuditEntries
+        ).slice(0, 150);
         syncTurnSummaryFromSales(turnScopedSales);
+        persistSalesHistoryState();
     } catch (error) {
         console.error('Sales history error:', error);
-        salesHistoryState.items = [];
-        salesHistoryState.cancelledItems = [];
+        salesHistoryState.items = mergeSalesHistorySources(
+            filterVisibleSalesHistoryItems(salesHistoryState.items, salesHistoryState.showAllDocuments),
+            localAuditEntries
+        ).slice(0, 150);
         setBackendStatus(error?.message || 'No se pudo cargar el historial de ventas.');
+        persistSalesHistoryState();
     }
 
     renderSalesHistory();
@@ -3174,6 +3306,7 @@ async function confirmSaleCancellation() {
                 reason,
                 formatDateTime
             });
+            persistSalesHistoryState();
             renderSalesHistory();
         }
 
@@ -6424,6 +6557,7 @@ function clearSession() {
         SESSION_KEYS.user,
         SESSION_KEYS.selectedBranch,
         SESSION_KEYS.cashHistory,
+        SESSION_KEYS.salesHistory,
         SESSION_KEYS.auditLog,
         SESSION_KEYS.turnSummary,
         SESSION_KEYS.saleReceipts,

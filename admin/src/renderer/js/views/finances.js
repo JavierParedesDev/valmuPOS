@@ -36,6 +36,124 @@ let finanzasState = {
 };
 
 let financesRefreshTimer = null;
+let finanzasUsuariosMap = {};
+
+function finanzasNormalizarMetodoPago(venta = {}) {
+    return String(
+        venta.medio_pago
+        || venta.medioPago
+        || venta.metodo_pago
+        || venta.metodoPago
+        || venta.payment_method
+        || venta.forma_pago
+        || venta.formaPago
+        || ''
+    ).trim().toLowerCase();
+}
+
+function finanzasEsMetodoTarjeta(metodoPago = '') {
+    return metodoPago.includes('debito')
+        || metodoPago.includes('crédito')
+        || metodoPago.includes('credito')
+        || metodoPago.includes('tarjeta');
+}
+
+function finanzasObtenerNombreCajero(venta = {}) {
+    const userId = Number(venta.id_usuario || venta.idUsuario || venta.id_vendedor || 0);
+    const usuario = finanzasUsuariosMap[userId];
+    if (usuario) {
+        return usuario.nombreCompleto
+            || usuario.nombre
+            || usuario.nombreUsuario
+            || usuario.username
+            || `Usuario #${userId}`;
+    }
+    return userId > 0 ? `Usuario #${userId}` : 'Sin cajero';
+}
+
+function finanzasRenderDesgloseCajeros() {
+    const container = document.getElementById('fin-cashier-breakdown');
+    if (!container) return;
+
+    const agrupado = finanzasState.filtered.reduce((acc, venta) => {
+        const userId = Number(venta.id_usuario || venta.idUsuario || venta.id_vendedor || 0);
+        const key = userId > 0 ? String(userId) : 'sin_usuario';
+        const metodoPago = finanzasNormalizarMetodoPago(venta);
+        const monto = parseNumber(venta.total || venta.monto_total || venta.monto || 0);
+
+        if (!acc[key]) {
+            acc[key] = {
+                userId,
+                nombre: finanzasObtenerNombreCajero(venta),
+                efectivo: 0,
+                tarjeta: 0,
+                transferencia: 0,
+                otros: 0,
+                total: 0,
+                cantidad: 0
+            };
+        }
+
+        if (metodoPago.includes('efectivo')) {
+            acc[key].efectivo += monto;
+        } else if (finanzasEsMetodoTarjeta(metodoPago)) {
+            acc[key].tarjeta += monto;
+        } else if (metodoPago.includes('transfer')) {
+            acc[key].transferencia += monto;
+        } else {
+            acc[key].otros += monto;
+        }
+
+        acc[key].total += monto;
+        acc[key].cantidad += 1;
+        return acc;
+    }, {});
+
+    const rows = Object.values(agrupado).sort((a, b) => b.total - a.total);
+
+    if (!rows.length) {
+        container.innerHTML = `
+            <div class="px-8 py-10 text-center text-gray-300 font-black uppercase text-[10px] tracking-widest">
+                No hay ventas para desglosar con los filtros actuales
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="overflow-x-auto">
+            <table class="w-full text-left">
+                <thead>
+                    <tr class="border-b border-gray-50">
+                        <th class="px-8 py-5 text-[10px] font-black text-gray-300 uppercase tracking-[0.2em]">Cajero</th>
+                        <th class="px-8 py-5 text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] text-right">Efectivo</th>
+                        <th class="px-8 py-5 text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] text-right">Tarjeta</th>
+                        <th class="px-8 py-5 text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] text-right">Transferencia</th>
+                        <th class="px-8 py-5 text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] text-right">Otros</th>
+                        <th class="px-8 py-5 text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] text-right">Total</th>
+                        <th class="px-8 py-5 text-[10px] font-black text-gray-300 uppercase tracking-[0.2em] text-right">Ventas</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-50">
+                    ${rows.map((row) => `
+                        <tr class="hover:bg-gray-50/50 transition-colors">
+                            <td class="px-8 py-4">
+                                <div class="font-black text-gray-900 text-sm">${row.nombre}</div>
+                                <div class="text-[10px] text-gray-400 font-bold uppercase tracking-widest">${row.userId > 0 ? `#${row.userId}` : 'Sin ID'}</div>
+                            </td>
+                            <td class="px-8 py-4 text-right font-black text-emerald-600">$${Math.round(row.efectivo).toLocaleString('es-CL')}</td>
+                            <td class="px-8 py-4 text-right font-black text-sky-600">$${Math.round(row.tarjeta).toLocaleString('es-CL')}</td>
+                            <td class="px-8 py-4 text-right font-black text-violet-600">$${Math.round(row.transferencia).toLocaleString('es-CL')}</td>
+                            <td class="px-8 py-4 text-right font-black text-gray-400">$${Math.round(row.otros).toLocaleString('es-CL')}</td>
+                            <td class="px-8 py-4 text-right font-black text-gray-900">$${Math.round(row.total).toLocaleString('es-CL')}</td>
+                            <td class="px-8 py-4 text-right text-sm font-bold text-gray-500">${row.cantidad}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
 
 async function renderFinances() {
     if (financesRefreshTimer) {
@@ -124,6 +242,16 @@ async function renderFinances() {
                     <div class="text-sm text-gray-400 uppercase font-black tracking-widest">Promedio diario (mes seleccionado)</div>
                     <div id="fin-mes-avg" class="text-3xl font-black text-gray-900 mt-3">$0</div>
                     <div class="text-[12px] text-gray-500 mt-1">(monto / días del mes)</div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden border-b-4 border-b-orange-500/10">
+                <div class="p-8 border-b border-gray-50 bg-gray-50/30">
+                    <h3 class="text-xl font-black text-gray-900 tracking-tight">Desglose por Cajero</h3>
+                    <p class="text-gray-400 text-sm font-medium mt-1">Montos por usuario según los filtros activos del panel.</p>
+                </div>
+                <div id="fin-cashier-breakdown">
+                    <div class="px-8 py-10 text-center text-gray-300 font-black uppercase text-[10px] tracking-widest">Preparando desglose...</div>
                 </div>
             </div>
 
@@ -219,6 +347,22 @@ async function renderFinances() {
 // Mapa de sucursales para mostrar nombres en vez de IDs
 let finanzasSucursalesMap = {};
 
+async function finanzasCargarUsuarios() {
+    const token = getAuthToken();
+    try {
+        const response = await apiRequest({ endpoint: '/auth/usuarios', token });
+        const usuarios = Array.isArray(response?.data) ? response.data : (Array.isArray(response) ? response : []);
+        finanzasUsuariosMap = usuarios.reduce((acc, usuario) => {
+            const id = Number(usuario.id_usuario || usuario.id || 0);
+            if (id > 0) acc[id] = usuario;
+            return acc;
+        }, {});
+    } catch (error) {
+        console.warn('No se pudieron cargar usuarios para el desglose de cajeros:', error);
+        finanzasUsuariosMap = {};
+    }
+}
+
 async function finanzasCargarSucursales() {
     const token = getAuthToken();
     try {
@@ -247,7 +391,10 @@ async function finanzasCargarVentas() {
     const token = getAuthToken();
     try {
         // Primero cargar sucursales para tener el mapa de nombres
-        await finanzasCargarSucursales();
+        await Promise.all([
+            finanzasCargarSucursales(),
+            finanzasCargarUsuarios()
+        ]);
 
         // If the UI requests to include all cashiers, try calling the API with a query param
         const includeAll = document.getElementById('fin-include-all')?.checked;
@@ -332,9 +479,9 @@ function finanzasAplicarFiltros() {
         }
 
         if (medio) {
-            const metodoPago = (v.medio_pago || v.medioPago || v.metodo_pago || v.metodoPago || v.payment_method || v.forma_pago || v.formaPago || '').toLowerCase();
+            const metodoPago = finanzasNormalizarMetodoPago(v);
             if (medio === 'tarjeta') {
-                if (!(metodoPago.includes('debito') || metodoPago.includes('crédito') || metodoPago.includes('credito') || metodoPago.includes('tarjeta'))) return false;
+                if (!finanzasEsMetodoTarjeta(metodoPago)) return false;
             } else {
                 if (!metodoPago.includes(medio)) return false;
             }
@@ -345,6 +492,7 @@ function finanzasAplicarFiltros() {
     finanzasState.page = 1;
     finanzasRenderTabla();
     finanzasActualizarEfectivoHoy();
+    finanzasRenderDesgloseCajeros();
 
 }
 
@@ -410,24 +558,6 @@ function finanzasRenderTabla() {
     const start = (safePage - 1) * FINANZAS_PER_PAGE;
     const slice = filtered.slice(start, start + FINANZAS_PER_PAGE);
 
-    // Robust sum: support different numeric formats / field names
-    const parseNumber = (val) => {
-        if (val === null || val === undefined) return 0;
-        if (typeof val === 'number') return val;
-        let s = String(val).trim().replace(/[^0-9.,-]/g, '');
-        if (s === '') return 0;
-        if (s.indexOf('.') !== -1 && s.indexOf(',') !== -1) {
-            s = s.replace(/\./g, '').replace(/,/g, '.');
-        } else if (s.indexOf(',') !== -1 && s.indexOf('.') === -1) {
-            s = s.replace(/,/g, '.');
-        } else {
-            const parts = s.split('.');
-            if (parts.length > 1 && parts[parts.length - 1].length === 3) s = s.replace(/\./g, '');
-        }
-        const n = parseFloat(s);
-        return Number.isFinite(n) ? n : 0;
-    };
-
     const montoFiltrado = filtered.reduce((sum, v) => sum + (parseNumber(v.total) || parseNumber(v.monto_total) || parseNumber(v.monto) || 0), 0);
     if (resumenFiltro) {
         resumenFiltro.textContent = total ? `$${montoFiltrado.toLocaleString('es-CL')}` : '';
@@ -440,14 +570,12 @@ function finanzasRenderTabla() {
         tbody.innerHTML = slice.map((v) => {
             const monto = parseNumber(v.total || v.monto_total || v.monto || 0);
             const fecha = v.fecha_venta || v.created_at || v.fechaVenta || '';
-            // Extraer método de pago con múltiples alias
             const metodoPago = v.medio_pago || v.medioPago || v.metodo_pago || v.metodoPago || v.payment_method || v.forma_pago || v.formaPago || '—';
-            // Extraer nombre de sucursal: primero intenta campos con nombre, si no usa el mapa por id_sucursal
             const idSuc = v.id_sucursal || v.sucursal_id || v.branchId;
             const sucursal = v.nombre_sucursal || v.nombreSucursal || v.Sucursal?.nombreSucursal || finanzasSucursalesMap[idSuc] || 'Sin asignar';
 
             return `
-                <tr class="group hover:bg-gray-50/50 transition-colors">
+                <tr class="group hover:bg-orange-50/50 cursor-pointer transition-colors" onclick="finanzasVerDetalleVenta(${v.id_venta})">
                     <td class="px-8 py-4 text-sm font-bold text-gray-700">${sucursal}</td>
                     <td class="px-8 py-4 font-black text-gray-900 text-base">$${monto.toLocaleString('es-CL')}</td>
                     <td class="px-8 py-4">
@@ -538,7 +666,6 @@ function finanzasActualizarKPIs() {
         const fechaMes = fechaFull.slice(0, 7);
         montoTotal += monto;
         if (fecha === hoy) { montoHoy += monto; countHoy++; }
-        // If a month filter is selected, use it as the month to show; otherwise use current month
         const filterMonth = selectedMonth || mes;
         if (fechaMes === filterMonth) { montoMes += monto; countMes++; }
     });
@@ -550,7 +677,6 @@ function finanzasActualizarKPIs() {
     if (document.getElementById('fin-total')) document.getElementById('fin-total').textContent = fmt(montoTotal);
     if (document.getElementById('fin-total-count')) document.getElementById('fin-total-count').textContent = `${finanzasState.ventas.length} Transacciones`;
 
-    // Average per day for the selected month
     const monthToCompute = selectedMonth || mes;
     if (monthToCompute) {
         const [y, m] = monthToCompute.split('-').map(Number);
@@ -560,7 +686,6 @@ function finanzasActualizarKPIs() {
         if (avgEl) avgEl.textContent = fmt(avg);
     }
 
-    // Draw monthly chart (last 12 months)
     try {
         const monthlyTotals = {};
         const now = new Date();
@@ -582,5 +707,170 @@ function finanzasActualizarKPIs() {
         initFinancesMonthChart(labels, data);
     } catch (err) {
         console.warn('Error initializing monthly chart', err);
+    }
+}
+
+async function finanzasVerDetalleVenta(idVenta) {
+    if (!idVenta) return;
+
+    try {
+        Swal.fire({
+            title: 'Cargando detalle...',
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        const token = getAuthToken();
+        const apiRes = await apiRequest({ endpoint: `/ventas/${idVenta}`, token });
+
+        if (!apiRes || !apiRes.ok || !apiRes.data || !apiRes.data.cabecera) {
+            throw new Error(apiRes?.error || 'No se pudo encontrar la venta');
+        }
+
+        const { cabecera, productos, pagos } = apiRes.data;
+        const total = parseNumber(cabecera.total || 0);
+
+        Swal.fire({
+            title: null,
+            width: '600px',
+            customClass: {
+                popup: 'custom-swal-popup'
+            },
+            html: `
+                <div class="product-preview-header">
+                    <div class="preview-icon"><i class="bi bi-receipt"></i></div>
+                    <div class="preview-title-stack">
+                        <span class="preview-overline">Detalle de Venta #${idVenta}</span>
+                        <h2 class="preview-title">${cabecera.folioDocumento || 'Ticket de Venta'}</h2>
+                    </div>
+                </div>
+
+                <div class="space-y-4 text-left">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                            <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Fecha</span>
+                            <div class="text-sm font-bold text-gray-900">${new Date(cabecera.fechaVenta).toLocaleString('es-CL')}</div>
+                        </div>
+                        <div class="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                            <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Cajero</span>
+                            <div class="text-sm font-bold text-gray-900">${cabecera.nombreCajero || 'Cajero General'}</div>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 p-3 rounded-xl border border-gray-100">
+                        <span class="text-[10px] font-black text-gray-400 uppercase tracking-widest block">Cliente</span>
+                        <div class="text-sm font-bold text-gray-900">${cabecera.nombreCliente || 'Cliente General'} ${cabecera.rut_cliente ? `(${cabecera.rut_cliente})` : ''}</div>
+                    </div>
+
+                    <div class="border border-gray-100 rounded-2xl overflow-hidden mt-6">
+                        <table class="w-full text-left text-xs">
+                            <thead class="bg-gray-900 text-white">
+                                <tr>
+                                    <th class="px-4 py-2 uppercase font-black tracking-widest">Producto</th>
+                                    <th class="px-4 py-2 uppercase font-black tracking-widest text-right">Cant.</th>
+                                    <th class="px-4 py-2 uppercase font-black tracking-widest text-right">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-50">
+                                ${productos.map(p => `
+                                    <tr>
+                                        <td class="px-4 py-3 font-bold text-gray-700">${p.nombreProducto}</td>
+                                        <td class="px-4 py-3 font-bold text-gray-900 text-right">${p.cantidadVenta}</td>
+                                        <td class="px-4 py-3 font-black text-gray-900 text-right">$${parseNumber(p.subtotalLinea).toLocaleString('es-CL')}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                            <tfoot class="bg-orange-50 font-black">
+                                <tr>
+                                    <td colspan="2" class="px-4 py-3 text-orange-800">TOTAL</td>
+                                    <td class="px-4 py-3 text-orange-900 text-right text-lg">$${total.toLocaleString('es-CL')}</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+
+                    <div class="mt-4 p-3 bg-indigo-50/50 rounded-xl border border-indigo-100">
+                        <span class="text-[10px] font-black text-indigo-400 uppercase tracking-widest block">Metodos de Pago</span>
+                        <div class="flex flex-wrap gap-2 mt-2">
+                            ${pagos.map(pag => `
+                                <span class="bg-white px-3 py-1 rounded-full text-xs font-black text-indigo-700 shadow-sm border border-indigo-100">${pag.metodoPago}: $${parseNumber(pag.montoPago).toLocaleString('es-CL')}</span>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-8">
+                    <button class="px-6 py-3 bg-white border border-gray-100 rounded-xl text-gray-400 hover:text-gray-900 transition-all font-black text-[10px] uppercase tracking-widest shadow-sm" onclick="Swal.close()">Cerrar</button>
+                    <button class="flex items-center gap-2 px-6 py-3 bg-gray-900 text-white rounded-xl hover:bg-orange-600 transition-all font-black text-[10px] uppercase tracking-widest shadow-lg shadow-gray-200" id="btn-imprimir-ticket">
+                        <i class="bi bi-printer-fill text-lg"></i> Imprimir Ticket
+                    </button>
+                </div>
+            `,
+            showConfirmButton: false,
+            didOpen: () => {
+                const btnPrint = document.getElementById('btn-imprimir-ticket');
+                if (btnPrint) {
+                    btnPrint.addEventListener('click', () => {
+                        finanzasImprimirTicket({ cabecera, productos, pagos });
+                    });
+                }
+            }
+        });
+    } catch (error) {
+        console.error('Error al ver detalle:', error);
+        Swal.fire('Error', 'No se pudo cargar el detalle de la venta', 'error');
+    }
+}
+
+async function finanzasImprimirTicket(ventaData) {
+    const { cabecera, productos, pagos } = ventaData;
+
+    // Preparar el payload para el printer_receipt.py
+    const payload = {
+        printerName: 'Predeterminada del sistema',
+        printerPaper: '80mm',
+        receipt: {
+            documentType: cabecera.tipoDoc || 'TICKET DE VENTA',
+            saleId: cabecera.id_venta,
+            dateLabel: new Date(cabecera.fechaVenta).toLocaleString('es-CL'),
+            customerLabel: cabecera.nombreCliente || 'Cliente General',
+            paymentMethod: pagos.map(p => p.metodoPago).join(' + '),
+            total: parseNumber(cabecera.total),
+            subtotal: parseNumber(cabecera.subtotal) || parseNumber(cabecera.total),
+            iva: parseNumber(cabecera.iva) || 0,
+            lineItems: productos.map(p => ({
+                name: p.nombreProducto,
+                quantityLabel: p.cantidadVenta,
+                unitPrice: parseNumber(p.precioVenta),
+                subtotal: parseNumber(p.subtotalLinea)
+            })),
+            footerMessage: 'Gracias por su compra'
+        }
+    };
+
+    try {
+        Swal.fire({
+            title: 'Imprimiendo...',
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        const result = await window.electronAPI.printReceipt(payload);
+
+        if (result && result.ok) {
+            Swal.fire({
+                icon: 'success',
+                title: 'Ticket enviado a la impresora',
+                toast: true,
+                position: 'top-end',
+                showConfirmButton: false,
+                timer: 3000
+            });
+        } else {
+            throw new Error(result?.error || 'Error desconocido al imprimir');
+        }
+    } catch (error) {
+        console.error('Error al imprimir:', error);
+        Swal.fire('Error de impresion', error.message, 'error');
     }
 }

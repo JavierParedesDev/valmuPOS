@@ -1,6 +1,6 @@
 {
   "name": "cajero",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "Valmu Cajero desktop app",
   "main": "src/main/main.js",
   "scripts": {
@@ -55,6 +55,7 @@
       "provider": "github",
       "owner": "JavierParedesDev",
       "repo": "valmuPOS",
+      "channel": "cajero",
       "releaseType": "release"
     },
     "nsis": {

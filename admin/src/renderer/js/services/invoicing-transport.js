@@ -128,7 +128,7 @@ window.ValmuInvoicingTransport = {
             const wrapPayload = {
                 Certificado: {
                     Rut: rutEnvia,
-                    Password: config.passwordCert || config.certPassword || 'distribuidoraAlmi2020'
+                    Password: config.certPassword || config.passwordCert || 'distribuidoraAlmi2020'
                 },
                 Caratula: {
                     RutEnvia: rutEnvia,
@@ -167,7 +167,7 @@ window.ValmuInvoicingTransport = {
                 Ambiente: 1,
                 Certificado: {
                     Rut: rutEnvia,
-                    Password: config.passwordCert || config.certPassword || 'distribuidoraAlmi2020'
+                    Password: config.certPassword || config.passwordCert || 'distribuidoraAlmi2020'
                 }
             };
 

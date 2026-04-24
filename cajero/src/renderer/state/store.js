@@ -8,6 +8,7 @@ export const SESSION_KEYS = {
     customerDisplayEnabled: 'valmu_cajero_customer_display_enabled',
     releaseRepo: 'valmu_cajero_release_repo',
     cashHistory: 'valmu_cajero_cash_history',
+    salesHistory: 'valmu_cajero_sales_history',
     auditLog: 'valmu_cajero_audit_log',
     turnSummary: 'valmu_cajero_turn_summary',
     saleReceipts: 'valmu_cajero_sale_receipts',

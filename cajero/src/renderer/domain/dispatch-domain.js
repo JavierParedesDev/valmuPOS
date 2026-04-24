@@ -207,6 +207,7 @@ export function buildDispatchPayload({
         id_tipoDoc: Number(documentTypeId),
         id_cliente: customerId ? Number(customerId) : null,
         origenVenta: 'DESPACHO',
+        origen_venta: 'DESPACHO',
         folio_documento: folioDocumento || null,
         metodo_pago: manualPayment === 'en_ruta' ? 'efectivo' : manualPayment,
         subtotal,

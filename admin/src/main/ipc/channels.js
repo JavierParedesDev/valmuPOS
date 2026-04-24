@@ -19,7 +19,9 @@ const IPC_CHANNELS = {
     LIST_INVOICES: 'list-invoices',
     OPEN_FILE: 'open-file',
     DELETE_INVOICE_FILES: 'delete-invoice-files',
-    UPLOAD_PUBLICIDAD: 'upload-publicidad'
+    UPLOAD_PUBLICIDAD: 'upload-publicidad',
+    PRINT_RECEIPT: 'printer:print-receipt',
+    GET_PRINTERS: 'settings:get-printers'
 };
 
 module.exports = {

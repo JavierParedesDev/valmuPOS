@@ -1,5 +1,8 @@
 const path = require('path');
 const { app, ipcMain, shell } = require('electron');
+const { execFile } = require('child_process');
+const os = require('os');
+const fsPromises = require('fs/promises');
 const { API_BASE_URL } = require('../config');
 const { IPC_CHANNELS } = require('./channels');
 const { loginUser } = require('../services/auth-service');
@@ -54,6 +57,81 @@ function bufferFromPayload(data) {
     }
 
     return Buffer.from(String(data), 'utf8');
+}
+
+function getReceiptPrinterScriptPath() {
+    if (app.isPackaged) {
+        const exePath = path.join(process.resourcesPath, 'scripts', 'receipt_printer.exe');
+        if (fs.existsSync(exePath)) return exePath;
+
+        const pyPath = path.join(process.resourcesPath, 'scripts', 'receipt_printer.py');
+        if (fs.existsSync(pyPath)) return pyPath;
+
+        return exePath; // Fallback
+    }
+
+    const pythonPath = path.join(__dirname, '../../../scripts/receipt_printer.py');
+    if (fs.existsSync(pythonPath)) {
+        return pythonPath;
+    }
+
+    return path.join(__dirname, '../../../scripts/receipt_printer.exe');
+}
+
+function getReceiptLogoPath() {
+    if (app.isPackaged) {
+        return path.join(process.resourcesPath, 'src', 'renderer', 'assets', 'logo.png');
+    }
+
+    return path.join(__dirname, '../../renderer/assets/logo.png');
+}
+
+async function runPythonReceiptPrint(payload) {
+    const scriptPath = getReceiptPrinterScriptPath();
+    const tempPath = path.join(os.tmpdir(), `valmu-receipt-${Date.now()}.json`);
+    const bridgePayload = {
+        ...payload,
+        logoPath: getReceiptLogoPath()
+    };
+
+    await fsPromises.writeFile(tempPath, JSON.stringify(bridgePayload), 'utf8');
+
+    try {
+        return await new Promise((resolve) => {
+            const isExe = scriptPath.endsWith('.exe');
+            const command = isExe ? scriptPath : 'python';
+            const args = isExe ? [tempPath] : [scriptPath, tempPath];
+
+            execFile(
+                command,
+                args,
+                {
+                    windowsHide: true
+                },
+                (error, stdout, stderr) => {
+                    if (error) {
+                        resolve({
+                            ok: false,
+                            error: stderr?.trim() || stdout?.trim() || error.message
+                        });
+                        return;
+                    }
+
+                    try {
+                        const parsed = JSON.parse(String(stdout || '').trim() || '{}');
+                        resolve(parsed);
+                    } catch (_parseError) {
+                        resolve({
+                            ok: false,
+                            error: stderr?.trim() || 'Python no devolvio una respuesta valida.'
+                        });
+                    }
+                }
+            );
+        });
+    } finally {
+        await fsPromises.unlink(tempPath).catch(() => { });
+    }
 }
 
 function registerIpcHandlers(mainWindow, updaterApi = null) {
@@ -251,6 +329,32 @@ function registerIpcHandlers(mainWindow, updaterApi = null) {
         } catch (error) {
             console.error('Error deleting local invoice files:', error);
             return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle(IPC_CHANNELS.GET_PRINTERS, async () => {
+        if (!activeWindow || activeWindow.isDestroyed()) {
+            return [];
+        }
+
+        const printers = await activeWindow.webContents.getPrintersAsync();
+        return printers.map((printer) => ({
+            name: printer.name,
+            displayName: printer.displayName || printer.name,
+            description: printer.description || '',
+            status: printer.status || 0,
+            isDefault: Boolean(printer.isDefault)
+        }));
+    });
+
+    ipcMain.handle(IPC_CHANNELS.PRINT_RECEIPT, async (_event, payload) => {
+        try {
+            return await runPythonReceiptPrint(payload || {});
+        } catch (error) {
+            return {
+                ok: false,
+                error: error?.message || 'No se pudo imprimir el comprobante.'
+            };
         }
     });
 

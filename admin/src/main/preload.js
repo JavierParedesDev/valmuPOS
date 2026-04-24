@@ -22,7 +22,9 @@ const IPC_CHANNELS = {
     LIST_INVOICES: 'list-invoices',
     OPEN_FILE: 'open-file',
     DELETE_INVOICE_FILES: 'delete-invoice-files',
-    UPLOAD_PUBLICIDAD: 'upload-publicidad'
+    UPLOAD_PUBLICIDAD: 'upload-publicidad',
+    GET_PRINTERS: 'settings:get-printers',
+    PRINT_RECEIPT: 'printer:print-receipt'
 };
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -46,6 +48,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openFile: (filePath) => ipcRenderer.invoke(IPC_CHANNELS.OPEN_FILE, filePath),
     deleteInvoiceFiles: (filename) => ipcRenderer.invoke(IPC_CHANNELS.DELETE_INVOICE_FILES, filename),
     uploadPublicidad: (data) => ipcRenderer.invoke(IPC_CHANNELS.UPLOAD_PUBLICIDAD, data),
+    getPrinters: () => ipcRenderer.invoke(IPC_CHANNELS.GET_PRINTERS),
+    printReceipt: (payload) => ipcRenderer.invoke(IPC_CHANNELS.PRINT_RECEIPT, payload),
     onUpdateStateChanged: (callback) => {
         const listener = (_event, payload) => callback(payload);
         ipcRenderer.on(IPC_CHANNELS.UPDATE_STATE_CHANGED, listener);

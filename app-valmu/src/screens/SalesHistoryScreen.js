@@ -21,6 +21,7 @@ const INTERVAL_OPTIONS = [
     { key: 'mes', label: 'Mes' },
     { key: 'anio', label: 'Año' }
 ];
+const APP_TIMEZONE = 'America/Santiago';
 
 export default function SalesHistoryScreen({ token }) {
     const [intervalo, setIntervalo] = useState('dia');
@@ -42,32 +43,42 @@ export default function SalesHistoryScreen({ token }) {
         setError('');
 
         try {
-            const response = await apiRequest({
-                endpoint: `/reportes/historico-ventas?intervalo=${selectedInterval}`,
-                token
-            });
-            const salesResponse = await apiRequest({
-                endpoint: '/ventas?all=true&limit=100000',
-                token
-            });
-            const branchesResponse = await apiRequest({
-                endpoint: '/sucursales',
-                token
-            });
+            const [response, salesResponse, branchesResponse] = await Promise.all([
+                apiRequest({
+                    endpoint: `/reportes/historico-ventas?intervalo=${selectedInterval}`,
+                    token
+                }),
+                apiRequest({
+                    endpoint: '/ventas?all=true&limit=100000',
+                    token
+                }),
+                apiRequest({
+                    endpoint: '/sucursales',
+                    token
+                })
+            ]);
 
-            if (!response.ok) {
-                setError(response.error || 'No se pudo obtener el historial de ventas.');
+            const sales = salesResponse.ok && Array.isArray(salesResponse.data) ? salesResponse.data : [];
+            const branches = branchesResponse.ok && Array.isArray(branchesResponse.data) ? branchesResponse.data : [];
+            const apiRows = response.ok && Array.isArray(response.data)
+                ? response.data.map(normalizeHistoryRow).filter((row) => row.periodo)
+                : [];
+            const computedRows = buildHistoryRowsFromSales(sales, selectedInterval);
+            const historyRows = apiRows.length > 0 ? apiRows : computedRows;
+
+            if (!salesResponse.ok && historyRows.length === 0) {
+                setError(salesResponse.error || response.error || 'No se pudo obtener el historial de ventas.');
                 setRows([]);
                 return;
             }
 
-            setRows(Array.isArray(response.data) ? response.data : []);
+            setRows(historyRows);
             setBranchRows(
                 buildBranchRows({
-                    sales: salesResponse.ok && Array.isArray(salesResponse.data) ? salesResponse.data : [],
-                    branches: branchesResponse.ok && Array.isArray(branchesResponse.data) ? branchesResponse.data : [],
+                    sales,
+                    branches,
                     interval: selectedInterval,
-                    allowedPeriods: (Array.isArray(response.data) ? response.data : []).map((item) => String(item.periodo || ''))
+                    allowedPeriods: historyRows.map((item) => String(item.periodo || ''))
                 })
             );
         } catch (fetchError) {
@@ -458,15 +469,16 @@ function buildBranchRows({ sales = [], branches = [], interval = 'dia', allowedP
                 ventasInternasDespacho: 0,
                 gananciaCaja: 0,
                 gananciaDespacho: 0,
-                periodos: []
+                periodos: [],
+                breakdown: []
             });
         }
 
         const branch = branchMap.get(branchId);
-        const total = Number(sale.total || 0);
-        const estimatedGain = Number(sale.gananciaNeta || 0);
+        const total = resolveSaleTotal(sale);
+        const estimatedGain = resolveSaleGain(sale, total);
         const origin = resolveSaleOrigin(sale);
-        const isFiscal = Boolean(sale.esFiscal) || String(sale.esFiscal).toLowerCase() === 'true' || Number(sale.esFiscal) === 1;
+        const isFiscal = isFiscalSale(sale);
         const periodKey = resolveSalePeriodKey(sale, interval);
         if (!periodKey || (allowedPeriodsSet.size > 0 && !allowedPeriodsSet.has(periodKey))) {
             return;
@@ -556,35 +568,81 @@ function resolveSalePeriodKey(sale, interval) {
     const rawDate = sale.fechaVenta || sale.fecha_venta || sale.created_at;
     if (!rawDate) return '';
 
-    const date = new Date(rawDate);
-    if (Number.isNaN(date.getTime())) return '';
+    const date = parseSaleDateValue(rawDate);
+    if (!date) return '';
 
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
+    const parts = getChileDateParts(date);
+    const month = String(parts.month).padStart(2, '0');
+    const day = String(parts.day).padStart(2, '0');
 
     if (interval === 'anio') {
-        return `${year}`;
+        return `${parts.year}`;
     }
 
     if (interval === 'mes') {
-        return `${year}-${month}`;
+        return `${parts.year}-${month}`;
     }
 
     if (interval === 'semana') {
-        const week = getIsoWeek(date);
-        return `${year}-${String(week).padStart(2, '0')}`;
+        const weekInfo = getIsoWeekInfo(parts);
+        return `${weekInfo.year}-${String(weekInfo.week).padStart(2, '0')}`;
     }
 
-    return `${year}-${month}-${day}`;
+    return `${parts.year}-${month}-${day}`;
 }
 
-function getIsoWeek(date) {
-    const temp = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-    const day = temp.getUTCDay() || 7;
-    temp.setUTCDate(temp.getUTCDate() + 4 - day);
+function parseSaleDateValue(rawDate) {
+    const value = String(rawDate || '').trim();
+    if (!value) return null;
+
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/.test(value)) {
+        return new Date(value.replace(' ', 'T'));
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return new Date(`${value}T12:00:00`);
+    }
+
+    if (/^\d{2}[-/]\d{2}[-/]\d{4}/.test(value)) {
+        const match = value.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
+        if (match) {
+            return new Date(`${match[3]}-${match[2]}-${match[1]}T12:00:00`);
+        }
+    }
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getChileDateParts(date) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: APP_TIMEZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+    }).formatToParts(date);
+
+    const byType = parts.reduce((acc, part) => {
+        acc[part.type] = part.value;
+        return acc;
+    }, {});
+
+    return {
+        year: Number(byType.year),
+        month: Number(byType.month),
+        day: Number(byType.day)
+    };
+}
+
+function getIsoWeekInfo({ year, month, day }) {
+    const temp = new Date(Date.UTC(year, month - 1, day));
+    const weekday = temp.getUTCDay() || 7;
+    temp.setUTCDate(temp.getUTCDate() + 4 - weekday);
     const yearStart = new Date(Date.UTC(temp.getUTCFullYear(), 0, 1));
-    return Math.ceil((((temp - yearStart) / 86400000) + 1) / 7);
+    return {
+        year: temp.getUTCFullYear(),
+        week: Math.ceil((((temp - yearStart) / 86400000) + 1) / 7)
+    };
 }
 
 function resolveMonthName(month) {
@@ -604,6 +662,113 @@ function resolveMonthName(month) {
     };
 
     return names[String(month).padStart(2, '0')] || String(month);
+}
+
+function normalizeHistoryRow(row) {
+    const ventasCaja = parseMoney(row.ventasCaja ?? row.ventas_caja ?? row.caja ?? 0);
+    const ventasDespacho = parseMoney(row.ventasDespacho ?? row.ventas_despacho ?? row.despacho ?? 0);
+    const ventasSII = parseMoney(row.ventasSII ?? row.ventas_sii ?? row.sii ?? 0);
+    const ventasInternas = parseMoney(row.ventasInternas ?? row.ventas_internas ?? row.internas ?? 0);
+    const totalVentas = parseMoney(row.totalVentas ?? row.total_ventas ?? row.total ?? row.monto_total ?? 0)
+        || (ventasCaja + ventasDespacho)
+        || (ventasSII + ventasInternas);
+
+    return {
+        ...row,
+        periodo: String(row.periodo ?? row.period ?? row.fecha ?? '').trim(),
+        totalVentas,
+        ventasSII,
+        ventasInternas,
+        ventasCaja,
+        ventasDespacho,
+        gananciaNeta: parseMoney(row.gananciaNeta ?? row.ganancia_neta ?? row.utilidad ?? row.profit ?? 0)
+    };
+}
+
+function buildHistoryRowsFromSales(sales = [], interval = 'dia') {
+    const buckets = new Map();
+
+    sales.forEach((sale) => {
+        if (!isSaleReportable(sale)) return;
+
+        const periodKey = resolveSalePeriodKey(sale, interval);
+        if (!periodKey) return;
+
+        if (!buckets.has(periodKey)) {
+            buckets.set(periodKey, {
+                periodo: periodKey,
+                totalVentas: 0,
+                ventasSII: 0,
+                ventasInternas: 0,
+                ventasCaja: 0,
+                ventasDespacho: 0,
+                gananciaNeta: 0
+            });
+        }
+
+        const bucket = buckets.get(periodKey);
+        const total = resolveSaleTotal(sale);
+        const gain = resolveSaleGain(sale, total);
+        const origin = resolveSaleOrigin(sale);
+        const isFiscal = isFiscalSale(sale);
+
+        bucket.totalVentas += total;
+        bucket.gananciaNeta += gain;
+
+        if (isFiscal) {
+            bucket.ventasSII += total;
+        } else {
+            bucket.ventasInternas += total;
+        }
+
+        if (origin === 'DESPACHO') {
+            bucket.ventasDespacho += total;
+        } else {
+            bucket.ventasCaja += total;
+        }
+    });
+
+    return Array.from(buckets.values()).sort((a, b) => String(a.periodo).localeCompare(String(b.periodo)));
+}
+
+function resolveSaleTotal(sale) {
+    return parseMoney(sale.total ?? sale.monto_total ?? sale.monto ?? sale.totalVenta ?? sale.total_venta ?? 0);
+}
+
+function resolveSaleGain(sale, total) {
+    const explicitGain = parseMoney(sale.gananciaNeta ?? sale.ganancia_neta ?? sale.utilidad ?? sale.profit ?? 0);
+    if (explicitGain) return explicitGain;
+
+    const cost = parseMoney(sale.costo_total ?? sale.costoTotal ?? 0);
+    return cost ? total - cost : 0;
+}
+
+function isFiscalSale(sale) {
+    const value = sale.esFiscal ?? sale.es_fiscal ?? sale.fiscal;
+    return value === true || Number(value) === 1 || String(value).toLowerCase() === 'true';
+}
+
+function parseMoney(value) {
+    if (value === null || value === undefined) return 0;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+
+    let normalized = String(value).trim();
+    if (!normalized) return 0;
+
+    normalized = normalized.replace(/[^0-9.,-]/g, '');
+    if (normalized.includes('.') && normalized.includes(',')) {
+        normalized = normalized.replace(/\./g, '').replace(',', '.');
+    } else if (normalized.includes(',') && !normalized.includes('.')) {
+        normalized = normalized.replace(',', '.');
+    } else {
+        const parts = normalized.split('.');
+        if (parts.length > 1 && parts[parts.length - 1].length === 3) {
+            normalized = normalized.replace(/\./g, '');
+        }
+    }
+
+    const numericValue = Number(normalized);
+    return Number.isFinite(numericValue) ? numericValue : 0;
 }
 
 const styles = StyleSheet.create({

@@ -164,7 +164,7 @@ export function renderDispatchCart({
     let total = 0;
     let items = 0;
 
-    list.innerHTML = cart.map((item) => {
+    list.innerHTML = [...cart].reverse().map((item) => {
         const product = products.find((entry) => entry.id === item.productId);
         if (!product) {
             return '';

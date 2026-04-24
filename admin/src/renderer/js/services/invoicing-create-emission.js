@@ -266,7 +266,7 @@ window.ValmuInvoicingCreateEmission = {
                     },
                     Certificado: {
                         Rut: emisorRut,
-                        Password: config.passwordCert || config.certPassword || 'distribuidoraAlmi2020'
+                        Password: config.certPassword || config.passwordCert || 'distribuidoraAlmi2020'
                     },
                     Ambiente: 1,
                     Tipo: 1
@@ -274,7 +274,7 @@ window.ValmuInvoicingCreateEmission = {
 
                 const formData = new FormData();
                 formData.append('file', certBlob, 'certificado.pfx');
-                formData.append('password', config.certPassword || 'distribuidoraAlmi2020');
+                formData.append('password', config.certPassword || config.passwordCert || 'distribuidoraAlmi2020');
                 formData.append('caf', cafBlob, `CAF_${tipoDTE}.xml`);
                 formData.append('input', JSON.stringify(inputPayload));
 

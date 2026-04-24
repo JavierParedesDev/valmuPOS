@@ -422,11 +422,13 @@ function mermasAbrirAjuste(productId) {
             if (!confirm.isConfirmed) return;
         }
 
+        const currentUser = getCurrentUser();
         const payload = {
             id_producto: productId,
             id_sucursal: mermasState.selectedBranchId,
             nuevaCantidad: Math.max(0, nuevaCantidad),
-            motivoAjuste: document.getElementById('merma-reason').value
+            motivoAjuste: document.getElementById('merma-reason').value,
+            id_usuario: currentUser?.id_usuario || null
         };
 
         const response = await apiRequest({

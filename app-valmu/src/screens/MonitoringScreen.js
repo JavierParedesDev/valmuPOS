@@ -18,6 +18,8 @@ import { Card, Screen, SectionHeader, Badge } from '../components/UI';
 import { brandColors } from '../theme';
 import { formatCurrency } from '../utils/format';
 
+const APP_TIMEZONE = 'America/Santiago';
+
 export default function MonitoringScreen({ token, navigateTo }) {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -64,9 +66,7 @@ export default function MonitoringScreen({ token, navigateTo }) {
             const kpiData = kpisRes?.ok && kpisRes?.data ? kpisRes.data : null;
             const branchSplitData = branchSplitRes?.ok && Array.isArray(branchSplitRes?.data) ? branchSplitRes.data : [];
 
-            // Hoy (local)
-            const today = new Date();
-            const hoyStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+            const hoyStr = getChileDateKey(new Date());
 
             const productMap = {};
             products.forEach(p => {
@@ -78,28 +78,50 @@ export default function MonitoringScreen({ token, navigateTo }) {
             let todayProfit = 0;
             let todayCount = 0;
             const branchSalesMap = {}; // id_sucursal -> { total: 0, count: 0, name: '' }
+            const branchSplitMap = {};
+            const localSplit = {
+                caja: { ventasSII: 0, ventasInternas: 0, gananciaNeta: 0 },
+                despacho: { ventasSII: 0, ventasInternas: 0, gananciaNeta: 0 }
+            };
 
             branches.forEach(b => {
                 branchSalesMap[b.id_sucursal] = { total: 0, count: 0, name: b.nombreSucursal };
+                branchSplitMap[b.id_sucursal] = createEmptyBranchSplit(b);
             });
 
             allSales.forEach(s => {
                 const rawDate = (s.fecha_venta || s.fechaVenta || s.created_at || '');
                 if (!rawDate) return;
 
-                const dateObj = new Date(rawDate);
-                if (isNaN(dateObj.getTime())) return;
+                const dateObj = parseSaleDateValue(rawDate);
+                if (!dateObj) return;
 
-                const dateStr = `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}-${String(dateObj.getDate()).padStart(2, '0')}`;
-
-                if (dateStr === hoyStr && (s.estado || s.status || '').toLowerCase() !== 'anulada') {
-                    const total = Number(s.total || s.monto_total || 0);
+                if (getChileDateKey(dateObj) === hoyStr && isSaleReportable(s)) {
+                    const total = resolveSaleTotal(s);
                     todaySales += total;
                     todayCount++;
-                    const cost = Number(s.costo_total) || (total * 0.78);
-                    todayProfit += (total - cost);
+                    const gain = resolveSaleGain(s, total);
+                    todayProfit += gain;
+
+                    const channel = resolveSaleOrigin(s) === 'DESPACHO' ? 'despacho' : 'caja';
+                    const fiscal = isFiscalSale(s);
+                    if (fiscal) {
+                        localSplit[channel].ventasSII += total;
+                    } else {
+                        localSplit[channel].ventasInternas += total;
+                    }
+                    localSplit[channel].gananciaNeta += gain;
 
                     const sid = s.id_sucursal || s.branchId;
+                    if (sid && !branchSplitMap[sid]) {
+                        branchSplitMap[sid] = createEmptyBranchSplit({
+                            id_sucursal: sid,
+                            nombreSucursal: s.nombreSucursal || 'Desconocida'
+                        });
+                    }
+                    if (sid && branchSplitMap[sid]) {
+                        addSaleToBranchSplit(branchSplitMap[sid], { channel, fiscal, total, gain });
+                    }
                     if (sid && branchSalesMap[sid]) {
                         branchSalesMap[sid].total += total;
                         branchSalesMap[sid].count += 1;
@@ -109,6 +131,11 @@ export default function MonitoringScreen({ token, navigateTo }) {
 
             // Convert to array for easier rendering
             const salesByBranch = Object.values(branchSalesMap).filter(b => b.total > 0 || b.count > 0);
+            const kpiTotal = parseMoney(kpiData?.ventasSII) + parseMoney(kpiData?.ventasInternas);
+            const kpiProfit = parseMoney(kpiData?.gananciaNeta);
+            const kpiHasUsefulTotals = kpiData && (kpiTotal > 0 || kpiProfit > 0 || todayCount === 0);
+            const resolvedSplit = resolveSalesSplit(kpiData, localSplit, todayCount);
+            const localBranchSplitRows = Object.values(branchSplitMap).filter(hasBranchSplitAmounts);
 
             // Valorización e Inventario Crítico
             let totalValue = 0;
@@ -142,30 +169,15 @@ export default function MonitoringScreen({ token, navigateTo }) {
             });
 
             setStats({
-                salesToday: kpiData
-                    ? Number(kpiData.ventasSII || 0) + Number(kpiData.ventasInternas || 0)
-                    : todaySales,
-                profitToday: kpiData
-                    ? Number(kpiData.gananciaNeta || 0)
-                    : todayProfit,
+                salesToday: kpiHasUsefulTotals ? kpiTotal : todaySales,
+                profitToday: kpiHasUsefulTotals ? kpiProfit : todayProfit,
                 inventoryValue: totalValue,
                 lowStockCount: tempCritical.length,
                 salesCount: todayCount,
                 salesByBranch // New field
             });
-            setSalesSplit({
-                caja: {
-                    ventasSII: Number(kpiData?.caja?.ventasSII || 0),
-                    ventasInternas: Number(kpiData?.caja?.ventasInternas || 0),
-                    gananciaNeta: Number(kpiData?.caja?.gananciaNeta || 0)
-                },
-                despacho: {
-                    ventasSII: Number(kpiData?.despacho?.ventasSII || 0),
-                    ventasInternas: Number(kpiData?.despacho?.ventasInternas || 0),
-                    gananciaNeta: Number(kpiData?.despacho?.gananciaNeta || 0)
-                }
-            });
-            setBranchSplitRows(branchSplitData);
+            setSalesSplit(resolvedSplit);
+            setBranchSplitRows(resolveBranchSplitRows(branchSplitData, localBranchSplitRows, todayCount));
 
             setRecentSales(allSales.slice(0, 10));
             setCriticalItems(tempCritical.slice(0, 15));
@@ -640,8 +652,175 @@ function CriticalRow({ item, onAddStock }) {
     );
 }
 
+function resolveSalesSplit(kpiData, localSplit, todayCount) {
+    const kpiSplit = {
+        caja: {
+            ventasSII: parseMoney(kpiData?.caja?.ventasSII),
+            ventasInternas: parseMoney(kpiData?.caja?.ventasInternas),
+            gananciaNeta: parseMoney(kpiData?.caja?.gananciaNeta)
+        },
+        despacho: {
+            ventasSII: parseMoney(kpiData?.despacho?.ventasSII),
+            ventasInternas: parseMoney(kpiData?.despacho?.ventasInternas),
+            gananciaNeta: parseMoney(kpiData?.despacho?.gananciaNeta)
+        }
+    };
+
+    const kpiTotal = kpiSplit.caja.ventasSII
+        + kpiSplit.caja.ventasInternas
+        + kpiSplit.despacho.ventasSII
+        + kpiSplit.despacho.ventasInternas
+        + kpiSplit.caja.gananciaNeta
+        + kpiSplit.despacho.gananciaNeta;
+
+    return kpiData && (kpiTotal > 0 || todayCount === 0) ? kpiSplit : localSplit;
+}
+
+function resolveBranchSplitRows(apiRows, localRows, todayCount) {
+    const normalizedApiRows = Array.isArray(apiRows) ? apiRows.map(normalizeBranchSplitRow) : [];
+    const apiHasUsefulAmounts = normalizedApiRows.some(hasBranchSplitAmounts);
+    return apiHasUsefulAmounts || todayCount === 0 ? normalizedApiRows : localRows;
+}
+
+function createEmptyBranchSplit(branch) {
+    return {
+        id_sucursal: branch.id_sucursal,
+        nombreSucursal: branch.nombreSucursal || 'Desconocida',
+        ventasSIICaja: 0,
+        ventasInternasCaja: 0,
+        gananciaCaja: 0,
+        ventasSIIDespacho: 0,
+        ventasInternasDespacho: 0,
+        gananciaDespacho: 0
+    };
+}
+
+function addSaleToBranchSplit(branch, { channel, fiscal, total, gain }) {
+    if (channel === 'despacho') {
+        if (fiscal) {
+            branch.ventasSIIDespacho += total;
+        } else {
+            branch.ventasInternasDespacho += total;
+        }
+        branch.gananciaDespacho += gain;
+        return;
+    }
+
+    if (fiscal) {
+        branch.ventasSIICaja += total;
+    } else {
+        branch.ventasInternasCaja += total;
+    }
+    branch.gananciaCaja += gain;
+}
+
+function normalizeBranchSplitRow(row) {
+    return {
+        ...row,
+        ventasSIICaja: parseMoney(row.ventasSIICaja ?? row.ventas_sii_caja),
+        ventasInternasCaja: parseMoney(row.ventasInternasCaja ?? row.ventas_internas_caja),
+        gananciaCaja: parseMoney(row.gananciaCaja ?? row.ganancia_caja),
+        ventasSIIDespacho: parseMoney(row.ventasSIIDespacho ?? row.ventas_sii_despacho),
+        ventasInternasDespacho: parseMoney(row.ventasInternasDespacho ?? row.ventas_internas_despacho),
+        gananciaDespacho: parseMoney(row.gananciaDespacho ?? row.ganancia_despacho)
+    };
+}
+
+function hasBranchSplitAmounts(row) {
+    return parseMoney(row.ventasSIICaja)
+        + parseMoney(row.ventasInternasCaja)
+        + parseMoney(row.gananciaCaja)
+        + parseMoney(row.ventasSIIDespacho)
+        + parseMoney(row.ventasInternasDespacho)
+        + parseMoney(row.gananciaDespacho) > 0;
+}
+
+function isSaleReportable(sale) {
+    const status = String(sale.estado || sale.status || '').toUpperCase();
+    return status !== 'ANULADA' && status !== 'CANCELADA';
+}
+
+function resolveSaleOrigin(sale) {
+    const explicitOrigin = String(sale.origenVenta || sale.origen_venta || '').toUpperCase().trim();
+    if (explicitOrigin) return explicitOrigin;
+
+    const status = String(sale.estado || sale.status || '').toUpperCase();
+    if (status === 'EN_RUTA' || status === 'ENTREGADO') return 'DESPACHO';
+
+    return 'CAJA';
+}
+
+function isFiscalSale(sale) {
+    const value = sale.esFiscal ?? sale.es_fiscal ?? sale.fiscal;
+    return value === true || Number(value) === 1 || String(value).toLowerCase() === 'true';
+}
+
+function resolveSaleTotal(sale) {
+    return parseMoney(sale.total ?? sale.monto_total ?? sale.monto ?? sale.totalVenta ?? sale.total_venta ?? 0);
+}
+
+function resolveSaleGain(sale, total) {
+    const explicitGain = parseMoney(sale.gananciaNeta ?? sale.ganancia_neta ?? sale.utilidad ?? sale.profit ?? 0);
+    if (explicitGain) return explicitGain;
+
+    const cost = parseMoney(sale.costo_total ?? sale.costoTotal ?? 0);
+    return cost ? total - cost : total * 0.22;
+}
+
+function parseSaleDateValue(rawDate) {
+    const value = String(rawDate || '').trim();
+    if (!value) return null;
+
+    if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/.test(value)) {
+        return new Date(value.replace(' ', 'T'));
+    }
+
+    if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        return new Date(`${value}T12:00:00`);
+    }
+
+    if (/^\d{2}[-/]\d{2}[-/]\d{4}/.test(value)) {
+        const match = value.match(/^(\d{2})[-/](\d{2})[-/](\d{4})/);
+        if (match) {
+            return new Date(`${match[3]}-${match[2]}-${match[1]}T12:00:00`);
+        }
+    }
+
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function getChileDateKey(dateValue = new Date()) {
+    const date = dateValue instanceof Date ? dateValue : new Date(dateValue);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat('sv-SE', { timeZone: APP_TIMEZONE }).format(date);
+}
+
+function parseMoney(value) {
+    if (value === null || value === undefined) return 0;
+    if (typeof value === 'number') return Number.isFinite(value) ? value : 0;
+
+    let normalized = String(value).trim();
+    if (!normalized) return 0;
+
+    normalized = normalized.replace(/[^0-9.,-]/g, '');
+    if (normalized.includes('.') && normalized.includes(',')) {
+        normalized = normalized.replace(/\./g, '').replace(',', '.');
+    } else if (normalized.includes(',') && !normalized.includes('.')) {
+        normalized = normalized.replace(',', '.');
+    } else {
+        const parts = normalized.split('.');
+        if (parts.length > 1 && parts[parts.length - 1].length === 3) {
+            normalized = normalized.replace(/\./g, '');
+        }
+    }
+
+    const numericValue = Number(normalized);
+    return Number.isFinite(numericValue) ? numericValue : 0;
+}
+
 function RecentSaleRow({ sale, onPress }) {
-    const total = Number(sale.total || sale.monto_total || 0);
+    const total = resolveSaleTotal(sale);
     const dateStr = (sale.fecha_venta || sale.fechaVenta || sale.created_at || '').slice(11, 16);
 
     return (

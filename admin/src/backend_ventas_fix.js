@@ -15,7 +15,25 @@ router.post('/', verificarToken, async (req, res) => {
         await conexion.beginTransaction();
 
         const { id_usuario, id_sucursal } = req.usuario;
-        const { id_cliente, id_tipoDoc, folioDocumento, subtotal, iva, total, metodoPago, montoPago, carrito } = req.body;
+        const {
+            id_cliente,
+            id_tipoDoc,
+            folioDocumento,
+            folio_documento,
+            subtotal,
+            iva,
+            total,
+            metodoPago,
+            metodo_pago,
+            montoPago,
+            monto_pago,
+            origenVenta,
+            carrito
+        } = req.body;
+        const folioVenta = folioDocumento || folio_documento || null;
+        const origenVentaNormalizado = String(origenVenta || 'CAJA').toUpperCase() === 'DESPACHO' ? 'DESPACHO' : 'CAJA';
+        const metodoPagoNormalizado = metodoPago || metodo_pago || 'EFECTIVO';
+        const montoPagoNormalizado = montoPago || monto_pago || total;
 
         // 1. BLINDAJE: Verificar si hay stock suficiente para TODO el carrito antes de hacer nada
         for (const item of carrito) {
@@ -35,9 +53,9 @@ router.post('/', verificarToken, async (req, res) => {
 
         // 2. Insertar la cabecera de la VENTA
         const [resVenta] = await conexion.execute(`
-            INSERT INTO VENTA (id_usuario, id_cliente, id_tipoDoc, id_sucursal, folioDocumento, subtotal, iva, total, estado)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'COMPLETADA')
-        `, [id_usuario, id_cliente || null, id_tipoDoc, id_sucursal, folioDocumento || null, subtotal, iva, total]);
+            INSERT INTO VENTA (id_usuario, id_cliente, id_tipoDoc, id_sucursal, folioDocumento, subtotal, iva, total, estado, origenVenta)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'COMPLETADA', ?)
+        `, [id_usuario, id_cliente || null, id_tipoDoc, id_sucursal, folioVenta, subtotal, iva, total, origenVentaNormalizado]);
 
         const id_venta = resVenta.insertId;
 
@@ -64,7 +82,7 @@ router.post('/', verificarToken, async (req, res) => {
         await conexion.execute(`
             INSERT INTO PAGO_VENTA (id_venta, metodoPago, montoPago)
             VALUES (?, ?, ?)
-        `, [id_venta, metodoPago, montoPago]);
+        `, [id_venta, metodoPagoNormalizado, montoPagoNormalizado]);
 
         // 5. Confirmar toda la transacción
         await conexion.commit();
@@ -86,7 +104,7 @@ router.get('/', verificarToken, async (req, res) => {
         const { id_sucursal, rol } = req.usuario;
 
         let query = `
-            SELECT v.id_venta, v.id_usuario, v.id_sucursal, s.nombreSucursal, v.fechaVenta, v.total, t.tipoDoc, t.esFiscal, p.metodoPago
+            SELECT v.id_venta, v.id_usuario, v.id_sucursal, s.nombreSucursal, v.fechaVenta, v.total, v.estado, v.origenVenta, v.folioDocumento, t.tipoDoc, t.esFiscal, p.metodoPago, p.montoPago
             FROM VENTA v
             INNER JOIN TIPO_DOC t ON v.id_tipoDoc = t.id_tipoDoc
             LEFT JOIN PAGO_VENTA p ON v.id_venta = p.id_venta

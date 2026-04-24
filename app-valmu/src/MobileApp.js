@@ -38,6 +38,19 @@ Notifications.setNotificationHandler({
     }),
 });
 
+function formatNotificationQuantity(value) {
+    const quantity = Number(value || 0);
+    if (!Number.isFinite(quantity)) {
+        return '0';
+    }
+
+    if (Number.isInteger(quantity)) {
+        return String(quantity);
+    }
+
+    return quantity.toFixed(3).replace(/\.?0+$/, '');
+}
+
 async function registerForPushNotificationsAsync() {
     let token;
     if (Device.isDevice) {
@@ -173,7 +186,7 @@ export default function MobileApp() {
                         await Notifications.scheduleNotificationAsync({
                             content: {
                                 title: `📦 Movimiento: ${latest.tipoMovimiento}`,
-                                body: `${latest.usuarioResponsable} movió ${latest.cantidadMov} de "${latest.nombreProducto}"`,
+                                body: `${latest.usuarioResponsable} movió ${formatNotificationQuantity(latest.cantidadMov)} de "${latest.nombreProducto}"`,
                                 data: { module: 'inventory_report' },
                             },
                             trigger: null,

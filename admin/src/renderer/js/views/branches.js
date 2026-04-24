@@ -502,11 +502,13 @@ function openAdjustmentFormByProductId(productId, branchId, branchName, stayInAs
             return;
         }
 
+        const currentUser = getCurrentUser();
         const data = {
             id_producto: item.id_producto,
             id_sucursal: branchId,
             nuevaCantidad: nuevaCantidad,
-            motivoAjuste: document.getElementById('adj-reason').value
+            motivoAjuste: document.getElementById('adj-reason').value,
+            id_usuario: currentUser?.id_usuario || null
         };
 
         const res = await apiRequest({
