@@ -7,6 +7,7 @@ let adminExpandedProductId = null;
 let adminInboundRowSequence = 0;
 let adminTransferRowSequence = 0;
 let adminProductLookupCatalogPromise = null;
+let adminTransferSubmitInFlight = false;
 const adminProductPagination = {
     page: 1,
     hasMore: false,
@@ -605,6 +606,19 @@ function showMovementError(message) {
     Swal.fire('Error', message || 'No se pudo completar la operacion', 'error');
 }
 
+function getMovementResponseError(response, fallback = 'No se pudo completar la operacion') {
+    if (!response) return fallback;
+
+    const statusLabel = response.status ? `HTTP ${response.status}` : 'Sin respuesta del servidor';
+    const message = response.data?.error || response.error || response.data?.mensaje || fallback;
+    const detail = response.data?.detalle ? ` (${typeof response.data.detalle === 'string' ? response.data.detalle : JSON.stringify(response.data.detalle)})` : '';
+    return `${statusLabel}: ${message}${detail}`;
+}
+
+function createMovementRequestId(prefix = 'MOV') {
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function openProductFormByIndex(index, event) {
     event?.stopPropagation?.();
     const product = window.allProducts[index];
@@ -899,14 +913,14 @@ async function openStockInboundForm(initialProduct = null) {
             return map;
         }, new Map()).values());
 
-        const currentUser = getCurrentUser();
+        const currentUserId = getCurrentUserId();
         for (const line of aggregatedLines) {
             const response = await apiRequest({
                 endpoint: '/productos/ingreso',
                 method: 'POST',
                 body: {
                     id_producto: line.productId,
-                    id_usuario: currentUser?.id_usuario || null,
+                    id_usuario: currentUserId,
                     id_sucursal: targetBranchId,
                     cantidadIngreso: line.quantity,
                     numeroFactura: invoiceNumber
@@ -915,7 +929,7 @@ async function openStockInboundForm(initialProduct = null) {
             });
 
             if (!response.ok) {
-                showMovementError(`${line.productName}: ${response.data?.error || response.error || 'Error'}`);
+                showMovementError(`${line.productName}: ${getMovementResponseError(response, 'Error al registrar el ingreso')}`);
                 return;
             }
         }
@@ -958,6 +972,7 @@ async function openTransferForm() {
     const defaultSourceId = activeBranchId || Number(branches[0]?.id_sucursal) || null;
     const defaultSourceName = activeBranchName || branches.find((branch) => Number(branch.id_sucursal) === defaultSourceId)?.nombreSucursal || 'Sucursal origen';
     const inventoryMapPromise = fetchTransferInventoryMap(Number(defaultSourceId), token);
+    const transferBatchId = createMovementRequestId('TRASLADO');
 
     const content = `
         <div class="form-group">
@@ -982,8 +997,13 @@ async function openTransferForm() {
     `;
 
     showModal('Traslado entre Sucursales', content, async () => {
-        const currentUser = getCurrentUser();
+        if (adminTransferSubmitInFlight) {
+            return;
+        }
+
+        const currentUserId = getCurrentUserId();
         const destinationId = parseInt(document.getElementById('tra-dest').value, 10);
+        const saveButton = document.getElementById('modal-save-btn');
 
         if (isNaN(Number(defaultSourceId)) || isNaN(destinationId)) {
             Swal.fire('Error', 'Debes seleccionar sucursal origen y sucursal destino.', 'error');
@@ -1044,39 +1064,56 @@ async function openTransferForm() {
         const transferredProductIds = [];
         const destinationLabel = document.getElementById('tra-dest')?.selectedOptions?.[0]?.textContent || `Sucursal #${destinationId}`;
 
-        for (const line of aggregatedLines) {
-            const data = {
-                id_producto: line.productId,
-                id_usuario: currentUser?.id_usuario || null,
-                id_sucursalOrigen: Number(defaultSourceId),
-                id_sucursalDestino: destinationId,
-                cantidadMov: line.quantity
-            };
+        adminTransferSubmitInFlight = true;
+        if (saveButton) {
+            saveButton.disabled = true;
+            saveButton.textContent = 'Registrando traslados...';
+        }
 
-            const response = await apiRequest({
-                endpoint: '/productos/traslado',
-                method: 'POST',
-                body: data,
-                token
-            });
+        try {
+            for (const line of aggregatedLines) {
+                const data = {
+                    id_producto: line.productId,
+                    id_usuario: currentUserId,
+                    id_sucursalOrigen: Number(defaultSourceId),
+                    id_sucursalDestino: destinationId,
+                    cantidadMov: line.quantity,
+                    comprobanteMov: `${transferBatchId}-${line.productId}`
+                };
 
-            if (!response.ok) {
-                const backendMessage = response.data?.error || response.error || 'Error';
-                const partialMessage = transferredProductIds.length
-                    ? `\n\nSe alcanzaron a trasladar ${transferredProductIds.length} producto(s) antes del error.`
-                    : '';
+                const response = await apiRequest({
+                    endpoint: '/productos/traslado',
+                    method: 'POST',
+                    body: data,
+                    token
+                });
 
-                showMovementError(
-                    `${backendMessage}${partialMessage}\n\n` +
-                    `Origen validado: #${data.id_sucursalOrigen} (${defaultSourceName})\n` +
-                    `Destino seleccionado: #${data.id_sucursalDestino} (${destinationLabel})\n` +
-                    `Producto: ${line.label}\n` +
-                    `Cantidad: ${line.quantity}`
-                );
-                return;
+                if (!response.ok) {
+                    const backendMessage = getMovementResponseError(response, 'Error al procesar el traslado');
+                    const partialMessage = transferredProductIds.length
+                        ? `\n\nSe alcanzaron a trasladar ${transferredProductIds.length} producto(s) antes del error. Si reintentas esta misma ventana, el backend no duplicara los ya registrados.`
+                        : '';
+
+                    showMovementError(
+                        `${backendMessage}${partialMessage}\n\n` +
+                        `Operacion: ${data.comprobanteMov}\n` +
+                        `Usuario enviado: ${data.id_usuario || 'No disponible'}\n` +
+                        `Origen validado: #${data.id_sucursalOrigen} (${defaultSourceName})\n` +
+                        `Destino seleccionado: #${data.id_sucursalDestino} (${destinationLabel})\n` +
+                        `Producto: ${line.label}\n` +
+                        `Cantidad: ${line.quantity}`
+                    );
+                    return;
+                }
+
+                transferredProductIds.push(line.productId);
             }
-
-            transferredProductIds.push(line.productId);
+        } finally {
+            adminTransferSubmitInFlight = false;
+            if (saveButton) {
+                saveButton.disabled = false;
+                saveButton.textContent = 'Registrar traslados';
+            }
         }
 
         Toast.fire({ icon: 'success', title: `Traslado realizado con ${aggregatedLines.length} producto(s)` });

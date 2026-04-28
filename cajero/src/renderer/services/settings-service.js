@@ -3,6 +3,7 @@ export function getSettingsSnapshot({ getSessionValue, sessionKeys }) {
         printerName: getSessionValue(sessionKeys.printerName) || 'Impresora termica 80mm',
         printerPaper: getSessionValue(sessionKeys.printerPaper) || '80mm',
         customerDisplayEnabled: getSessionValue(sessionKeys.customerDisplayEnabled) === 'true',
+        customerDisplayTarget: getSessionValue(sessionKeys.customerDisplayTarget) || '',
         releaseRepo: getSessionValue(sessionKeys.releaseRepo) || 'JavierParedesDev/valmuPOS'
     };
 }
@@ -27,13 +28,17 @@ export function savePrinterSettingsSnapshot({
 
 export function saveCustomerDisplaySettingsSnapshot({
     customerDisplayEnabled,
+    customerDisplayTarget,
     setSessionValue,
     sessionKeys
 }) {
     const isEnabled = Boolean(customerDisplayEnabled);
+    const normalizedTarget = String(customerDisplayTarget || '').trim();
     setSessionValue(sessionKeys.customerDisplayEnabled, String(isEnabled));
+    setSessionValue(sessionKeys.customerDisplayTarget, normalizedTarget);
     return {
-        customerDisplayEnabled: isEnabled
+        customerDisplayEnabled: isEnabled,
+        customerDisplayTarget: normalizedTarget
     };
 }
 

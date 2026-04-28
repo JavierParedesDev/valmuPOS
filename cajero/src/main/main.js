@@ -8,6 +8,9 @@ const { createUpdateManager } = require('./updater/update-manager');
 
 let mainWindow = null;
 let customerDisplayWindows = [];
+let customerDisplayDesiredOpen = false;
+let customerDisplayTargetId = '';
+let customerDisplayResyncTimer = null;
 let updateManager = null;
 let lastCustomerDisplayPayload = {
     mode: 'idle',
@@ -231,16 +234,39 @@ function createMainWindow() {
         webPreferences: {
             preload: path.join(__dirname, '../preload/preload.js'),
             contextIsolation: true,
-            nodeIntegration: false
+            nodeIntegration: false,
+            spellcheck: false,
+            backgroundThrottling: true,
+            devTools: !app.isPackaged
         },
         show: false,
         fullscreen: true
     });
 
+    mainWindow.setAlwaysOnTop(true, 'screen-saver');
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
 
     mainWindow.once('ready-to-show', () => {
         mainWindow.show();
+        mainWindow.focus();
+        mainWindow.moveTop();
+    });
+
+    mainWindow.on('focus', () => {
+        if (!mainWindow || mainWindow.isDestroyed()) {
+            return;
+        }
+
+        mainWindow.setAlwaysOnTop(true, 'screen-saver');
+        mainWindow.moveTop();
+    });
+
+    mainWindow.on('closed', () => {
+        closeCustomerDisplayWindow();
+        mainWindow = null;
+        if (!app.isQuiting) {
+            app.quit();
+        }
     });
 }
 
@@ -256,14 +282,211 @@ function getCustomerDisplayFilePath() {
     return path.join(__dirname, '../renderer/customer-display.html');
 }
 
-function getCustomerDisplayBounds() {
+function getCustomerDisplayTargets() {
     const displays = screen.getAllDisplays();
-    if (displays.length < 2) {
-        return null;
+    const primaryId = screen.getPrimaryDisplay()?.id;
+    const externalDisplays = displays.filter((display) => display.id !== primaryId);
+    const selectedDisplay = customerDisplayTargetId
+        ? displays.find((display) => String(display?.id) === String(customerDisplayTargetId))
+        : null;
+
+    if (customerDisplayTargetId === 'all-external') {
+        return externalDisplays;
     }
 
-    const primaryDisplay = screen.getPrimaryDisplay();
-    return displays.filter((display) => display.id !== primaryDisplay.id);
+    if (selectedDisplay && selectedDisplay.id !== primaryId) {
+        return [selectedDisplay];
+    }
+
+    if (externalDisplays.length > 0) {
+        // Por defecto elegimos la ÚLTIMA pantalla externa (la 3ra en un setup de 3)
+        // ya que suele ser la que mira el cliente.
+        return [externalDisplays[externalDisplays.length - 1]];
+    }
+
+    return [];
+}
+
+function listCustomerDisplayTargets() {
+    const primaryId = screen.getPrimaryDisplay()?.id;
+    const externalDisplays = screen.getAllDisplays().filter((display) => display.id !== primaryId);
+    const suggestedDisplayId = externalDisplays.length > 0
+        ? String(externalDisplays[externalDisplays.length - 1].id)
+        : '';
+
+    return externalDisplays
+        .map((display, index) => ({
+            id: String(display.id),
+            label: `Pantalla cliente ${index + 1} (${display.bounds.width}x${display.bounds.height})`,
+            isSuggested: String(display.id) === suggestedDisplayId,
+            isPrimary: false,
+            isInternal: display?.internal === true,
+            bounds: display.bounds
+        }));
+}
+
+function getDisplayKey(display) {
+    return String(display?.id || `${display?.bounds?.x || 0}:${display?.bounds?.y || 0}`);
+}
+
+function getWindowDisplayKey(win) {
+    if (!win || win.isDestroyed()) {
+        return '';
+    }
+
+    return String(win.__customerDisplayKey || '');
+}
+
+function hardenCustomerDisplayWindow(win, display) {
+    if (!win || win.isDestroyed()) {
+        return;
+    }
+
+    const bounds = display?.bounds || screen.getPrimaryDisplay().bounds;
+    const currentBounds = win.getBounds();
+    win.__customerDisplayKey = getDisplayKey(display);
+
+    win.setMenuBarVisibility(false);
+    win.setAutoHideMenuBar(true);
+    win.setAlwaysOnTop(true, 'floating');
+    win.setFullScreenable(true);
+    win.setKiosk(true);
+
+    if (
+        currentBounds.x !== bounds.x
+        || currentBounds.y !== bounds.y
+        || currentBounds.width !== bounds.width
+        || currentBounds.height !== bounds.height
+    ) {
+        win.setBounds(bounds);
+    }
+
+    if (!win.isFullScreen()) {
+        win.setFullScreen(true);
+    }
+
+    if (!win.isVisible()) {
+        win.showInactive();
+    }
+}
+
+function attachCustomerDisplayGuards(win) {
+    if (!win || win.isDestroyed() || win.__customerDisplayGuardsAttached) {
+        return;
+    }
+
+    win.__customerDisplayGuardsAttached = true;
+
+    const reapplyWindowMode = () => {
+        if (!customerDisplayDesiredOpen || !win || win.isDestroyed()) {
+            return;
+        }
+
+        const targetDisplay = screen.getAllDisplays().find((display) => getDisplayKey(display) === getWindowDisplayKey(win))
+            || screen.getDisplayMatching(win.getBounds())
+            || screen.getPrimaryDisplay();
+        hardenCustomerDisplayWindow(win, targetDisplay);
+    };
+
+    win.on('leave-full-screen', reapplyWindowMode);
+    win.on('minimize', () => {
+        if (!customerDisplayDesiredOpen || win.isDestroyed()) {
+            return;
+        }
+
+        win.restore();
+        reapplyWindowMode();
+    });
+    win.on('restore', reapplyWindowMode);
+    win.on('closed', () => {
+        customerDisplayWindows = customerDisplayWindows.filter((w) => w !== win);
+
+        if (customerDisplayDesiredOpen) {
+            setTimeout(() => {
+                reconcileCustomerDisplayWindows();
+                sendCustomerDisplayState(lastCustomerDisplayPayload);
+            }, 250);
+        }
+    });
+}
+
+function createSingleCustomerDisplayWindow(display, index) {
+    const bounds = display.bounds;
+    const win = new BrowserWindow({
+        width: bounds.width,
+        height: bounds.height,
+        minWidth: 800,
+        minHeight: 600,
+        backgroundColor: '#241710',
+        autoHideMenuBar: true,
+        title: `Valmu Cliente ${index + 1}`,
+        webPreferences: {
+            preload: path.join(__dirname, '../preload/preload.js'),
+            contextIsolation: true,
+            nodeIntegration: false,
+            spellcheck: false,
+            backgroundThrottling: true,
+            devTools: !app.isPackaged
+        },
+        show: false,
+        fullscreen: true,
+        kiosk: true,
+        alwaysOnTop: true,
+        skipTaskbar: true,
+        x: bounds.x,
+        y: bounds.y
+    });
+
+    win.loadFile(getCustomerDisplayFilePath());
+    attachCustomerDisplayGuards(win);
+
+    win.once('ready-to-show', () => {
+        hardenCustomerDisplayWindow(win, display);
+    });
+
+    win.webContents.on('did-finish-load', () => {
+        hardenCustomerDisplayWindow(win, display);
+        win.webContents.send('display:customer-update', lastCustomerDisplayPayload);
+    });
+
+    customerDisplayWindows.push(win);
+    return win;
+}
+
+function reconcileCustomerDisplayWindows() {
+    if (!customerDisplayDesiredOpen) {
+        return;
+    }
+
+    const targetDisplays = getCustomerDisplayTargets();
+    const targetDisplayKeys = new Set(targetDisplays.map((display) => getDisplayKey(display)));
+
+    customerDisplayWindows = customerDisplayWindows.filter((win) => win && !win.isDestroyed());
+
+    customerDisplayWindows
+        .filter((win) => !targetDisplayKeys.has(getWindowDisplayKey(win)))
+        .forEach((win) => {
+            if (!win.isDestroyed()) {
+                win.close();
+            }
+        });
+
+    customerDisplayWindows = customerDisplayWindows.filter((win) => {
+        const key = getWindowDisplayKey(win);
+        return key && targetDisplayKeys.has(key) && !win.isDestroyed();
+    });
+
+    targetDisplays.forEach((display, index) => {
+        const displayKey = getDisplayKey(display);
+        const existingWindow = customerDisplayWindows.find((win) => getWindowDisplayKey(win) === displayKey);
+
+        if (existingWindow) {
+            hardenCustomerDisplayWindow(existingWindow, display);
+            return;
+        }
+
+        createSingleCustomerDisplayWindow(display, index);
+    });
 }
 
 function sendCustomerDisplayState(payload) {
@@ -283,66 +506,17 @@ function sendCustomerDisplayState(payload) {
     });
 }
 
-function createCustomerDisplayWindow() {
-    const externalDisplays = getCustomerDisplayBounds();
-
-    // Si ya hay ventanas abiertas, las enfocamos y actualizamos
-    if (customerDisplayWindows.length > 0) {
-        customerDisplayWindows.forEach((win) => {
-            if (win && !win.isDestroyed()) {
-                win.focus();
-            }
-        });
-        sendCustomerDisplayState(lastCustomerDisplayPayload);
-        return;
-    }
-
-    const displaysToUse = (externalDisplays && externalDisplays.length > 0)
-        ? externalDisplays
-        : [screen.getPrimaryDisplay()]; // Fallback a la principal si no hay externas
-
-    displaysToUse.forEach((display, index) => {
-        const baseOptions = {
-            width: 1024,
-            height: 768,
-            minWidth: 800,
-            minHeight: 600,
-            backgroundColor: '#241710',
-            autoHideMenuBar: false,
-            title: `Valmu Cliente ${index + 1}`,
-            webPreferences: {
-                preload: path.join(__dirname, '../preload/preload.js'),
-                contextIsolation: true,
-                nodeIntegration: false
-            },
-            show: false,
-            fullscreen: true,
-            x: display.bounds.x,
-            y: display.bounds.y,
-            width: display.bounds.width,
-            height: display.bounds.height
-        };
-
-        const win = new BrowserWindow(baseOptions);
-        win.loadFile(getCustomerDisplayFilePath());
-
-        win.once('ready-to-show', () => {
-            win.show();
-        });
-
-        win.webContents.on('did-finish-load', () => {
-            win.webContents.send('display:customer-update', lastCustomerDisplayPayload);
-        });
-
-        win.on('closed', () => {
-            customerDisplayWindows = customerDisplayWindows.filter((w) => w !== win);
-        });
-
-        customerDisplayWindows.push(win);
-    });
+function createCustomerDisplayWindow(targetDisplayId = '') {
+    customerDisplayDesiredOpen = true;
+    customerDisplayTargetId = String(targetDisplayId || '').trim();
+    reconcileCustomerDisplayWindows();
+    sendCustomerDisplayState(lastCustomerDisplayPayload);
+    return customerDisplayWindows.length > 0;
 }
 
 function closeCustomerDisplayWindow() {
+    customerDisplayDesiredOpen = false;
+
     if (customerDisplayWindows.length === 0) {
         return false;
     }
@@ -424,18 +598,31 @@ function registerIpcHandlers() {
         }
     });
 
-    ipcMain.handle('display:open-customer', async () => {
-        createCustomerDisplayWindow();
+    ipcMain.handle('display:open-customer', async (_event, payload) => {
+        const isOpen = createCustomerDisplayWindow(payload?.targetDisplayId);
         return {
             ok: true,
-            isOpen: true
+            isOpen,
+            reason: isOpen ? null : 'no-external-display'
         };
     });
 
-    ipcMain.handle('display:close-customer', async () => ({
-        ok: true,
-        isOpen: !closeCustomerDisplayWindow()
-    }));
+    ipcMain.handle('display:list-targets', async () => {
+        const displays = listCustomerDisplayTargets();
+        return {
+            ok: true,
+            externalCount: displays.length,
+            displays
+        };
+    });
+
+    ipcMain.handle('display:close-customer', async () => {
+        closeCustomerDisplayWindow();
+        return {
+            ok: true,
+            isOpen: false
+        };
+    });
 
     ipcMain.handle('display:update-customer', async (_event, payload) => {
         sendCustomerDisplayState(payload || {});
@@ -634,6 +821,26 @@ app.whenReady().then(() => {
         updateManager?.sendStateToWindow?.();
     });
 
+    const resyncCustomerDisplays = () => {
+        if (!customerDisplayDesiredOpen) {
+            return;
+        }
+
+        if (customerDisplayResyncTimer) {
+            clearTimeout(customerDisplayResyncTimer);
+        }
+
+        customerDisplayResyncTimer = setTimeout(() => {
+            customerDisplayResyncTimer = null;
+            reconcileCustomerDisplayWindows();
+            sendCustomerDisplayState(lastCustomerDisplayPayload);
+        }, 300);
+    };
+
+    screen.on('display-added', resyncCustomerDisplays);
+    screen.on('display-removed', resyncCustomerDisplays);
+    screen.on('display-metrics-changed', resyncCustomerDisplays);
+
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) {
             createMainWindow();
@@ -641,7 +848,14 @@ app.whenReady().then(() => {
                 updateManager?.sendStateToWindow?.();
             });
         }
+
+        resyncCustomerDisplays();
     });
+});
+
+app.on('before-quit', () => {
+    app.isQuiting = true;
+    closeCustomerDisplayWindow();
 });
 
 app.on('window-all-closed', () => {

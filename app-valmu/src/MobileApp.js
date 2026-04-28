@@ -1,6 +1,9 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+    Animated,
+    Easing,
     Image,
+    Pressable,
     SafeAreaView,
     ScrollView,
     StatusBar,
@@ -95,6 +98,7 @@ const MODULES = [
 ];
 
 const brandIcon = require('../assets/icon.png');
+const APP_VERSION = require('../app.json')?.expo?.version || require('../package.json')?.version || '0.0.0';
 
 function ModuleIcon({ icon, color = '#ffffff', size = 20 }) {
     if (icon?.set === 'MaterialCommunityIcons') {
@@ -460,42 +464,224 @@ export default function MobileApp() {
 }
 
 function LaunchScreen({ onContinue }) {
+    const heroOpacity = useRef(new Animated.Value(0)).current;
+    const heroTranslate = useRef(new Animated.Value(24)).current;
+    const heroScale = useRef(new Animated.Value(0.94)).current;
+    const footerOpacity = useRef(new Animated.Value(0)).current;
+    const footerTranslate = useRef(new Animated.Value(36)).current;
+    const glowPulse = useRef(new Animated.Value(0.92)).current;
+    const screenFade = useRef(new Animated.Value(1)).current;
+    const screenScale = useRef(new Animated.Value(1)).current;
+    const isLeaving = useRef(false);
+
+    useEffect(() => {
+        Animated.parallel([
+            Animated.timing(heroOpacity, {
+                toValue: 1,
+                duration: 650,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true
+            }),
+            Animated.timing(heroTranslate, {
+                toValue: 0,
+                duration: 650,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true
+            }),
+            Animated.timing(heroScale, {
+                toValue: 1,
+                duration: 720,
+                easing: Easing.out(Easing.back(1.15)),
+                useNativeDriver: true
+            }),
+            Animated.timing(footerOpacity, {
+                toValue: 1,
+                duration: 700,
+                delay: 120,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true
+            }),
+            Animated.timing(footerTranslate, {
+                toValue: 0,
+                duration: 700,
+                delay: 120,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true
+            })
+        ]).start();
+
+        const pulseLoop = Animated.loop(
+            Animated.sequence([
+                Animated.timing(glowPulse, {
+                    toValue: 1.06,
+                    duration: 1800,
+                    easing: Easing.inOut(Easing.quad),
+                    useNativeDriver: true
+                }),
+                Animated.timing(glowPulse, {
+                    toValue: 0.92,
+                    duration: 1800,
+                    easing: Easing.inOut(Easing.quad),
+                    useNativeDriver: true
+                })
+            ])
+        );
+
+        pulseLoop.start();
+
+        return () => {
+            pulseLoop.stop();
+        };
+    }, [footerOpacity, footerTranslate, glowPulse, heroOpacity, heroScale, heroTranslate]);
+
+    const handleContinue = () => {
+        if (isLeaving.current) {
+            return;
+        }
+
+        isLeaving.current = true;
+
+        Animated.parallel([
+            Animated.timing(screenFade, {
+                toValue: 0,
+                duration: 220,
+                easing: Easing.out(Easing.quad),
+                useNativeDriver: true
+            }),
+            Animated.timing(screenScale, {
+                toValue: 0.985,
+                duration: 220,
+                easing: Easing.out(Easing.quad),
+                useNativeDriver: true
+            }),
+            Animated.timing(heroTranslate, {
+                toValue: -18,
+                duration: 220,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true
+            }),
+            Animated.timing(footerTranslate, {
+                toValue: 22,
+                duration: 220,
+                easing: Easing.out(Easing.cubic),
+                useNativeDriver: true
+            })
+        ]).start(({ finished }) => {
+            if (finished) {
+                onContinue?.();
+            } else {
+                isLeaving.current = false;
+            }
+        });
+    };
+
     return (
-        <View style={styles.launchShell}>
-            <LinearGradient
-                colors={['#0F172A', '#1E293B']}
-                style={StyleSheet.absoluteFill}
-            />
-            <View style={styles.launchContent}>
-                <View style={styles.launchHero}>
+        <Pressable style={styles.launchShell} onPress={handleContinue}>
+            <Animated.View
+                style={[
+                    styles.launchScreenLayer,
+                    {
+                        opacity: screenFade,
+                        transform: [{ scale: screenScale }]
+                    }
+                ]}
+            >
+                <LinearGradient
+                    colors={['#07111F', '#0F172A', '#18263B']}
+                    style={StyleSheet.absoluteFill}
+                />
+                <View pointerEvents="none" style={styles.launchBackdrop}>
+                    <View style={styles.launchAuraPrimary} />
+                    <View style={styles.launchAuraSecondary} />
+                    <View style={styles.launchGridOverlay} />
+                </View>
+                <View style={styles.launchContent}>
+                <Animated.View
+                    style={[
+                        styles.launchHero,
+                        {
+                            opacity: heroOpacity,
+                            transform: [{ translateY: heroTranslate }, { scale: heroScale }]
+                        }
+                    ]}
+                >
+                    <View style={styles.launchHeroTopRow}>
+                        <View style={styles.launchEyebrowPill}>
+                            <Text style={styles.launchEyebrowText}>Panel movil</Text>
+                        </View>
+                        <Text style={styles.launchVersionChip}>v{APP_VERSION}</Text>
+                    </View>
+
+                    <Animated.View
+                        pointerEvents="none"
+                        style={[styles.launchLogoHalo, { transform: [{ scale: glowPulse }] }]}
+                    />
                     <View style={styles.launchLogoCircle}>
                         <Image source={brandIcon} style={styles.launchLogo} />
                     </View>
-                    <Text style={styles.launchBrand}>Valmu</Text>
-                    <Text style={styles.launchTagline}>Software de administración</Text>
-                </View>
+                    <View style={styles.launchBrandBlock}>
+                        <Text style={styles.launchBrand}>Valmu</Text>
+                        <Text style={styles.launchTagline}>Control simple para ventas, stock y despacho</Text>
+                    </View>
 
-                <View style={styles.launchFooter}>
-                    <Text style={styles.launchTitle}>Software Valmu de administración.</Text>
+                    <View style={styles.launchMetricRow}>
+                        <View style={styles.launchMetricCard}>
+                            <Text style={styles.launchMetricValue}>24/7</Text>
+                            <Text style={styles.launchMetricLabel}>Operacion conectada</Text>
+                        </View>
+                        <View style={styles.launchMetricDivider} />
+                        <View style={styles.launchMetricCard}>
+                            <Text style={styles.launchMetricValue}>Tiempo real</Text>
+                            <Text style={styles.launchMetricLabel}>Inventario y cajas</Text>
+                        </View>
+                    </View>
+                </Animated.View>
+
+                <Animated.View
+                    style={[
+                        styles.launchFooter,
+                        {
+                            opacity: footerOpacity,
+                            transform: [{ translateY: footerTranslate }]
+                        }
+                    ]}
+                >
+                    <Text style={styles.launchTitle}>Administra tu negocio con una experiencia mas clara.</Text>
                     <Text style={styles.launchText}>
-                        Gestión de productos, inventario, sucursales y proveedores.
+                        Productos, sucursales, inventario y seguimiento diario en una sola app.
                     </Text>
+
+                    <View style={styles.launchFeatureList}>
+                        <View style={styles.launchFeaturePill}>
+                            <Ionicons name="cube-outline" size={16} color={brandColors.accent} />
+                            <Text style={styles.launchFeatureText}>Catalogo ordenado</Text>
+                        </View>
+                        <View style={styles.launchFeaturePill}>
+                            <Ionicons name="pulse-outline" size={16} color={brandColors.accent} />
+                            <Text style={styles.launchFeatureText}>Monitoreo vivo</Text>
+                        </View>
+                        <View style={styles.launchFeaturePill}>
+                            <Ionicons name="bus-outline" size={16} color={brandColors.accent} />
+                            <Text style={styles.launchFeatureText}>Despachos al dia</Text>
+                        </View>
+                    </View>
 
                     <Button
                         mode="contained"
                         buttonColor={brandColors.accent}
                         textColor="#ffffff"
-                        onPress={onContinue}
+                        onPress={handleContinue}
                         style={styles.launchButton}
                         contentStyle={styles.launchButtonContent}
                         labelStyle={styles.launchButtonLabel}
                     >
-                        Comenzar Ahora
+                        Entrar al panel
                     </Button>
-                    <Text style={styles.versionTag}>v1.0.8 · © 2026 Valmu</Text>
+                    <Text style={styles.versionTag}>Version {APP_VERSION} | 2026 Valmu</Text>
+                </Animated.View>
                 </View>
-            </View>
-        </View>
+            </Animated.View>
+        </Pressable>
     );
 }
 
@@ -883,85 +1069,215 @@ const styles = StyleSheet.create({
     },
     launchShell: {
         flex: 1,
-        backgroundColor: brandColors.shell
+        backgroundColor: brandColors.shell,
+        overflow: 'hidden'
+    },
+    launchScreenLayer: {
+        flex: 1
+    },
+    launchBackdrop: {
+        ...StyleSheet.absoluteFillObject
+    },
+    launchAuraPrimary: {
+        position: 'absolute',
+        width: 320,
+        height: 320,
+        borderRadius: 160,
+        top: -60,
+        right: -90,
+        backgroundColor: 'rgba(255,107,0,0.18)'
+    },
+    launchAuraSecondary: {
+        position: 'absolute',
+        width: 260,
+        height: 260,
+        borderRadius: 130,
+        bottom: 120,
+        left: -120,
+        backgroundColor: 'rgba(14,165,233,0.10)'
+    },
+    launchGridOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        opacity: 0.08,
+        backgroundColor: 'transparent',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.06)'
     },
     launchContent: {
         flex: 1,
-        paddingHorizontal: 30,
-        paddingVertical: 60,
+        paddingHorizontal: 24,
+        paddingTop: 56,
+        paddingBottom: 36,
         justifyContent: 'space-between'
     },
     launchHero: {
-        alignItems: 'center',
-        marginTop: 40
+        position: 'relative',
+        borderRadius: 34,
+        padding: 24,
+        backgroundColor: 'rgba(255,255,255,0.06)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)',
+        alignItems: 'center'
     },
-    launchLogoCircle: {
-        width: 120,
-        height: 120,
-        borderRadius: 60,
-        backgroundColor: 'rgba(255,255,255,0.05)',
-        justifyContent: 'center',
+    launchHeroTopRow: {
+        width: '100%',
+        flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 22
+    },
+    launchEyebrowPill: {
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 999,
+        backgroundColor: 'rgba(255,255,255,0.08)',
         borderWidth: 1,
         borderColor: 'rgba(255,255,255,0.1)'
     },
+    launchEyebrowText: {
+        color: '#D8E1EC',
+        fontSize: 11,
+        fontWeight: '800',
+        textTransform: 'uppercase',
+        letterSpacing: 1.2
+    },
+    launchVersionChip: {
+        color: '#FFD7BD',
+        fontSize: 12,
+        fontWeight: '800'
+    },
+    launchLogoHalo: {
+        position: 'absolute',
+        top: 52,
+        width: 156,
+        height: 156,
+        borderRadius: 78,
+        backgroundColor: 'rgba(255,107,0,0.14)'
+    },
+    launchLogoCircle: {
+        width: 118,
+        height: 118,
+        borderRadius: 34,
+        backgroundColor: '#FFFFFF',
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.12)'
+    },
     launchLogo: {
-        width: 80,
-        height: 80,
-        borderRadius: 20
+        width: 84,
+        height: 84,
+        borderRadius: 24
+    },
+    launchBrandBlock: {
+        marginTop: 22,
+        alignItems: 'center'
     },
     launchBrand: {
-        marginTop: 20,
         color: '#ffffff',
-        fontSize: 40,
+        fontSize: 44,
         fontWeight: '900',
-        letterSpacing: -1
+        letterSpacing: -1.4
     },
     launchTagline: {
-        marginTop: 6,
-        color: 'rgba(255,255,255,0.5)',
-        fontSize: 14,
-        fontWeight: '600',
-        textTransform: 'uppercase',
-        letterSpacing: 2
+        marginTop: 8,
+        color: 'rgba(255,255,255,0.72)',
+        fontSize: 15,
+        lineHeight: 22,
+        textAlign: 'center'
     },
-    launchFooter: {
-        marginBottom: 20
+    launchMetricRow: {
+        marginTop: 28,
+        width: '100%',
+        flexDirection: 'row',
+        alignItems: 'stretch',
+        borderRadius: 24,
+        backgroundColor: 'rgba(7,17,31,0.42)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.07)',
+        overflow: 'hidden'
     },
-    launchTitle: {
-        color: '#ffffff',
-        fontSize: 32,
-        fontWeight: '900',
-        lineHeight: 40,
-        letterSpacing: -0.5
+    launchMetricCard: {
+        flex: 1,
+        paddingVertical: 18,
+        paddingHorizontal: 16
     },
-    launchText: {
-        marginTop: 16,
-        color: 'rgba(255,255,255,0.6)',
-        fontSize: 16,
-        lineHeight: 24
+    launchMetricDivider: {
+        width: 1,
+        backgroundColor: 'rgba(255,255,255,0.08)'
     },
-    launchButton: {
-        marginTop: 32,
-        borderRadius: 20,
-        shadowColor: brandColors.accent,
-        shadowOpacity: 0.4,
-        shadowRadius: 15,
-        shadowOffset: { width: 0, height: 8 }
-    },
-    launchButtonContent: {
-        height: 64
-    },
-    launchButtonLabel: {
+    launchMetricValue: {
+        color: '#FFFFFF',
         fontSize: 18,
         fontWeight: '900'
     },
-    versionTag: {
-        marginTop: 24,
-        textAlign: 'center',
-        color: 'rgba(255,255,255,0.3)',
+    launchMetricLabel: {
+        marginTop: 6,
+        color: 'rgba(255,255,255,0.58)',
         fontSize: 12,
-        fontWeight: '600'
+        lineHeight: 18
+    },
+    launchFooter: {
+        marginTop: 24,
+        paddingHorizontal: 6,
+        marginBottom: 10
+    },
+    launchTitle: {
+        color: '#ffffff',
+        fontSize: 34,
+        fontWeight: '900',
+        lineHeight: 40,
+        letterSpacing: -0.7
+    },
+    launchText: {
+        marginTop: 14,
+        color: 'rgba(255,255,255,0.72)',
+        fontSize: 16,
+        lineHeight: 24
+    },
+    launchFeatureList: {
+        marginTop: 22,
+        gap: 10
+    },
+    launchFeaturePill: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        borderRadius: 18,
+        backgroundColor: 'rgba(255,255,255,0.07)',
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.08)'
+    },
+    launchFeatureText: {
+        marginLeft: 10,
+        color: '#E2E8F0',
+        fontSize: 14,
+        fontWeight: '700'
+    },
+    launchButton: {
+        marginTop: 28,
+        borderRadius: 20,
+        shadowColor: brandColors.accent,
+        shadowOpacity: 0.42,
+        shadowRadius: 18,
+        shadowOffset: { width: 0, height: 10 },
+        elevation: 8
+    },
+    launchButtonContent: {
+        height: 62
+    },
+    launchButtonLabel: {
+        fontSize: 18,
+        fontWeight: '900',
+        letterSpacing: 0.3
+    },
+    versionTag: {
+        marginTop: 18,
+        textAlign: 'center',
+        color: 'rgba(255,255,255,0.42)',
+        fontSize: 12,
+        fontWeight: '700'
     },
     updateModal: {
         marginHorizontal: 20,

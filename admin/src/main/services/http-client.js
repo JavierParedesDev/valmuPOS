@@ -42,6 +42,7 @@ async function parseResponse(response, options = {}) {
 }
 
 async function requestJson({ endpoint, url, method = 'GET', body, token, silentNonJson = false }) {
+    const requestUrl = buildApiUrl(url || endpoint);
     try {
         const headers = { 'Content-Type': 'application/json' };
 
@@ -49,7 +50,7 @@ async function requestJson({ endpoint, url, method = 'GET', body, token, silentN
             headers.Authorization = `Bearer ${token}`;
         }
 
-        const response = await fetch(buildApiUrl(url || endpoint), {
+        const response = await fetch(requestUrl, {
             method,
             headers,
             body: body ? JSON.stringify(body) : undefined
@@ -58,7 +59,11 @@ async function requestJson({ endpoint, url, method = 'GET', body, token, silentN
         return parseResponse(response, { silentNonJson });
     } catch (error) {
         console.error('Network/Fetch Error:', error);
-        return { ok: false, error: error.message };
+        return {
+            ok: false,
+            status: 0,
+            error: `No se pudo conectar con la API (${requestUrl}): ${error.message}`
+        };
     }
 }
 

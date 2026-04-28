@@ -81,13 +81,12 @@ export function renderSearchResultsView(products) {
     `).join('');
 }
 
-export function renderCartView({ cart, products }) {
+export function renderCartView({ cart, products, collaboratorDiscountEnabled = false }) {
     const cartList = document.getElementById('cart-list');
     const totalLabel = document.getElementById('sale-total');
-    const subtotalLabel = document.getElementById('summary-subtotal');
     const itemsLabel = document.getElementById('summary-items');
 
-    if (!cartList || !totalLabel || !subtotalLabel || !itemsLabel) {
+    if (!cartList || !totalLabel || !itemsLabel) {
         return;
     }
 
@@ -99,20 +98,21 @@ export function renderCartView({ cart, products }) {
             </div>
         `;
         totalLabel.textContent = '$0';
-        subtotalLabel.textContent = '$0';
         itemsLabel.textContent = '0';
 
         const ivaLabel = document.getElementById('sale-tax') || document.getElementById('summary-iva');
         const discountLabel = document.getElementById('summary-discount');
+        const collaboratorButton = document.getElementById('collaborator-discount-btn');
         if (ivaLabel) ivaLabel.textContent = '$0';
         if (discountLabel) discountLabel.textContent = '$0';
+        collaboratorButton?.classList.toggle('active', collaboratorDiscountEnabled);
 
         return;
     }
 
-    let total = 0;
+    let baseTotal = 0;
     let totalItems = 0;
-    let totalDiscount = 0;
+    let lineDiscountTotal = 0;
 
     cartList.innerHTML = [...cart].reverse().map((item) => {
         const product = products.find((entry) => entry.id === item.productId);
@@ -124,9 +124,9 @@ export function renderCartView({ cart, products }) {
         const lineTotal = pricing.unitPrice * item.quantity;
         const lineDiscount = (product.price - pricing.unitPrice) * item.quantity;
 
-        total += lineTotal;
+        baseTotal += lineTotal;
         totalItems += item.quantity;
-        totalDiscount += lineDiscount;
+        lineDiscountTotal += lineDiscount;
 
         const hasOffer = product.offerAvailable && product.offerPrice;
         const isOfferActive = Boolean(item.applyOffer);
@@ -183,17 +183,23 @@ export function renderCartView({ cart, products }) {
         `;
     }).join('');
 
+    const collaboratorDiscount = collaboratorDiscountEnabled
+        ? Math.round(baseTotal * 0.1)
+        : 0;
+    const total = Math.max(0, Math.round(baseTotal - collaboratorDiscount));
+    const totalDiscount = lineDiscountTotal + collaboratorDiscount;
     const subtotalCalc = Math.round(total / 1.19);
     const ivaCalc = total - subtotalCalc;
 
     const ivaLabel = document.getElementById('sale-tax') || document.getElementById('summary-iva');
     const discountLabel = document.getElementById('summary-discount');
+    const collaboratorButton = document.getElementById('collaborator-discount-btn');
 
     totalLabel.textContent = `$${formatCurrency(total)}`;
-    subtotalLabel.textContent = `$${formatCurrency(subtotalCalc)}`;
     itemsLabel.textContent = formatQuantity(totalItems, false);
     if (ivaLabel) ivaLabel.textContent = `$${formatCurrency(ivaCalc)}`;
     if (discountLabel) discountLabel.textContent = totalDiscount > 0 ? `-$${formatCurrency(totalDiscount)}` : `$0`;
+    collaboratorButton?.classList.toggle('active', collaboratorDiscountEnabled);
 }
 
 export function renderCatalogStatusView({ status, source }) {

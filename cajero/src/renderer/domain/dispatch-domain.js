@@ -10,6 +10,27 @@ export function filterDispatchProducts(products, query, normalizeCatalogText) {
     }).slice(0, 8);
 }
 
+function getDispatchAvailableStock(product) {
+    return Number(
+        product?.dispatchAvailableStock ??
+        product?.stockActual ??
+        0
+    );
+}
+
+function getDispatchPrimaryStock(product) {
+    return Number(product?.dispatchPrimaryStock ?? 0);
+}
+
+function getDispatchSecondaryStock(product) {
+    return Number(product?.dispatchSecondaryStock ?? 0);
+}
+
+function buildDispatchStockError(product) {
+    const sourceLabel = String(product?.dispatchSourceLabel || 'Casa Matriz y Bodega');
+    return `No queda suficiente stock de ${product.name} en ${sourceLabel}.`;
+}
+
 export function addProductToDispatchCart(cart, productId, products) {
     const product = products.find((entry) => String(entry.id) === String(productId));
     if (!product) {
@@ -18,12 +39,12 @@ export function addProductToDispatchCart(cart, productId, products) {
 
     const currentLine = cart.find((entry) => String(entry.productId) === String(productId));
     const nextQuantity = (currentLine?.quantity || 0) + 1;
-    const stockActual = Number(product.stockActual || 0);
+    const stockActual = getDispatchAvailableStock(product);
 
     if (!product.isWeighted && nextQuantity > stockActual) {
         return {
             cart,
-            error: `No queda suficiente stock de ${product.name} en esta sucursal.`
+            error: buildDispatchStockError(product)
         };
     }
 
@@ -63,10 +84,10 @@ export function updateDispatchCartQuantity(cart, productId, delta, products) {
         };
     }
 
-    if (!product.isWeighted && nextQuantity > Number(product.stockActual || 0)) {
+    if (!product.isWeighted && nextQuantity > getDispatchAvailableStock(product)) {
         return {
             cart,
-            error: `No queda suficiente stock de ${product.name} en esta sucursal.`
+            error: buildDispatchStockError(product)
         };
     }
 
@@ -83,20 +104,20 @@ export function addWeightedQuantityToDispatchCart(cart, product, quantity) {
         return { cart, error: 'Ingresa un peso valido para el producto pesable.' };
     }
 
-    if (normalizedQuantity > Number(product.stockActual || 0)) {
+    if (normalizedQuantity > getDispatchAvailableStock(product)) {
         return {
             cart,
-            error: `No queda suficiente stock de ${product.name} en esta sucursal.`
+            error: buildDispatchStockError(product)
         };
     }
 
     const currentLine = cart.find((entry) => String(entry.productId) === String(product.id));
     if (currentLine) {
         const nextQuantity = Math.round((Number(currentLine.quantity || 0) + normalizedQuantity) * 1000) / 1000;
-        if (nextQuantity > Number(product.stockActual || 0)) {
+        if (nextQuantity > getDispatchAvailableStock(product)) {
             return {
                 cart,
-                error: `No queda suficiente stock de ${product.name} en esta sucursal.`
+                error: buildDispatchStockError(product)
             };
         }
 
@@ -131,10 +152,10 @@ export function setDispatchCartItemQuantity(cart, product, quantity) {
         return { cart, error: 'Ingresa una cantidad entera valida.' };
     }
 
-    if (normalizedQuantity > Number(product.stockActual || 0)) {
+    if (normalizedQuantity > getDispatchAvailableStock(product)) {
         return {
             cart,
-            error: `No queda suficiente stock de ${product.name} en esta sucursal.`
+            error: buildDispatchStockError(product)
         };
     }
 
@@ -197,7 +218,8 @@ export function buildDispatchPayload({
     documentTypeId,
     customerId,
     folioDocumento,
-    manualPayment
+    manualPayment,
+    stockPlan = null
 }) {
     const subtotal = Math.round(snapshot.total / 1.19);
     const iva = snapshot.total - subtotal;
@@ -213,12 +235,80 @@ export function buildDispatchPayload({
         subtotal,
         iva,
         total: snapshot.total,
+        stock_origen_prioridad: stockPlan ? stockPlan.summary : null,
+        stock_asignaciones: stockPlan ? stockPlan.allocations : [],
         carrito: snapshot.lines.map((line) => ({
             id_producto: Number(line.productId),
             cantidad: Number(line.quantity),
             precioVenta: Number(line.unitPrice),
             subtotalLinea: Number(line.lineTotal)
         }))
+    };
+}
+
+export function buildDispatchStockPlan(cart, products) {
+    const allocations = [];
+    const fallbackMessages = [];
+
+    for (const item of cart) {
+        const product = products.find((entry) => String(entry.id) === String(item.productId));
+        if (!product) {
+            return {
+                ok: false,
+                error: 'Hay productos del despacho que ya no estan disponibles en el catalogo.'
+            };
+        }
+
+        const requestedQuantity = Number(item.quantity || 0);
+        const primaryStock = getDispatchPrimaryStock(product);
+        const secondaryStock = getDispatchSecondaryStock(product);
+        const totalAvailable = getDispatchAvailableStock(product);
+
+        if (requestedQuantity > totalAvailable) {
+            return {
+                ok: false,
+                error: buildDispatchStockError(product)
+            };
+        }
+
+        const takeFromPrimary = Math.min(primaryStock, requestedQuantity);
+        const takeFromSecondary = Math.max(0, requestedQuantity - takeFromPrimary);
+        const usesSecondary = takeFromSecondary > 0;
+
+        allocations.push({
+            id_producto: Number(product.id),
+            nombreProducto: product.name,
+            cantidad: requestedQuantity,
+            origenPrincipal: {
+                id_sucursal: product.dispatchPrimaryBranchId ? Number(product.dispatchPrimaryBranchId) : null,
+                nombreSucursal: product.dispatchPrimaryBranchName || 'Casa Matriz',
+                cantidad: takeFromPrimary
+            },
+            origenSecundario: {
+                id_sucursal: product.dispatchSecondaryBranchId ? Number(product.dispatchSecondaryBranchId) : null,
+                nombreSucursal: product.dispatchSecondaryBranchName || 'Bodega',
+                cantidad: takeFromSecondary
+            }
+        });
+
+        if (usesSecondary) {
+            fallbackMessages.push(
+                `${product.name}: ${product.dispatchSecondaryBranchName || 'Bodega'} (${takeFromSecondary}) porque ${product.dispatchPrimaryBranchName || 'Casa Matriz'} no alcanzaba`
+            );
+        }
+    }
+
+    const usesFallback = fallbackMessages.length > 0;
+    const summary = usesFallback
+        ? `Stock priorizado desde Casa Matriz con apoyo de Bodega en ${fallbackMessages.length} producto(s).`
+        : 'Stock descontado desde Casa Matriz.';
+
+    return {
+        ok: true,
+        usesFallback,
+        summary,
+        fallbackMessages,
+        allocations
     };
 }
 

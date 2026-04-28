@@ -106,7 +106,31 @@ function normalizeReferenceOptions(items = [], idKey, nameKey) {
     );
 }
 
-export default function ProductsScreen({ token, onSummaryChange }) {
+function resolveUserId(user) {
+    const rawUserId = user?.id_usuario ?? user?.idUsuario ?? user?.usuario_id ?? user?.id ?? null;
+    const numericUserId = Number(rawUserId);
+    return Number.isNaN(numericUserId) ? null : numericUserId;
+}
+
+function resolveUserBranchId(user) {
+    const rawBranchId = user?.id_sucursal ?? user?.idSucursal ?? user?.sucursal_id ?? null;
+    const numericBranchId = Number(rawBranchId);
+    return Number.isNaN(numericBranchId) ? null : numericBranchId;
+}
+
+function formatMovementError(response, fallback) {
+    const statusLabel = response?.status ? `HTTP ${response.status}` : 'Sin respuesta del servidor';
+    const detail = response?.data?.detalle
+        ? ` (${typeof response.data.detalle === 'string' ? response.data.detalle : JSON.stringify(response.data.detalle)})`
+        : '';
+    return `${statusLabel}: ${response?.data?.error || response?.error || fallback}${detail}`;
+}
+
+function createMovementRequestId(prefix = 'MOV') {
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export default function ProductsScreen({ token, user, onSummaryChange }) {
     const [products, setProducts] = useState([]);
     const [categories, setCategories] = useState([]);
     const [suppliers, setSuppliers] = useState([]);
@@ -116,6 +140,8 @@ export default function ProductsScreen({ token, onSummaryChange }) {
     const [formVisible, setFormVisible] = useState(false);
     const [movementVisible, setMovementVisible] = useState(false);
     const [movementType, setMovementType] = useState('inbound');
+    const [movementSubmitting, setMovementSubmitting] = useState(false);
+    const [movementRequestId, setMovementRequestId] = useState('');
     const [editingProduct, setEditingProduct] = useState(null);
     const [productForm, setProductForm] = useState(emptyProductForm());
     const [movementForm, setMovementForm] = useState(emptyMovementForm());
@@ -297,6 +323,7 @@ export default function ProductsScreen({ token, onSummaryChange }) {
     const openMovementModal = (type) => {
         setMovementType(type);
         setMovementForm(emptyMovementForm());
+        setMovementRequestId(createMovementRequestId(type === 'transfer' ? 'TRASLADO' : 'INGRESO'));
         setSelectedMovementProduct(null);
         setProductPickerQuery('');
         setProductPickerResults([]);
@@ -304,36 +331,55 @@ export default function ProductsScreen({ token, onSummaryChange }) {
     };
 
     const submitMovement = async () => {
+        if (movementSubmitting) return;
+
         if (!movementForm.id_producto || !movementForm.cantidad) {
             Alert.alert('Validación', 'Debes seleccionar producto y cantidad');
             return;
         }
 
-        const response = await apiRequest({
+        const currentUserId = resolveUserId(user);
+        const sourceBranchId = resolveUserBranchId(user) || Number(movementForm.id_sucursal);
+
+        if (movementType === 'transfer' && !sourceBranchId) {
+            Alert.alert('Validacion', 'No se pudo identificar la sucursal de origen del usuario logeado.');
+            return;
+        }
+
+        setMovementSubmitting(true);
+        try {
+            const response = await apiRequest({
             endpoint: movementType === 'transfer' ? '/productos/traslado' : '/productos/ingreso',
             method: 'POST',
             body: movementType === 'transfer'
                 ? {
                     id_producto: Number(movementForm.id_producto),
+                    id_usuario: currentUserId,
+                    id_sucursalOrigen: sourceBranchId,
                     id_sucursalDestino: Number(movementForm.id_sucursalDestino),
-                    cantidadMov: toNumber(movementForm.cantidad)
+                    cantidadMov: toNumber(movementForm.cantidad),
+                    comprobanteMov: `${movementRequestId}-${movementForm.id_producto}`
                 }
                 : {
                     id_producto: Number(movementForm.id_producto),
+                    id_usuario: currentUserId,
                     id_sucursal: Number(movementForm.id_sucursal),
                     cantidadIngreso: toNumber(movementForm.cantidad),
                     numeroFactura: movementForm.numeroFactura.trim()
                 },
             token
-        });
+            });
 
-        if (!response.ok) {
-            Alert.alert('Error', response.error || 'No se pudo registrar el movimiento');
-            return;
+            if (!response.ok) {
+                Alert.alert('Error', formatMovementError(response, 'No se pudo registrar el movimiento'));
+                return;
+            }
+
+            setMovementVisible(false);
+            loadProducts(searchText);
+        } finally {
+            setMovementSubmitting(false);
         }
-
-        setMovementVisible(false);
-        loadProducts(searchText);
     };
 
     const openScanner = async (mode) => {
@@ -644,7 +690,8 @@ export default function ProductsScreen({ token, onSummaryChange }) {
                 title={movementType === 'transfer' ? 'Traslado' : 'Ingreso'}
                 onClose={() => setMovementVisible(false)}
                 onSubmit={submitMovement}
-                submitLabel="Registrar"
+                submitLabel={movementSubmitting ? 'Registrando...' : 'Registrar'}
+                submitDisabled={movementSubmitting}
             >
                 <View style={styles.scannerInputRow}>
                     <View style={styles.flexOne}>

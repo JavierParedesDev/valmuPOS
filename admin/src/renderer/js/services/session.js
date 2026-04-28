@@ -21,6 +21,13 @@ function getCurrentUser() {
     }
 }
 
+function getCurrentUserId() {
+    const user = getCurrentUser();
+    const rawUserId = user?.id_usuario ?? user?.idUsuario ?? user?.usuario_id ?? user?.id ?? null;
+    const numericUserId = Number(rawUserId);
+    return Number.isNaN(numericUserId) ? null : numericUserId;
+}
+
 function getCurrentUserRoleId() {
     const user = getCurrentUser();
     if (!user) return null;

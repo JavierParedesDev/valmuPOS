@@ -125,7 +125,7 @@ export function renderDispatchSearchResults(
         <button class="search-result-btn" type="button" onclick="${onSelectFunction}('${product.id}')">
             <div>
                 <strong>${escapeHtml(product.name)}</strong>
-                <span class="search-result-meta">${escapeHtml(product.code)} - ${escapeHtml(product.category || 'Sin categoria')} - Stock: ${formatQuantity(product.stockActual || 0, product.isWeighted)}</span>
+                <span class="search-result-meta">${escapeHtml(product.code)} - ${escapeHtml(product.category || 'Sin categoria')} - Stock despacho: ${formatQuantity(product.dispatchAvailableStock ?? product.stockActual ?? 0, product.isWeighted)}${product.dispatchSourceLabel ? ` (${escapeHtml(product.dispatchSourceLabel)})` : ''}</span>
             </div>
             <strong>$${formatCurrency(product.price)}</strong>
         </button>

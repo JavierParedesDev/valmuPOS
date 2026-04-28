@@ -5,32 +5,32 @@ import {
     ScrollView,
     StyleSheet,
     Text,
-    TextInput,
-    TouchableOpacity,
     View
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { apiRequest } from '../services/api';
-import { Card, EmptyState, Screen, SectionHeader } from '../components/UI';
+import { Card, EmptyState, PickerField, Screen, SectionHeader } from '../components/UI';
 import { brandColors } from '../theme';
 import { formatCurrency } from '../utils/format';
 
 const INTERVAL_OPTIONS = [
-    { key: 'dia', label: 'Dia' },
+    { key: 'dia', label: 'Día' },
     { key: 'semana', label: 'Semana' },
     { key: 'mes', label: 'Mes' },
     { key: 'anio', label: 'Año' }
 ];
+
 const APP_TIMEZONE = 'America/Santiago';
+const WEEKDAY_LABELS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
 
 export default function SalesHistoryScreen({ token }) {
     const [intervalo, setIntervalo] = useState('dia');
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [rows, setRows] = useState([]);
-    const [branchRows, setBranchRows] = useState([]);
+    const [sales, setSales] = useState([]);
     const [error, setError] = useState('');
-    const [periodFilter, setPeriodFilter] = useState('');
+    const [selectedPeriod, setSelectedPeriod] = useState('');
 
     useEffect(() => {
         fetchHistory(intervalo, { silent: false });
@@ -43,7 +43,7 @@ export default function SalesHistoryScreen({ token }) {
         setError('');
 
         try {
-            const [response, salesResponse, branchesResponse] = await Promise.all([
+            const [response, salesResponse] = await Promise.all([
                 apiRequest({
                     endpoint: `/reportes/historico-ventas?intervalo=${selectedInterval}`,
                     token
@@ -51,40 +51,38 @@ export default function SalesHistoryScreen({ token }) {
                 apiRequest({
                     endpoint: '/ventas?all=true&limit=100000',
                     token
-                }),
-                apiRequest({
-                    endpoint: '/sucursales',
-                    token
                 })
             ]);
 
-            const sales = salesResponse.ok && Array.isArray(salesResponse.data) ? salesResponse.data : [];
-            const branches = branchesResponse.ok && Array.isArray(branchesResponse.data) ? branchesResponse.data : [];
+            const salesRows = salesResponse.ok && Array.isArray(salesResponse.data) ? salesResponse.data : [];
             const apiRows = response.ok && Array.isArray(response.data)
                 ? response.data.map(normalizeHistoryRow).filter((row) => row.periodo)
                 : [];
-            const computedRows = buildHistoryRowsFromSales(sales, selectedInterval);
-            const historyRows = apiRows.length > 0 ? apiRows : computedRows;
+            const computedRows = buildHistoryRowsFromSales(salesRows, selectedInterval);
+            const historyRows = ((apiRows.length > 0 ? apiRows : computedRows))
+                .sort((left, right) => String(left.periodo).localeCompare(String(right.periodo)));
 
             if (!salesResponse.ok && historyRows.length === 0) {
                 setError(salesResponse.error || response.error || 'No se pudo obtener el historial de ventas.');
                 setRows([]);
+                setSales([]);
+                setSelectedPeriod('');
                 return;
             }
 
             setRows(historyRows);
-            setBranchRows(
-                buildBranchRows({
-                    sales,
-                    branches,
-                    interval: selectedInterval,
-                    allowedPeriods: historyRows.map((item) => String(item.periodo || ''))
-                })
-            );
-        } catch (fetchError) {
+            setSales(salesRows);
+            setSelectedPeriod((currentValue) => {
+                if (historyRows.some((row) => row.periodo === currentValue)) {
+                    return currentValue;
+                }
+                return historyRows[historyRows.length - 1]?.periodo || '';
+            });
+        } catch (_fetchError) {
             setError('No se pudo cargar el historial de ventas.');
             setRows([]);
-            setBranchRows([]);
+            setSales([]);
+            setSelectedPeriod('');
         } finally {
             setLoading(false);
             setRefreshing(false);
@@ -96,80 +94,33 @@ export default function SalesHistoryScreen({ token }) {
         fetchHistory(intervalo, { silent: true });
     }
 
+    const periodOptions = useMemo(() => {
+        return rows
+            .map((row) => ({
+                label: formatPeriodLabel(row.periodo, intervalo),
+                value: row.periodo
+            }))
+            .sort((left, right) => String(left.value).localeCompare(String(right.value)))
+            .reverse();
+    }, [rows, intervalo]);
+
     const filteredRows = useMemo(() => {
-        const normalizedFilter = normalizePeriodFilter(periodFilter);
-        if (!normalizedFilter) return rows;
+        if (!selectedPeriod) {
+            return [];
+        }
 
-        return rows.filter((row) => {
-            const periodo = String(row.periodo || '');
-            const visibleLabel = formatPeriodLabel(periodo, intervalo);
-            return normalizePeriodFilter(`${periodo} ${visibleLabel}`).includes(normalizedFilter);
-        });
-    }, [rows, periodFilter, intervalo]);
+        return rows.filter((row) => row.periodo === selectedPeriod);
+    }, [rows, selectedPeriod]);
 
-    const summary = useMemo(() => {
-        return filteredRows.reduce((acc, row) => {
-            acc.totalVentas += Number(row.totalVentas || 0);
-            acc.ventasSII += Number(row.ventasSII || 0);
-            acc.ventasInternas += Number(row.ventasInternas || 0);
-            acc.ventasCaja += Number(row.ventasCaja || 0);
-            acc.ventasDespacho += Number(row.ventasDespacho || 0);
-            acc.gananciaNeta += Number(row.gananciaNeta || 0);
-            return acc;
-        }, {
-            totalVentas: 0,
-            ventasSII: 0,
-            ventasInternas: 0,
-            ventasCaja: 0,
-            ventasDespacho: 0,
-            gananciaNeta: 0
-        });
-    }, [filteredRows]);
-
-    const latestPeriod = rows.length > 0 ? rows[rows.length - 1]?.periodo : '';
-    const filteredPeriods = useMemo(
-        () => filteredRows.map((row) => String(row.periodo || '')),
-        [filteredRows]
+    const summary = useMemo(
+        () => buildSelectedPeriodSummary({ sales, rows, interval: intervalo, selectedPeriod }),
+        [sales, rows, intervalo, selectedPeriod]
     );
 
-    const filteredBranchRows = useMemo(() => {
-        const allowed = new Set(filteredPeriods);
-        return branchRows
-            .map((branch) => {
-                const scoped = branch.breakdown.filter((item) => allowed.has(item.periodo));
-                if (scoped.length === 0) {
-                    return null;
-                }
-
-                return scoped.reduce((acc, item) => {
-                    acc.ventasCaja += Number(item.ventasCaja || 0);
-                    acc.ventasDespacho += Number(item.ventasDespacho || 0);
-                    acc.ventasSIICaja += Number(item.ventasSIICaja || 0);
-                    acc.ventasSIIDespacho += Number(item.ventasSIIDespacho || 0);
-                    acc.ventasInternasCaja += Number(item.ventasInternasCaja || 0);
-                    acc.ventasInternasDespacho += Number(item.ventasInternasDespacho || 0);
-                    acc.gananciaCaja += Number(item.gananciaCaja || 0);
-                    acc.gananciaDespacho += Number(item.gananciaDespacho || 0);
-                    acc.periodos.push(item.periodo);
-                    return acc;
-                }, {
-                    id_sucursal: branch.id_sucursal,
-                    nombreSucursal: branch.nombreSucursal,
-                    ventasCaja: 0,
-                    ventasDespacho: 0,
-                    ventasSIICaja: 0,
-                    ventasSIIDespacho: 0,
-                    ventasInternasCaja: 0,
-                    ventasInternasDespacho: 0,
-                    gananciaCaja: 0,
-                    gananciaDespacho: 0,
-                    periodos: [],
-                    breakdown: scoped
-                });
-            })
-            .filter(Boolean)
-            .sort((a, b) => (b.ventasCaja + b.ventasDespacho) - (a.ventasCaja + a.ventasDespacho));
-    }, [branchRows, filteredPeriods]);
+    const periodBreakdown = useMemo(
+        () => buildPeriodBreakdownRows({ sales, interval: intervalo, selectedPeriod }),
+        [sales, intervalo, selectedPeriod]
+    );
 
     if (loading && !refreshing) {
         return (
@@ -191,129 +142,84 @@ export default function SalesHistoryScreen({ token }) {
             >
                 <SectionHeader
                     title="Historial de Ventas"
-                    subtitle="Tendencias por dia, semana, mes y año"
+                    subtitle="Filtros simples por día, semana, mes y año"
                 />
 
-                <Card style={styles.intervalCard}>
-                    <Text style={styles.cardLabel}>Periodo de analisis</Text>
+                <Card style={styles.filterCard}>
+                    <Text style={styles.cardLabel}>Tipo de período</Text>
                     <View style={styles.intervalRow}>
                         {INTERVAL_OPTIONS.map((option) => {
                             const active = option.key === intervalo;
                             return (
-                                <TouchableOpacity
-                                    key={option.key}
-                                    style={[styles.intervalButton, active && styles.intervalButtonActive]}
-                                    onPress={() => setIntervalo(option.key)}
-                                    activeOpacity={0.85}
-                                >
-                                    <Text style={[styles.intervalButtonText, active && styles.intervalButtonTextActive]}>
+                                <View key={option.key} style={styles.intervalOptionWrap}>
+                                    <Text
+                                        style={[styles.intervalChip, active && styles.intervalChipActive]}
+                                        onPress={() => setIntervalo(option.key)}
+                                    >
                                         {option.label}
                                     </Text>
-                                </TouchableOpacity>
+                                </View>
                             );
                         })}
                     </View>
-                    <Text style={styles.intervalHint}>
-                        Ultimo periodo visible: {formatPeriodLabel(latestPeriod, intervalo)}
-                    </Text>
-                </Card>
 
-                <Card style={styles.filterCard}>
-                    <Text style={styles.cardLabel}>Filtro por fecha o periodo</Text>
-                    <TextInput
-                        value={periodFilter}
-                        onChangeText={setPeriodFilter}
-                        placeholder={resolveFilterPlaceholder(intervalo)}
-                        placeholderTextColor={brandColors.textMuted}
-                        style={styles.filterInput}
-                    />
+                    <View style={styles.pickerWrap}>
+                        <PickerField
+                            label={resolvePeriodPickerLabel(intervalo)}
+                            value={selectedPeriod}
+                            onChange={setSelectedPeriod}
+                            options={periodOptions}
+                            emptyLabel={resolvePeriodEmptyLabel(intervalo)}
+                        />
+                    </View>
+
                     <Text style={styles.filterHint}>
-                        Busca por fecha, semana, mes o año segun el modo que tengas seleccionado.
+                        {resolveIntervalHint(intervalo)}
                     </Text>
                 </Card>
-
-                <View style={styles.summaryGrid}>
-                    <SummaryCard
-                        label="Total ventas"
-                        value={formatCurrency(summary.totalVentas)}
-                        icon="stats-chart-outline"
-                        tone="accent"
-                    />
-                    <SummaryCard
-                        label="Ventas caja"
-                        value={formatCurrency(summary.ventasCaja)}
-                        icon="storefront-outline"
-                        tone="accent"
-                    />
-                    <SummaryCard
-                        label="Ventas despacho"
-                        value={formatCurrency(summary.ventasDespacho)}
-                        icon="bus-outline"
-                        tone="info"
-                    />
-                    <SummaryCard
-                        label="Ganancia neta"
-                        value={formatCurrency(summary.gananciaNeta)}
-                        icon="trending-up-outline"
-                        tone="success"
-                    />
-                </View>
 
                 <Card style={styles.breakdownCard}>
-                    <Text style={styles.cardLabel}>Resumen acumulado</Text>
-                    <View style={styles.breakdownRow}>
-                        <Text style={styles.breakdownKey}>SII</Text>
-                        <Text style={styles.breakdownValue}>{formatCurrency(summary.ventasSII)}</Text>
-                    </View>
-                    <View style={styles.breakdownRow}>
-                        <Text style={styles.breakdownKey}>Internas</Text>
-                        <Text style={styles.breakdownValue}>{formatCurrency(summary.ventasInternas)}</Text>
-                    </View>
-                    <View style={styles.breakdownRow}>
-                        <Text style={styles.breakdownKey}>Caja</Text>
-                        <Text style={styles.breakdownValue}>{formatCurrency(summary.ventasCaja)}</Text>
-                    </View>
-                    <View style={styles.breakdownRow}>
-                        <Text style={styles.breakdownKey}>Despacho</Text>
-                        <Text style={styles.breakdownValue}>{formatCurrency(summary.ventasDespacho)}</Text>
-                    </View>
+                    <Text style={styles.cardLabel}>Resumen del período elegido</Text>
+                    <BreakdownRow label="Total ventas" value={summary.totalVentas} />
+                    <BreakdownRow label="SII" value={summary.ventasSII} />
+                    <BreakdownRow label="Internas" value={summary.ventasInternas} />
+                    <BreakdownRow label="Caja" value={summary.ventasCaja} />
+                    <BreakdownRow label="Despacho" value={summary.ventasDespacho} />
+                    <BreakdownRow label="Ganancia neta" value={summary.gananciaNeta} />
                 </Card>
 
-                {/* Seccion de sucursales ocultada temporalmente por solicitud del usuario */}
-                {/* 
-                {filteredBranchRows.length > 0 ? (
-                    <View style={styles.section}>
-                        <SectionHeader
-                            title="Sucursales y despacho"
-                            subtitle="Caja y despacho separados por sucursal"
-                        />
-                        {filteredBranchRows.map((branch) => (
-                            <Card key={`branch-${branch.id_sucursal}`} style={styles.branchCard}>
-                                <View style={styles.branchHeader}>
-                                    <Text style={styles.branchTitle}>{branch.nombreSucursal}</Text>
-                                    <Text style={styles.branchTotal}>{formatCurrency(Number(branch.ventasCaja || 0) + Number(branch.ventasDespacho || 0))}</Text>
+                {(intervalo === 'semana' || intervalo === 'mes' || intervalo === 'anio') && selectedPeriod ? (
+                    <Card style={styles.timelineCard}>
+                        <Text style={styles.cardLabel}>
+                            {intervalo === 'semana'
+                                ? 'Totales por día'
+                                : intervalo === 'mes'
+                                    ? 'Días del mes'
+                                    : 'Totales por mes'}
+                        </Text>
+
+                        {periodBreakdown.length > 0 ? (
+                            periodBreakdown.map((item) => (
+                                <View key={item.key} style={styles.timelineRow}>
+                                    <View style={styles.timelineTextWrap}>
+                                        <Text style={styles.timelineLabel}>{item.label}</Text>
+                                        {item.subtitle ? <Text style={styles.timelineSubLabel}>{item.subtitle}</Text> : null}
+                                    </View>
+                                    <Text style={styles.timelineValue}>{formatCurrency(item.total)}</Text>
                                 </View>
-                                <View style={styles.historyGrid}>
-                                    <MetricPill label="Caja" value={branch.ventasCaja} tone="accent" />
-                                    <MetricPill label="Despacho" value={branch.ventasDespacho} tone="info" />
-                                    <MetricPill label="Caja SII" value={branch.ventasSIICaja} tone="neutral" />
-                                    <MetricPill label="Despacho SII" value={branch.ventasSIIDespacho} tone="neutral" />
-                                    <MetricPill label="Caja Internas" value={branch.ventasInternasCaja} tone="neutral" />
-                                    <MetricPill label="Despacho Internas" value={branch.ventasInternasDespacho} tone="neutral" />
-                                    <MetricPill label="Ganancia Caja" value={branch.gananciaCaja} tone="success" />
-                                    <MetricPill label="Ganancia Despacho" value={branch.gananciaDespacho} tone="success" />
-                                </View>
-                            </Card>
-                        ))}
-                    </View>
+                            ))
+                        ) : (
+                            <Text style={styles.filterHint}>No hay ventas registradas dentro de este período.</Text>
+                        )}
+                    </Card>
                 ) : null}
-                */}
 
                 <View style={styles.section}>
                     <SectionHeader
-                        title="Detalle por fecha"
-                        subtitle="Cada fila representa un periodo del historial"
+                        title="Detalle"
+                        subtitle={selectedPeriod ? `Período seleccionado: ${formatPeriodLabel(selectedPeriod, intervalo)}` : 'Selecciona un período'}
                     />
+
                     {error ? (
                         <Card style={styles.errorCard}>
                             <Ionicons name="warning-outline" size={18} color={brandColors.danger} />
@@ -322,11 +228,11 @@ export default function SalesHistoryScreen({ token }) {
                     ) : null}
 
                     {!error && rows.length === 0 ? (
-                        <EmptyState text="No hay datos historicos disponibles para este periodo." />
+                        <EmptyState text="No hay datos históricos disponibles para este período." />
                     ) : null}
 
                     {!error && rows.length > 0 && filteredRows.length === 0 ? (
-                        <EmptyState text="No hay coincidencias para el filtro ingresado." />
+                        <EmptyState text="Selecciona un período para ver el detalle." />
                     ) : null}
 
                     {filteredRows.map((row) => (
@@ -334,7 +240,7 @@ export default function SalesHistoryScreen({ token }) {
                             <View style={styles.historyHeader}>
                                 <View>
                                     <Text style={styles.historyTitle}>{formatPeriodLabel(row.periodo, intervalo)}</Text>
-                                    <Text style={styles.historySubtitle}>Periodo {row.periodo}</Text>
+                                    <Text style={styles.historySubtitle}>Código {row.periodo}</Text>
                                 </View>
                                 <Text style={styles.historyTotal}>{formatCurrency(row.totalVentas)}</Text>
                             </View>
@@ -354,21 +260,6 @@ export default function SalesHistoryScreen({ token }) {
     );
 }
 
-function SummaryCard({ label, value, icon, tone = 'accent' }) {
-    const color = resolveToneColor(tone);
-    const soft = resolveToneSoft(tone);
-
-    return (
-        <Card style={styles.summaryCard}>
-            <View style={[styles.summaryIconWrap, { backgroundColor: soft }]}>
-                <Ionicons name={icon} size={20} color={color} />
-            </View>
-            <Text style={styles.summaryLabel}>{label}</Text>
-            <Text style={[styles.summaryValue, { color }]}>{value}</Text>
-        </Card>
-    );
-}
-
 function MetricPill({ label, value, tone = 'neutral', fullWidth = false }) {
     const color = resolveToneColor(tone);
     const soft = resolveToneSoft(tone);
@@ -377,6 +268,15 @@ function MetricPill({ label, value, tone = 'neutral', fullWidth = false }) {
         <View style={[styles.metricPill, fullWidth && styles.metricPillFull, { backgroundColor: soft }]}>
             <Text style={styles.metricLabel}>{label}</Text>
             <Text style={[styles.metricValue, { color }]}>{formatCurrency(value)}</Text>
+        </View>
+    );
+}
+
+function BreakdownRow({ label, value }) {
+    return (
+        <View style={styles.breakdownRow}>
+            <Text style={styles.breakdownKey}>{label}</Text>
+            <Text style={styles.breakdownValue}>{formatCurrency(value)}</Text>
         </View>
     );
 }
@@ -393,6 +293,27 @@ function resolveToneSoft(tone) {
     if (tone === 'info') return '#E0F2FE';
     if (tone === 'neutral') return brandColors.backgroundAlt;
     return brandColors.accentSoft;
+}
+
+function resolvePeriodPickerLabel(intervalo) {
+    if (intervalo === 'dia') return 'Elegir día';
+    if (intervalo === 'semana') return 'Elegir semana';
+    if (intervalo === 'mes') return 'Elegir mes';
+    return 'Elegir año';
+}
+
+function resolvePeriodEmptyLabel(intervalo) {
+    if (intervalo === 'dia') return 'Selecciona un día';
+    if (intervalo === 'semana') return 'Selecciona una semana';
+    if (intervalo === 'mes') return 'Selecciona un mes';
+    return 'Selecciona un año';
+}
+
+function resolveIntervalHint(intervalo) {
+    if (intervalo === 'dia') return 'Elige una sola fecha para ver su resumen.';
+    if (intervalo === 'semana') return 'Elige una semana y verás lunes a domingo con sus totales.';
+    if (intervalo === 'mes') return 'Elige un mes y verás cada día con su total.';
+    return 'Elige un año y verás el total de cada mes.';
 }
 
 function formatPeriodLabel(periodo, intervalo) {
@@ -417,137 +338,302 @@ function formatPeriodLabel(periodo, intervalo) {
     return `${day}/${month}/${year}`;
 }
 
-function resolveFilterPlaceholder(intervalo) {
-    if (intervalo === 'anio') return 'Ej: 2026';
-    if (intervalo === 'mes') return 'Ej: 2026-04 o Abril 2026';
-    if (intervalo === 'semana') return 'Ej: 2026-16 o Semana 16';
-    return 'Ej: 2026-04-18 o 18/04/2026';
+function buildPeriodBreakdownRows({ sales = [], interval = 'dia', selectedPeriod = '' }) {
+    if (!selectedPeriod) {
+        return [];
+    }
+
+    if (interval === 'semana') {
+        const weekDays = getWeekDaysFromPeriod(selectedPeriod);
+        const totalByDay = new Map();
+
+        sales.forEach((sale) => {
+            if (!isSaleReportable(sale)) return;
+            const dayKey = resolveSalePeriodKey(sale, 'dia');
+            if (!weekDays.some((entry) => entry.key === dayKey)) return;
+            totalByDay.set(dayKey, (totalByDay.get(dayKey) || 0) + resolveSaleTotal(sale));
+        });
+
+        return weekDays.map((entry, index) => ({
+            key: entry.key,
+            label: WEEKDAY_LABELS[index],
+            subtitle: formatPeriodLabel(entry.key, 'dia'),
+            total: Number(totalByDay.get(entry.key) || 0)
+        }));
+    }
+
+    if (interval === 'mes') {
+        const monthDays = getMonthDaysFromPeriod(selectedPeriod);
+        const totalByDay = new Map();
+
+        sales.forEach((sale) => {
+            if (!isSaleReportable(sale)) return;
+            const dayKey = resolveSalePeriodKey(sale, 'dia');
+            if (!monthDays.some((entry) => entry.key === dayKey)) return;
+            totalByDay.set(dayKey, (totalByDay.get(dayKey) || 0) + resolveSaleTotal(sale));
+        });
+
+        return monthDays.map((entry) => ({
+            key: entry.key,
+            label: entry.label,
+            subtitle: entry.subtitle,
+            total: Number(totalByDay.get(entry.key) || 0)
+        }));
+    }
+
+    if (interval === 'anio') {
+        const months = Array.from({ length: 12 }, (_, index) => {
+            const month = String(index + 1).padStart(2, '0');
+            return {
+                key: `${selectedPeriod}-${month}`,
+                label: resolveMonthName(month),
+                subtitle: `${selectedPeriod}`
+            };
+        });
+
+        const totalByMonth = new Map();
+        sales.forEach((sale) => {
+            if (!isSaleReportable(sale)) return;
+            const monthKey = resolveSalePeriodKey(sale, 'mes');
+            if (!monthKey.startsWith(`${selectedPeriod}-`)) return;
+            totalByMonth.set(monthKey, (totalByMonth.get(monthKey) || 0) + resolveSaleTotal(sale));
+        });
+
+        return months.map((entry) => ({
+            key: entry.key,
+            label: entry.label,
+            subtitle: entry.subtitle,
+            total: Number(totalByMonth.get(entry.key) || 0)
+        }));
+    }
+
+    return [];
 }
 
-function normalizePeriodFilter(value) {
-    return String(value || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .trim();
-}
-
-function buildBranchRows({ sales = [], branches = [], interval = 'dia', allowedPeriods = [] }) {
-    const branchMap = new Map();
-    const allowedPeriodsSet = new Set((allowedPeriods || []).filter(Boolean));
-
-    branches.forEach((branch) => {
-        branchMap.set(Number(branch.id_sucursal), {
-            id_sucursal: Number(branch.id_sucursal),
-            nombreSucursal: branch.nombreSucursal || `Sucursal ${branch.id_sucursal}`,
+function buildSelectedPeriodSummary({ sales = [], rows = [], interval = 'dia', selectedPeriod = '' }) {
+    if (!selectedPeriod) {
+        return {
+            totalVentas: 0,
+            ventasSII: 0,
+            ventasInternas: 0,
             ventasCaja: 0,
             ventasDespacho: 0,
-            ventasSIICaja: 0,
-            ventasSIIDespacho: 0,
-            ventasInternasCaja: 0,
-            ventasInternasDespacho: 0,
-            gananciaCaja: 0,
-            gananciaDespacho: 0,
-            periodos: [],
-            breakdown: []
+            gananciaNeta: 0
+        };
+    }
+
+    const rowSummary = rows
+        .filter((row) => row.periodo === selectedPeriod)
+        .reduce((acc, row) => {
+            acc.totalVentas += Number(row.totalVentas || 0);
+            acc.ventasSII += Number(row.ventasSII || 0);
+            acc.ventasInternas += Number(row.ventasInternas || 0);
+            acc.ventasCaja += Number(row.ventasCaja || 0);
+            acc.ventasDespacho += Number(row.ventasDespacho || 0);
+            acc.gananciaNeta += Number(row.gananciaNeta || 0);
+            return acc;
+        }, {
+            totalVentas: 0,
+            ventasSII: 0,
+            ventasInternas: 0,
+            ventasCaja: 0,
+            ventasDespacho: 0,
+            gananciaNeta: 0
         });
+
+    if (Array.isArray(sales) && sales.length > 0) {
+        const computedSummary = sales.reduce((acc, sale) => {
+            if (!isSaleReportable(sale)) return acc;
+            if (resolveSalePeriodKey(sale, interval) !== selectedPeriod) return acc;
+
+            const total = resolveSaleTotal(sale);
+            const gain = resolveSaleGain(sale, total);
+            const origin = resolveSaleOrigin(sale);
+            const isFiscal = isFiscalSale(sale);
+
+            acc.totalVentas += total;
+            acc.gananciaNeta += gain;
+
+            if (isFiscal) {
+                acc.ventasSII += total;
+            } else {
+                acc.ventasInternas += total;
+            }
+
+            if (origin === 'DESPACHO') {
+                acc.ventasDespacho += total;
+            } else {
+                acc.ventasCaja += total;
+            }
+
+            return acc;
+        }, {
+            totalVentas: 0,
+            ventasSII: 0,
+            ventasInternas: 0,
+            ventasCaja: 0,
+            ventasDespacho: 0,
+            gananciaNeta: 0
+        });
+
+        return {
+            totalVentas: computedSummary.totalVentas || rowSummary.totalVentas,
+            ventasSII: computedSummary.ventasSII || rowSummary.ventasSII,
+            ventasInternas: computedSummary.ventasInternas || rowSummary.ventasInternas,
+            ventasCaja: computedSummary.ventasCaja || rowSummary.ventasCaja,
+            ventasDespacho: computedSummary.ventasDespacho || rowSummary.ventasDespacho,
+            gananciaNeta: computedSummary.gananciaNeta || rowSummary.gananciaNeta
+        };
+    }
+
+    return rowSummary;
+}
+
+function getWeekDaysFromPeriod(periodo) {
+    const [yearText, weekText] = String(periodo).split('-');
+    const year = Number(yearText);
+    const week = Number(weekText);
+    const monday = getDateFromIsoWeek(year, week, 1);
+
+    return Array.from({ length: 7 }, (_, index) => {
+        const date = new Date(monday);
+        date.setUTCDate(monday.getUTCDate() + index);
+        return {
+            key: formatDateAsChileKey(date),
+            date
+        };
     });
+}
+
+function getMonthDaysFromPeriod(periodo) {
+    const [yearText, monthText] = String(periodo).split('-');
+    const year = Number(yearText);
+    const month = Number(monthText);
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    return Array.from({ length: daysInMonth }, (_, index) => {
+        const day = index + 1;
+        const date = new Date(Date.UTC(year, month - 1, day, 12));
+        const weekday = getWeekdayShortLabel(date);
+
+        return {
+            key: formatDateAsChileKey(date),
+            label: `${String(day).padStart(2, '0')} ${weekday}`,
+            subtitle: formatPeriodLabel(formatDateAsChileKey(date), 'dia')
+        };
+    });
+}
+
+function getDateFromIsoWeek(year, week, isoDay) {
+    const simple = new Date(Date.UTC(year, 0, 4 + ((week - 1) * 7)));
+    const dayOfWeek = simple.getUTCDay() || 7;
+    const monday = new Date(simple);
+    monday.setUTCDate(simple.getUTCDate() - dayOfWeek + 1);
+    const target = new Date(monday);
+    target.setUTCDate(monday.getUTCDate() + (isoDay - 1));
+    return target;
+}
+
+function formatDateAsChileKey(date) {
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+}
+
+function getWeekdayShortLabel(date) {
+    return new Intl.DateTimeFormat('es-CL', {
+        timeZone: APP_TIMEZONE,
+        weekday: 'short'
+    }).format(date).replace('.', '');
+}
+
+function resolveMonthName(month) {
+    const names = {
+        '01': 'Enero',
+        '02': 'Febrero',
+        '03': 'Marzo',
+        '04': 'Abril',
+        '05': 'Mayo',
+        '06': 'Junio',
+        '07': 'Julio',
+        '08': 'Agosto',
+        '09': 'Septiembre',
+        '10': 'Octubre',
+        '11': 'Noviembre',
+        '12': 'Diciembre'
+    };
+
+    return names[String(month).padStart(2, '0')] || String(month);
+}
+
+function normalizeHistoryRow(row) {
+    const ventasCaja = parseMoney(row.ventasCaja ?? row.ventas_caja ?? row.caja ?? 0);
+    const ventasDespacho = parseMoney(row.ventasDespacho ?? row.ventas_despacho ?? row.despacho ?? 0);
+    const ventasSII = parseMoney(row.ventasSII ?? row.ventas_sii ?? row.sii ?? 0);
+    const ventasInternas = parseMoney(row.ventasInternas ?? row.ventas_internas ?? row.internas ?? 0);
+    const totalVentas = parseMoney(row.totalVentas ?? row.total_ventas ?? row.total ?? row.monto_total ?? 0)
+        || (ventasCaja + ventasDespacho)
+        || (ventasSII + ventasInternas);
+
+    return {
+        ...row,
+        periodo: String(row.periodo ?? row.period ?? row.fecha ?? '').trim(),
+        totalVentas,
+        ventasSII,
+        ventasInternas,
+        ventasCaja,
+        ventasDespacho,
+        gananciaNeta: parseMoney(row.gananciaNeta ?? row.ganancia_neta ?? row.utilidad ?? row.profit ?? 0)
+    };
+}
+
+function buildHistoryRowsFromSales(sales = [], interval = 'dia') {
+    const buckets = new Map();
 
     sales.forEach((sale) => {
         if (!isSaleReportable(sale)) return;
 
-        const branchId = Number(sale.id_sucursal || 0);
-        if (!branchMap.has(branchId)) {
-            branchMap.set(branchId, {
-                id_sucursal: branchId,
-                nombreSucursal: sale.nombreSucursal || `Sucursal ${branchId || 'N/D'}`,
+        const periodKey = resolveSalePeriodKey(sale, interval);
+        if (!periodKey) return;
+
+        if (!buckets.has(periodKey)) {
+            buckets.set(periodKey, {
+                periodo: periodKey,
+                totalVentas: 0,
+                ventasSII: 0,
+                ventasInternas: 0,
                 ventasCaja: 0,
                 ventasDespacho: 0,
-                ventasSIICaja: 0,
-                ventasSIIDespacho: 0,
-                ventasInternasCaja: 0,
-                ventasInternasDespacho: 0,
-                gananciaCaja: 0,
-                gananciaDespacho: 0,
-                periodos: [],
-                breakdown: []
+                gananciaNeta: 0
             });
         }
 
-        const branch = branchMap.get(branchId);
+        const bucket = buckets.get(periodKey);
         const total = resolveSaleTotal(sale);
-        const estimatedGain = resolveSaleGain(sale, total);
+        const gain = resolveSaleGain(sale, total);
         const origin = resolveSaleOrigin(sale);
         const isFiscal = isFiscalSale(sale);
-        const periodKey = resolveSalePeriodKey(sale, interval);
-        if (!periodKey || (allowedPeriodsSet.size > 0 && !allowedPeriodsSet.has(periodKey))) {
-            return;
-        }
 
-        if (periodKey && !branch.periodos.includes(periodKey)) {
-            branch.periodos.push(periodKey);
-        }
+        bucket.totalVentas += total;
+        bucket.gananciaNeta += gain;
 
-        let periodBucket = branch.breakdown.find((item) => item.periodo === periodKey);
-        if (!periodBucket) {
-            periodBucket = {
-                periodo: periodKey,
-                ventasCaja: 0,
-                ventasDespacho: 0,
-                ventasSIICaja: 0,
-                ventasSIIDespacho: 0,
-                ventasInternasCaja: 0,
-                ventasInternasDespacho: 0,
-                gananciaCaja: 0,
-                gananciaDespacho: 0
-            };
-            branch.breakdown.push(periodBucket);
+        if (isFiscal) {
+            bucket.ventasSII += total;
+        } else {
+            bucket.ventasInternas += total;
         }
 
         if (origin === 'DESPACHO') {
-            branch.ventasDespacho += total;
-            periodBucket.ventasDespacho += total;
-            if (isFiscal) {
-                branch.ventasSIIDespacho += total;
-                periodBucket.ventasSIIDespacho += total;
-            } else {
-                branch.ventasInternasDespacho += total;
-                periodBucket.ventasInternasDespacho += total;
-            }
-            branch.gananciaDespacho += estimatedGain;
-            periodBucket.gananciaDespacho += estimatedGain;
-            return;
-        }
-
-        branch.ventasCaja += total;
-        periodBucket.ventasCaja += total;
-        if (isFiscal) {
-            branch.ventasSIICaja += total;
-            periodBucket.ventasSIICaja += total;
+            bucket.ventasDespacho += total;
         } else {
-            branch.ventasInternasCaja += total;
-            periodBucket.ventasInternasCaja += total;
+            bucket.ventasCaja += total;
         }
-        branch.gananciaCaja += estimatedGain;
-        periodBucket.gananciaCaja += estimatedGain;
     });
 
-    return Array.from(branchMap.values())
-        .filter((branch) =>
-            branch.ventasCaja > 0
-            || branch.ventasDespacho > 0
-            || branch.gananciaCaja > 0
-            || branch.gananciaDespacho > 0
-        )
-        .sort((a, b) => (b.ventasCaja + b.ventasDespacho) - (a.ventasCaja + a.ventasDespacho));
+    return Array.from(buckets.values()).sort((a, b) => String(a.periodo).localeCompare(String(b.periodo)));
 }
 
 function isSaleReportable(sale) {
     const status = String(sale.estado || '').toUpperCase();
-    if (status === 'ANULADA' || status === 'CANCELADA') {
-        return false;
-    }
-    return true;
+    return status !== 'ANULADA' && status !== 'CANCELADA';
 }
 
 function resolveSaleOrigin(sale) {
@@ -645,92 +731,6 @@ function getIsoWeekInfo({ year, month, day }) {
     };
 }
 
-function resolveMonthName(month) {
-    const names = {
-        '01': 'Enero',
-        '02': 'Febrero',
-        '03': 'Marzo',
-        '04': 'Abril',
-        '05': 'Mayo',
-        '06': 'Junio',
-        '07': 'Julio',
-        '08': 'Agosto',
-        '09': 'Septiembre',
-        '10': 'Octubre',
-        '11': 'Noviembre',
-        '12': 'Diciembre'
-    };
-
-    return names[String(month).padStart(2, '0')] || String(month);
-}
-
-function normalizeHistoryRow(row) {
-    const ventasCaja = parseMoney(row.ventasCaja ?? row.ventas_caja ?? row.caja ?? 0);
-    const ventasDespacho = parseMoney(row.ventasDespacho ?? row.ventas_despacho ?? row.despacho ?? 0);
-    const ventasSII = parseMoney(row.ventasSII ?? row.ventas_sii ?? row.sii ?? 0);
-    const ventasInternas = parseMoney(row.ventasInternas ?? row.ventas_internas ?? row.internas ?? 0);
-    const totalVentas = parseMoney(row.totalVentas ?? row.total_ventas ?? row.total ?? row.monto_total ?? 0)
-        || (ventasCaja + ventasDespacho)
-        || (ventasSII + ventasInternas);
-
-    return {
-        ...row,
-        periodo: String(row.periodo ?? row.period ?? row.fecha ?? '').trim(),
-        totalVentas,
-        ventasSII,
-        ventasInternas,
-        ventasCaja,
-        ventasDespacho,
-        gananciaNeta: parseMoney(row.gananciaNeta ?? row.ganancia_neta ?? row.utilidad ?? row.profit ?? 0)
-    };
-}
-
-function buildHistoryRowsFromSales(sales = [], interval = 'dia') {
-    const buckets = new Map();
-
-    sales.forEach((sale) => {
-        if (!isSaleReportable(sale)) return;
-
-        const periodKey = resolveSalePeriodKey(sale, interval);
-        if (!periodKey) return;
-
-        if (!buckets.has(periodKey)) {
-            buckets.set(periodKey, {
-                periodo: periodKey,
-                totalVentas: 0,
-                ventasSII: 0,
-                ventasInternas: 0,
-                ventasCaja: 0,
-                ventasDespacho: 0,
-                gananciaNeta: 0
-            });
-        }
-
-        const bucket = buckets.get(periodKey);
-        const total = resolveSaleTotal(sale);
-        const gain = resolveSaleGain(sale, total);
-        const origin = resolveSaleOrigin(sale);
-        const isFiscal = isFiscalSale(sale);
-
-        bucket.totalVentas += total;
-        bucket.gananciaNeta += gain;
-
-        if (isFiscal) {
-            bucket.ventasSII += total;
-        } else {
-            bucket.ventasInternas += total;
-        }
-
-        if (origin === 'DESPACHO') {
-            bucket.ventasDespacho += total;
-        } else {
-            bucket.ventasCaja += total;
-        }
-    });
-
-    return Array.from(buckets.values()).sort((a, b) => String(a.periodo).localeCompare(String(b.periodo)));
-}
-
 function resolveSaleTotal(sale) {
     return parseMoney(sale.total ?? sale.monto_total ?? sale.monto ?? sale.totalVenta ?? sale.total_venta ?? 0);
 }
@@ -790,9 +790,6 @@ const styles = StyleSheet.create({
         color: brandColors.textMuted,
         fontWeight: '700'
     },
-    intervalCard: {
-        marginBottom: 16
-    },
     filterCard: {
         marginBottom: 16
     },
@@ -807,47 +804,33 @@ const styles = StyleSheet.create({
     intervalRow: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 10
+        marginHorizontal: -4
     },
-    intervalButton: {
-        flexGrow: 1,
-        minWidth: '22%',
+    intervalOptionWrap: {
+        width: '50%',
+        paddingHorizontal: 4,
+        paddingBottom: 8
+    },
+    intervalChip: {
+        overflow: 'hidden',
         borderRadius: 14,
         borderWidth: 1,
         borderColor: brandColors.outline,
         backgroundColor: brandColors.backgroundAlt,
         paddingVertical: 12,
         paddingHorizontal: 10,
-        alignItems: 'center'
-    },
-    intervalButtonActive: {
-        backgroundColor: brandColors.accent,
-        borderColor: brandColors.accent
-    },
-    intervalButtonText: {
+        textAlign: 'center',
         color: brandColors.text,
         fontSize: 13,
         fontWeight: '800'
     },
-    intervalButtonTextActive: {
+    intervalChipActive: {
+        backgroundColor: brandColors.accent,
+        borderColor: brandColors.accent,
         color: '#FFFFFF'
     },
-    intervalHint: {
-        marginTop: 12,
-        fontSize: 12,
-        color: brandColors.textMuted,
-        fontWeight: '600'
-    },
-    filterInput: {
-        height: 52,
-        borderRadius: 14,
-        borderWidth: 1,
-        borderColor: brandColors.outline,
-        backgroundColor: brandColors.backgroundAlt,
-        paddingHorizontal: 14,
-        color: brandColors.text,
-        fontSize: 14,
-        fontWeight: '700'
+    pickerWrap: {
+        marginTop: 8
     },
     filterHint: {
         marginTop: 10,
@@ -855,57 +838,8 @@ const styles = StyleSheet.create({
         color: brandColors.textMuted,
         fontWeight: '600'
     },
-    summaryGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 12,
-        marginBottom: 16
-    },
-    summaryCard: {
-        width: '48%',
-        minHeight: 120
-    },
-    summaryIconWrap: {
-        width: 42,
-        height: 42,
-        borderRadius: 14,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginBottom: 12
-    },
-    summaryLabel: {
-        fontSize: 12,
-        fontWeight: '800',
-        color: brandColors.textMuted
-    },
-    summaryValue: {
-        fontSize: 20,
-        fontWeight: '900',
-        marginTop: 8
-    },
     breakdownCard: {
-        marginBottom: 20
-    },
-    branchCard: {
-        marginBottom: 14
-    },
-    branchHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 14
-    },
-    branchTitle: {
-        flex: 1,
-        fontSize: 16,
-        fontWeight: '900',
-        color: brandColors.text,
-        marginRight: 12
-    },
-    branchTotal: {
-        fontSize: 16,
-        fontWeight: '900',
-        color: brandColors.accent
+        marginBottom: 16
     },
     breakdownRow: {
         flexDirection: 'row',
@@ -924,6 +858,37 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: brandColors.text,
         fontWeight: '900'
+    },
+    timelineCard: {
+        marginBottom: 16
+    },
+    timelineRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: brandColors.outline
+    },
+    timelineTextWrap: {
+        flex: 1,
+        paddingRight: 12
+    },
+    timelineLabel: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: brandColors.text
+    },
+    timelineSubLabel: {
+        marginTop: 2,
+        fontSize: 12,
+        fontWeight: '600',
+        color: brandColors.textMuted
+    },
+    timelineValue: {
+        fontSize: 14,
+        fontWeight: '900',
+        color: brandColors.accent
     },
     section: {
         marginTop: 8

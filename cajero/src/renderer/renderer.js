@@ -83,7 +83,7 @@ import {
     buildDispatchSnapshot,
     buildDispatchPayload,
     buildDispatchRecord,
-    decreaseLocalStockFromDispatchCart,
+    buildDispatchStockPlan,
     normalizeDispatchCarrierList,
     normalizeDispatchHistory
 } from './domain/dispatch-domain.js';
@@ -167,7 +167,9 @@ import {
     resolveBranchState,
     resolveCategoryState,
     resolveCatalogInventory,
-    resolveOtherBranchStock
+    resolveOtherBranchStock,
+    resolveDispatchPriorityInventory,
+    applyDispatchPriorityStock
 } from './services/catalog-runtime-service.js';
 import { fetchCashStatus, openCashTurn, closeCashTurn, registerCashWithdrawal, fetchCashWithdrawals } from './services/cash-service.js';
 import { fetchSalesHistory, cancelSaleRequest, submitSaleRequest, fetchSaleDetail } from './services/sales-service.js';
@@ -209,6 +211,10 @@ let boletaEnvelopeSendInFlight = false;
 let lastCatalogSyncAt = 0;
 let catalogRefreshPromise = null;
 let customerDisplayScrollSyncTimer = null;
+let customerDisplaySyncThrottleTimer = null;
+let customerDisplayPendingSync = false;
+let customerDisplayKnownOpen = false;
+let customerDisplayLastPayloadKey = '';
 let autoScanTimer = null;
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -877,6 +883,7 @@ function bindPaymentModal() {
         saleState.documentType = 'Factura';
         renderDocumentType();
     });
+    document.getElementById('collaborator-discount-btn')?.addEventListener('click', toggleCollaboratorDiscount);
     document.getElementById('clear-sale-btn')?.addEventListener('click', clearCurrentSale);
     document.getElementById('manage-invoice-customer-btn')?.addEventListener('click', openInvoiceClientFlow);
     document.getElementById('clear-invoice-customer-btn')?.addEventListener('click', clearInvoiceCustomer);
@@ -922,6 +929,8 @@ function bindInvoiceClientModal() {
     document.getElementById('invoice-client-confirm-btn')?.addEventListener('click', confirmInvoiceClient);
     document.getElementById('invoice-client-use-existing-btn')?.addEventListener('click', useSelectedInvoiceClient);
     document.getElementById('invoice-client-search-input')?.addEventListener('input', handleInvoiceClientSearch);
+    document.getElementById('invoice-rut-input')?.addEventListener('input', handleInvoiceRutInput);
+    document.getElementById('invoice-rut-input')?.addEventListener('blur', handleInvoiceRutInput);
 
     // Custom list selection
     document.getElementById('invoice-client-select-list')?.addEventListener('click', (event) => {
@@ -1044,6 +1053,7 @@ function clearCurrentSale() {
     saleState.cart = [];
     saleState.documentType = 'Boleta';
     saleState.customer = null;
+    saleState.collaboratorDiscountEnabled = false;
     renderCustomerSummary();
     renderDocumentType();
     renderSearchResults([]);
@@ -1146,6 +1156,7 @@ function renderOperationMode() {
     const facturaButton = document.getElementById('doc-factura-toggle');
     const dispatchButton = document.getElementById('sale-footer-dispatch-btn');
     const historyButton = document.getElementById('sale-footer-history-btn');
+    const collaboratorDiscountButton = document.getElementById('collaborator-discount-btn');
 
     saleCustomerCard?.classList.toggle('hidden', dispatchMode);
     dispatchInlinePanel?.classList.toggle('hidden', !dispatchMode);
@@ -1195,6 +1206,7 @@ function renderOperationMode() {
     if (dispatchMode) {
         setFooterButtonContent(boletaButton, 'bi-upc-scan', 'Vender', false);
         facturaButton?.classList.add('hidden');
+        collaboratorDiscountButton?.classList.add('hidden');
         setFooterButtonContent(dispatchButton, 'bi-truck', 'Despacho', true);
         setFooterButtonContent(historyButton, 'bi-clock-history', 'Historial', false);
         document.getElementById('manage-invoice-customer-btn')?.classList.add('hidden');
@@ -1202,6 +1214,8 @@ function renderOperationMode() {
     } else {
         setFooterButtonContent(boletaButton, 'bi-receipt-cutoff', 'Boleta', saleState.documentType === 'Boleta');
         facturaButton?.classList.remove('hidden');
+        collaboratorDiscountButton?.classList.remove('hidden');
+        collaboratorDiscountButton?.classList.toggle('active', saleState.collaboratorDiscountEnabled);
         setFooterButtonContent(facturaButton, 'bi-file-earmark-text', 'Factura', saleState.documentType === 'Factura');
         setFooterButtonContent(dispatchButton, 'bi-truck', 'Despacho', false);
         setFooterButtonContent(historyButton, 'bi-clock-history', 'Historial de ventas', false);
@@ -1375,6 +1389,7 @@ async function handleBranchSelectionChange(event) {
     dispatchState.searchQuery = '';
     saleState.documentType = 'Boleta';
     saleState.customer = null;
+    saleState.collaboratorDiscountEnabled = false;
     renderCustomerSummary();
     renderDocumentType();
     renderSearchResults([]);
@@ -1489,6 +1504,26 @@ function openInfoModal(title, message) {
 
 function closeInfoModal() {
     closeInfoModalView();
+}
+
+function toggleCollaboratorDiscount() {
+    if (isDispatchMode()) {
+        showAppView('sale');
+        return;
+    }
+
+    if (!cashSessionState.isOpen) {
+        setBackendStatus('Debes abrir caja para aplicar descuentos.');
+        return;
+    }
+
+    saleState.collaboratorDiscountEnabled = !saleState.collaboratorDiscountEnabled;
+    renderCart();
+    setBackendStatus(
+        saleState.collaboratorDiscountEnabled
+            ? 'Descuento colaboradores activado. Se aplicara 10% al total de la compra.'
+            : 'Descuento colaboradores desactivado.'
+    );
 }
 
 const LOCAL_AUDIT_STORAGE_KEY = 'valmu-local-sales-audit';
@@ -1925,6 +1960,7 @@ function resetCashierRuntimeState() {
     saleState.cart = [];
     saleState.documentType = 'Boleta';
     saleState.customer = null;
+    saleState.collaboratorDiscountEnabled = false;
     catalogState.products = fallbackProducts.slice();
     catalogState.source = 'demo';
     catalogState.status = 'Modo demo activo';
@@ -2026,6 +2062,7 @@ function resetTurnScopedRuntimeState(shouldPersist = true) {
     saleState.cart = [];
     saleState.documentType = 'Boleta';
     saleState.customer = null;
+    saleState.collaboratorDiscountEnabled = false;
     resetTurnSummaryState(turnSummaryState);
 
     if (shouldPersist) {
@@ -2098,10 +2135,12 @@ function hydrateTurnScopedRuntimeState() {
         saleState.customer = draft.customer && typeof draft.customer === 'object'
             ? draft.customer
             : null;
+        saleState.collaboratorDiscountEnabled = Boolean(draft.collaboratorDiscountEnabled);
     } else {
         saleState.cart = [];
         saleState.documentType = 'Boleta';
         saleState.customer = null;
+        saleState.collaboratorDiscountEnabled = false;
     }
 
     saleReceiptState.records = receipts && typeof receipts === 'object' ? receipts : {};
@@ -2144,6 +2183,7 @@ function hydrateSaleDraft() {
         saleState.cart = [];
         saleState.documentType = 'Boleta';
         saleState.customer = null;
+        saleState.collaboratorDiscountEnabled = false;
         return;
     }
 
@@ -2154,10 +2194,14 @@ function hydrateSaleDraft() {
     saleState.customer = draft.customer && typeof draft.customer === 'object'
         ? draft.customer
         : null;
+    saleState.collaboratorDiscountEnabled = Boolean(draft.collaboratorDiscountEnabled);
 }
 
 function persistSaleDraft() {
-    const hasDraft = saleState.cart.length > 0 || saleState.documentType !== 'Boleta' || Boolean(saleState.customer?.id);
+    const hasDraft = saleState.cart.length > 0
+        || saleState.documentType !== 'Boleta'
+        || Boolean(saleState.customer?.id)
+        || saleState.collaboratorDiscountEnabled;
 
     if (!hasDraft) {
         setScopedSessionData(SESSION_KEYS.saleDraft, getCurrentTurnScope(), null);
@@ -2167,7 +2211,8 @@ function persistSaleDraft() {
     setScopedSessionData(SESSION_KEYS.saleDraft, getCurrentTurnScope(), {
         cart: saleState.cart,
         documentType: saleState.documentType,
-        customer: saleState.customer
+        customer: saleState.customer,
+        collaboratorDiscountEnabled: saleState.collaboratorDiscountEnabled
     });
 }
 
@@ -3453,7 +3498,8 @@ function getCartSnapshot() {
     return getCartSnapshotDomain({
         cart: saleState.cart,
         products: catalogState.products,
-        getPricingForProduct
+        getPricingForProduct,
+        collaboratorDiscountEnabled: saleState.collaboratorDiscountEnabled
     });
 }
 
@@ -3560,6 +3606,33 @@ function handleInvoiceClientSearch(event) {
     renderInvoiceClientOptions(event.target?.value || '');
 }
 
+function formatRutInputValue(rawValue) {
+    const cleaned = String(rawValue || '')
+        .replace(/[^0-9kK]/g, '')
+        .toUpperCase();
+
+    if (!cleaned) {
+        return '';
+    }
+
+    if (cleaned.length === 1) {
+        return cleaned;
+    }
+
+    const body = cleaned.slice(0, -1);
+    const verifier = cleaned.slice(-1);
+    return `${body}-${verifier}`;
+}
+
+function handleInvoiceRutInput(event) {
+    const input = event?.target;
+    if (!input) {
+        return;
+    }
+
+    input.value = formatRutInputValue(input.value);
+}
+
 let selectedClientId = null;
 
 function useSelectedInvoiceClient() {
@@ -3591,7 +3664,7 @@ function useSelectedInvoiceClient() {
 }
 
 async function confirmInvoiceClient() {
-    const rut = String(document.getElementById('invoice-rut-input')?.value || '').trim();
+    const rut = formatRutInputValue(document.getElementById('invoice-rut-input')?.value || '');
     const name = String(document.getElementById('invoice-name-input')?.value || '').trim();
     const business = String(document.getElementById('invoice-business-input')?.value || '').trim();
     const address = String(document.getElementById('invoice-address-input')?.value || '').trim();
@@ -3690,17 +3763,18 @@ function handlePaymentMethodChange() {
     const isCash = method === 'efectivo';
     const isMixed = method === 'mixto';
     const snapshot = getCartSnapshot();
+    const paymentTotal = roundPaymentAmount(snapshot.total);
 
     renderPaymentMethodView({
         isCash,
-        total: snapshot.total
+        total: paymentTotal
     });
 
     document.getElementById('payment-mixed-group')?.classList.toggle('hidden', !isMixed);
 
     if (isMixed) {
         // Inicializar con efectivo el total restante para facilitar el flujo
-        document.getElementById('payment-mixed-cash').value = snapshot.total;
+        document.getElementById('payment-mixed-cash').value = paymentTotal;
         document.getElementById('payment-mixed-card').value = '';
         document.getElementById('payment-mixed-transfer').value = '';
 
@@ -3715,23 +3789,28 @@ function handlePaymentMethodChange() {
     renderPaymentChange();
 }
 
+function roundPaymentAmount(value) {
+    return Math.round(Number(value || 0));
+}
+
 function renderPaymentChange() {
     const method = document.getElementById('payment-method-select')?.value || 'efectivo';
     const snapshot = getCartSnapshot();
+    const paymentTotal = roundPaymentAmount(snapshot.total);
     let received = 0;
 
     if (method === 'mixto') {
-        const cash = Number(document.getElementById('payment-mixed-cash')?.value || 0);
-        const card = Number(document.getElementById('payment-mixed-card')?.value || 0);
-        const transfer = Number(document.getElementById('payment-mixed-transfer')?.value || 0);
+        const cash = roundPaymentAmount(document.getElementById('payment-mixed-cash')?.value || 0);
+        const card = roundPaymentAmount(document.getElementById('payment-mixed-card')?.value || 0);
+        const transfer = roundPaymentAmount(document.getElementById('payment-mixed-transfer')?.value || 0);
         received = cash + card + transfer;
     } else {
-        received = Number(document.getElementById('payment-received-input')?.value || 0);
+        received = roundPaymentAmount(document.getElementById('payment-received-input')?.value || 0);
     }
 
     renderPaymentChangeView({
         method,
-        total: snapshot.total,
+        total: paymentTotal,
         received
     });
 }
@@ -3746,7 +3825,7 @@ function confirmPayment() {
     const snapshot = getCartSnapshot();
     const received = Number(document.getElementById('payment-received-input')?.value || 0);
 
-    if (method === 'efectivo' && received < snapshot.total) {
+    if (method === 'efectivo' && !Number.isFinite(received)) {
         document.getElementById('payment-received-input')?.focus();
         return;
     }
@@ -3774,6 +3853,7 @@ function confirmPayment() {
 
     saleState.cart = [];
     saleState.documentType = 'Boleta';
+    saleState.collaboratorDiscountEnabled = false;
     renderDocumentType();
     renderSearchResults([]);
     renderCart();
@@ -3792,6 +3872,7 @@ async function confirmPaymentFlow() {
 
         const method = document.getElementById('payment-method-select')?.value || 'efectivo';
         const snapshot = getCartSnapshot();
+        const paymentTotal = roundPaymentAmount(snapshot.total);
         const isMixed = method === 'mixto';
 
         let receivedValue = 0;
@@ -3799,26 +3880,26 @@ async function confirmPaymentFlow() {
 
         if (isMixed) {
             mixedData = {
-                cash: Number(document.getElementById('payment-mixed-cash')?.value || 0),
-                card: Number(document.getElementById('payment-mixed-card')?.value || 0),
-                transfer: Number(document.getElementById('payment-mixed-transfer')?.value || 0)
+                cash: roundPaymentAmount(document.getElementById('payment-mixed-cash')?.value || 0),
+                card: roundPaymentAmount(document.getElementById('payment-mixed-card')?.value || 0),
+                transfer: roundPaymentAmount(document.getElementById('payment-mixed-transfer')?.value || 0)
             };
             receivedValue = mixedData.cash + mixedData.card + mixedData.transfer;
         } else {
-            receivedValue = Number(document.getElementById('payment-received-input')?.value || 0);
+            receivedValue = roundPaymentAmount(document.getElementById('payment-received-input')?.value || 0);
         }
 
-        const effectiveReceived = isMixed ? receivedValue : (receivedValue || snapshot.total);
+        const effectiveReceived = method === 'efectivo'
+            ? paymentTotal
+            : (isMixed ? receivedValue : (receivedValue || paymentTotal));
 
-        // Validación estricta para mixto: el monto debe ser igual o superior al total
-        // (En mixto usualmente se espera exacto, pero permitimos superior si hay efectivo incluido)
-        if (effectiveReceived < snapshot.total) {
-            Swal.fire({
-                icon: 'warning',
-                title: 'Monto insuficiente',
-                text: `El monto total de pago ($${formatCurrency(effectiveReceived)}) es menor al total de la venta ($${formatCurrency(snapshot.total)}).`,
-                target: '#payment-modal-backdrop'
-            });
+        // En efectivo no se bloquea por diferencias del monto ingresado; se registra el total de la venta.
+        // Para mixto/tarjeta/transferencia mantenemos la validacion de cobertura del total.
+        if (method !== 'efectivo' && effectiveReceived < paymentTotal) {
+            openInfoModal(
+                'Monto insuficiente',
+                `El monto total de pago ($${formatCurrency(effectiveReceived)}) es menor al total de la venta ($${formatCurrency(paymentTotal)}).`
+            );
             if (isMixed) {
                 document.getElementById('payment-mixed-cash')?.focus();
             } else {
@@ -3829,12 +3910,7 @@ async function confirmPaymentFlow() {
 
         const stockValidation = validateCartStock();
         if (!stockValidation.ok) {
-            Swal.fire({
-                icon: 'error',
-                title: 'Problema de Stock',
-                text: stockValidation.message || 'No hay stock suficiente.',
-                target: '#payment-modal-backdrop'
-            });
+            openInfoModal('Problema de Stock', stockValidation.message || 'No hay stock suficiente.');
             return;
         }
 
@@ -3969,6 +4045,7 @@ async function confirmPaymentFlow() {
 
         saleState.cart = [];
         saleState.customer = null;
+        saleState.collaboratorDiscountEnabled = false;
         renderCustomerSummary();
         renderCart();
         closePaymentModal();
@@ -3980,12 +4057,7 @@ async function confirmPaymentFlow() {
 
     } catch (error) {
         console.error('Fatal confirmation error:', error);
-        Swal.fire({
-            icon: 'error',
-            title: 'Error al procesar venta',
-            text: error?.message || 'Ha ocurrido un error inesperado.',
-            target: '#payment-modal-backdrop'
-        });
+        openInfoModal('Error al procesar venta', error?.message || 'Ha ocurrido un error inesperado.');
         setBackendStatus(error?.message || 'Error en el proceso de venta.');
     } finally {
         confirmButton.disabled = false;
@@ -4013,7 +4085,8 @@ function buildSalePayload(method, received) {
         folioDocumento: null,
         documentTypeIds: DOCUMENT_TYPE_IDS,
         paymentMethodMap: PAYMENT_METHOD_MAP,
-        getPricingForProduct
+        getPricingForProduct,
+        collaboratorDiscountEnabled: saleState.collaboratorDiscountEnabled
     });
 }
 
@@ -4036,7 +4109,8 @@ async function submitSaleToBackend({ method, received, folioDocumento = null }) 
         documentTypeIds: DOCUMENT_TYPE_IDS,
         paymentMethodMap: PAYMENT_METHOD_MAP,
         getPricingForProduct,
-        branchId: getSelectedBranchId()
+        branchId: getSelectedBranchId(),
+        collaboratorDiscountEnabled: saleState.collaboratorDiscountEnabled
     });
     const result = await submitSaleRequest({ apiBaseUrl, token, payload });
 
@@ -4468,7 +4542,7 @@ Cajero: ${cashierName}
 
 RESUMEN ESPERADO:
 Fondo Inicial: $${formatCurrency(cashSessionState.openingAmount)}
-Efectivo:      $${formatCurrency(expected.cash - cashSessionState.openingAmount)}
+Efectivo:      $${formatCurrency(expected.cash)}
 Tarjeta:       $${formatCurrency(expected.card)}
 Transferencia: $${formatCurrency(expected.transfer)}
 Retiros:       $${formatCurrency(expected.withdrawals || 0)}
@@ -4530,6 +4604,7 @@ function hydrateSettingsForm() {
         customerDisplayEnabledInput.checked = settings.customerDisplayEnabled;
     }
 
+    void hydrateCustomerDisplayTargets(settings.customerDisplayTarget);
     updateCustomerDisplayStatusLabel(settings.customerDisplayEnabled ? 'Activacion automatica lista' : 'Desactivada');
     void hydrateSiiSettingsCard();
     void hydrateUpdateState();
@@ -5560,6 +5635,45 @@ function updateCustomerDisplayStatusLabel(message) {
     }
 }
 
+function getCustomerDisplayTargetId() {
+    const selectedFromUi = document.getElementById('customer-display-target-select')?.value;
+    return String(selectedFromUi || getSessionValue(SESSION_KEYS.customerDisplayTarget) || '').trim();
+}
+
+async function hydrateCustomerDisplayTargets(selectedTargetId = getCustomerDisplayTargetId()) {
+    const select = document.getElementById('customer-display-target-select');
+    if (!select || typeof window.cajeroAPI?.listCustomerDisplays !== 'function') {
+        return;
+    }
+
+    try {
+        const response = await window.cajeroAPI.listCustomerDisplays();
+        const displays = Array.isArray(response?.displays) ? response.displays : [];
+        const suggestedDisplay = displays.find((display) => display.isSuggested) || null;
+        const allExternalOption = displays.length > 1
+            ? '<option value="all-external">Todas las pantallas externas</option>'
+            : '';
+        select.innerHTML = `
+            <option value="">Seleccionar pantalla</option>
+            ${allExternalOption}
+            ${displays.map((display) => `
+                <option value="${escapeHtml(display.id)}">${escapeHtml(display.label)}</option>
+            `).join('')}
+        `;
+
+        const hasSelected = displays.some((display) => String(display.id) === String(selectedTargetId))
+            || String(selectedTargetId) === 'all-external';
+        select.value = hasSelected ? String(selectedTargetId) : String(suggestedDisplay?.id || '');
+
+        if (Number(response?.externalCount || 0) >= 2 && !hasSelected) {
+            updateCustomerDisplayStatusLabel('Detectadas 2 pantallas externas; puedes usar una o todas');
+        }
+    } catch (error) {
+        console.error('Customer display target list error:', error);
+        select.innerHTML = '<option value="">Seleccionar pantalla</option>';
+    }
+}
+
 function isCustomerDisplayEnabled() {
     return getSessionValue(SESSION_KEYS.customerDisplayEnabled) === 'true';
 }
@@ -5571,8 +5685,17 @@ async function openCustomerDisplayWindow() {
     }
 
     try {
-        await window.cajeroAPI.openCustomerDisplay();
-        updateCustomerDisplayStatusLabel('Pantalla cliente abierta');
+        const result = await window.cajeroAPI.openCustomerDisplay({
+            targetDisplayId: getCustomerDisplayTargetId()
+        });
+        customerDisplayKnownOpen = Boolean(result?.isOpen);
+        if (result?.isOpen) {
+            updateCustomerDisplayStatusLabel('Pantalla cliente abierta');
+        } else if (result?.reason === 'no-external-display') {
+            updateCustomerDisplayStatusLabel('No se pudo abrir en la pantalla elegida');
+        } else {
+            updateCustomerDisplayStatusLabel('Pantalla cliente no disponible');
+        }
         await syncCustomerDisplay();
     } catch (error) {
         console.error('Customer display open error:', error);
@@ -5588,6 +5711,8 @@ async function closeCustomerDisplayWindow() {
 
     try {
         await window.cajeroAPI.closeCustomerDisplay();
+        customerDisplayKnownOpen = false;
+        customerDisplayLastPayloadKey = '';
         updateCustomerDisplayStatusLabel('Pantalla cliente cerrada');
     } catch (error) {
         console.error('Customer display close error:', error);
@@ -5599,6 +5724,7 @@ async function saveCustomerDisplaySettings() {
     const customerDisplayEnabledInput = document.getElementById('customer-display-enabled-input');
     const settings = saveCustomerDisplaySettingsSnapshot({
         customerDisplayEnabled: customerDisplayEnabledInput?.checked,
+        customerDisplayTarget: getCustomerDisplayTargetId(),
         setSessionValue,
         sessionKeys: SESSION_KEYS
     });
@@ -5645,6 +5771,11 @@ function buildCustomerDisplayPayload() {
                 : activeCart.length
                     ? 'Revise su compra'
                     : 'Escanee sus productos',
+        scrollState: {
+            top: Number(cartList?.scrollTop || 0),
+            height: Number(cartList?.scrollHeight || 0),
+            viewport: Number(cartList?.clientHeight || 0)
+        },
         cart: [...activeCart].reverse().map((item) => {
             const product = findProductById(catalogState.products, item.productId);
 
@@ -5667,15 +5798,43 @@ function buildCustomerDisplayPayload() {
     };
 }
 
-async function syncCustomerDisplay() {
+async function syncCustomerDisplay(force = false) {
     if (typeof window.cajeroAPI?.updateCustomerDisplay !== 'function') {
         return;
     }
 
+    if (!force && !isCustomerDisplayEnabled() && !customerDisplayKnownOpen) {
+        return;
+    }
+
+    if (!force && customerDisplaySyncThrottleTimer) {
+        customerDisplayPendingSync = true;
+        return;
+    }
+
+    const payload = buildCustomerDisplayPayload();
+    const payloadKey = JSON.stringify(payload);
+    if (!force && payloadKey === customerDisplayLastPayloadKey) {
+        customerDisplayPendingSync = false;
+        return;
+    }
+
     try {
-        await window.cajeroAPI.updateCustomerDisplay(buildCustomerDisplayPayload());
+        const result = await window.cajeroAPI.updateCustomerDisplay(payload);
+        customerDisplayKnownOpen = Boolean(result?.isOpen);
+        customerDisplayLastPayloadKey = payloadKey;
+        customerDisplayPendingSync = false;
     } catch (error) {
         console.error('Customer display sync error:', error);
+    } finally {
+        if (!force) {
+            customerDisplaySyncThrottleTimer = window.setTimeout(() => {
+                customerDisplaySyncThrottleTimer = null;
+                if (customerDisplayPendingSync) {
+                    void syncCustomerDisplay();
+                }
+            }, 150); // Throttle frequency for low-end hardware (approx 6 FPS)
+        }
     }
 }
 
@@ -5687,7 +5846,7 @@ function scheduleCustomerDisplayScrollSync() {
     customerDisplayScrollSyncTimer = window.setTimeout(() => {
         customerDisplayScrollSyncTimer = null;
         void syncCustomerDisplay();
-    }, 30);
+    }, 100); // 10 FPS for scroll sync is plenty for a customer display
 }
 
 function clearAutoScanTimer() {
@@ -5705,7 +5864,13 @@ function findExactProductMatch(term) {
         return null;
     }
 
-    return catalogState.products.find((product) => String(product.code || '').trim() === normalizedTerm) || null;
+    return catalogState.products.find((product) => {
+        if (!isDispatchMode() && product?.dispatchOnly) {
+            return false;
+        }
+
+        return String(product.code || '').trim() === normalizedTerm;
+    }) || null;
 }
 
 function completeAutoScan(term, inputElement = null) {
@@ -5822,7 +5987,13 @@ async function handleSearchKeydown(event) {
         return;
     }
 
-    const exactCodeMatch = catalogState.products.find((product) => product.code === term);
+    const exactCodeMatch = catalogState.products.find((product) => {
+        if (!isDispatchMode() && product?.dispatchOnly) {
+            return false;
+        }
+
+        return product.code === term;
+    });
     const firstMatch = isDispatchMode()
         ? exactCodeMatch || filterDispatchProducts(catalogState.products, term, normalizeCatalogText)[0]
         : exactCodeMatch || findProducts(term)[0];
@@ -6082,7 +6253,8 @@ function renderCart() {
     } else {
         renderCartView({
             cart: saleState.cart,
-            products: catalogState.products
+            products: catalogState.products,
+            collaboratorDiscountEnabled: saleState.collaboratorDiscountEnabled
         });
         persistSaleDraft();
     }
@@ -6349,9 +6521,15 @@ async function generateDispatchRecord() {
 
     const confirmButton = document.getElementById('dispatch-generate-btn');
     const snapshot = buildDispatchSnapshot(dispatchState.cart, catalogState.products, getPricingForProduct);
+    const stockPlan = buildDispatchStockPlan(dispatchState.cart, catalogState.products);
 
     const docTypeLabel = Number(documentType) === 2 ? 'Factura' : (Number(documentType) === 1 ? 'Boleta' : 'Vale interno');
     const customer = (Number(documentType) === 1 || Number(documentType) === 2) ? (invoiceClientState.customers.find(c => String(c.id) === String(customerId)) || null) : null;
+
+    if (!stockPlan.ok) {
+        setBackendStatus(stockPlan.error || 'No se pudo validar el stock del despacho.');
+        return;
+    }
 
     if (confirmButton) {
         confirmButton.disabled = true;
@@ -6376,7 +6554,8 @@ async function generateDispatchRecord() {
             documentTypeId: documentType,
             customerId: customerId,
             folioDocumento: dteResult?.folio || null,
-            manualPayment: dispatchState.manualPayment
+            manualPayment: dispatchState.manualPayment,
+            stockPlan
         });
 
         const result = await generateDispatchRequest({
@@ -6455,7 +6634,6 @@ async function generateDispatchRecord() {
 
         dispatchState.records.unshift(record);
         dispatchState.records = dispatchState.records.slice(0, 20);
-        catalogState.products = decreaseLocalStockFromDispatchCart(catalogState.products, dispatchState.cart);
         dispatchState.cart = [];
         dispatchState.searchQuery = '';
         dispatchState.manualAddress = '';
@@ -6474,7 +6652,7 @@ async function generateDispatchRecord() {
         addAuditEntry({
             type: 'success',
             title: 'Despacho generado',
-            detail: `DSP-${record.id} generado para ${carrier.name}. La venta quedo en ruta sin afectar la caja del cajero.${dteResult?.estadoSii ? ` Estado SII: ${dteResult.estadoSii}.` : ''}${dteResult?.reparos ? ` Reparo: ${dteResult.reparos}.` : ''}`
+            detail: `DSP-${record.id} generado para ${carrier.name}. ${stockPlan.usesFallback ? 'Se uso Bodega porque Casa Matriz no alcanzaba en parte del pedido.' : 'El stock se desconto desde Casa Matriz.'} La venta quedo en ruta sin afectar la caja del cajero.${dteResult?.estadoSii ? ` Estado SII: ${dteResult.estadoSii}.` : ''}${dteResult?.reparos ? ` Reparo: ${dteResult.reparos}.` : ''}`
         });
         addTurnHistoryEntry({
             title: 'Despacho preparado',
@@ -6521,7 +6699,12 @@ async function generateDispatchRecord() {
                 });
             }
         }
-        setBackendStatus(`Despacho DSP-${record.id} generado correctamente. Stock descontado y ruta asignada.${dteResult?.estadoSii === 'REPARO' ? ` DTE con reparo${dteResult.reparos ? `: ${dteResult.reparos}` : ''}.` : ''}`);
+        const stockMessage = result?.stockMensaje
+            || result?.mensajeStock
+            || (stockPlan.usesFallback
+                ? `Despacho DSP-${record.id} generado correctamente. Se desconto stock desde Casa Matriz y, como no alcanzaba, se completo desde Bodega.`
+                : `Despacho DSP-${record.id} generado correctamente. El stock se desconto desde Casa Matriz.`);
+        setBackendStatus(`${stockMessage}${dteResult?.estadoSii === 'REPARO' ? ` DTE con reparo${dteResult.reparos ? `: ${dteResult.reparos}` : ''}.` : ''}`);
     } catch (error) {
         console.error('Dispatch generate error:', error);
         setBackendStatus(error?.message || 'No se pudo generar el despacho.');
@@ -6590,7 +6773,15 @@ async function connectCatalogToBackend() {
             normalizeBackendProduct,
             fallbackProducts
         });
-        catalogState.products = inventoryState.products;
+        const dispatchPriorityInventory = await resolveDispatchPriorityInventory({
+            apiBaseUrl,
+            token,
+            branches: catalogState.branches,
+            categories: catalogState.categories,
+            fetchInventory,
+            normalizeBackendProduct
+        });
+        catalogState.products = applyDispatchPriorityStock(inventoryState.products, dispatchPriorityInventory);
         catalogState.source = inventoryState.source;
         catalogState.status = inventoryState.status;
         lastCatalogSyncAt = Date.now();
@@ -6648,7 +6839,16 @@ async function refreshCatalogProductsLive() {
                 fallbackProducts
             });
 
-            catalogState.products = inventoryState.products;
+            const dispatchPriorityInventory = await resolveDispatchPriorityInventory({
+                apiBaseUrl,
+                token,
+                branches: catalogState.branches,
+                categories: catalogState.categories,
+                fetchInventory,
+                normalizeBackendProduct
+            });
+
+            catalogState.products = applyDispatchPriorityStock(inventoryState.products, dispatchPriorityInventory);
             catalogState.source = inventoryState.source;
             catalogState.status = inventoryState.status;
             lastCatalogSyncAt = Date.now();

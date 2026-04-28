@@ -3,12 +3,11 @@ import {
     ActivityIndicator,
     Alert,
     FlatList,
+    Platform,
     StyleSheet,
     Text,
     TouchableOpacity,
-    View,
-    ScrollView,
-    Platform
+    View
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { apiRequest } from '../services/api';
@@ -26,11 +25,27 @@ import {
 } from '../components/UI';
 import { brandColors } from '../theme';
 
+function normalizeDispatch(item = {}) {
+    const status = String(item.estado || item.estadoDespacho || 'PENDIENTE').trim().toUpperCase();
+    const dispatchId = item.id || item.id_despacho || item.idDespacho || null;
+
+    return {
+        ...item,
+        dispatchId,
+        status,
+        saleLabel: item.venta || item.folioDocumento || `Venta #${item.id_venta || dispatchId || '-'}`,
+        carrierLabel: item.transporte || item.nombreTransporte || 'Particular',
+        plateLabel: item.patenteTransporte || item.patente || 'S/P',
+        dateValue: item.fecha || item.fechaVenta || item.fechaCreacion || null,
+        totalValue: Number(item.total || 0)
+    };
+}
+
 export default function DispatchScreen({ token }) {
     const [loading, setLoading] = useState(true);
     const [dispatches, setDispatches] = useState([]);
     const [carriers, setCarriers] = useState([]);
-    const [activeTab, setActiveTab] = useState('pending'); // pending, history, carriers
+    const [activeTab, setActiveTab] = useState('pending');
 
     const [carrierModalVisible, setCarrierModalVisible] = useState(false);
     const [carrierForm, setCarrierForm] = useState({ nombreTransporte: '', patenteTransporte: '' });
@@ -49,8 +64,11 @@ export default function DispatchScreen({ token }) {
                 apiRequest({ endpoint: '/despachos/transportes', token })
             ]);
 
-            setDispatches(Array.isArray(dispRes?.data) ? dispRes.data : (Array.isArray(dispRes) ? dispRes : []));
-            setCarriers(Array.isArray(carrRes?.data) ? carrRes.data : (Array.isArray(carrRes) ? carrRes : []));
+            const dispatchRows = Array.isArray(dispRes?.data) ? dispRes.data : (Array.isArray(dispRes) ? dispRes : []);
+            const carrierRows = Array.isArray(carrRes?.data) ? carrRes.data : (Array.isArray(carrRes) ? carrRes : []);
+
+            setDispatches(dispatchRows.map(normalizeDispatch));
+            setCarriers(carrierRows);
         } catch (error) {
             console.error('Error fetching dispatches:', error);
             Alert.alert('Error', 'No se pudieron cargar los datos de despachos.');
@@ -62,6 +80,17 @@ export default function DispatchScreen({ token }) {
     useEffect(() => {
         fetchData();
     }, []);
+
+    const closeCarrierModal = () => {
+        setCarrierModalVisible(false);
+        setCarrierForm({ nombreTransporte: '', patenteTransporte: '' });
+    };
+
+    const closeDeliveryModal = () => {
+        setDeliveryModalVisible(false);
+        setSelectedDispatch(null);
+        setPaymentMethod('EFECTIVO');
+    };
 
     const handleAddCarrier = async () => {
         if (!carrierForm.nombreTransporte || !carrierForm.patenteTransporte) {
@@ -78,15 +107,14 @@ export default function DispatchScreen({ token }) {
                 token
             });
 
-            if (res.ok || res.id_transporte) {
+            if (res.ok || res?.data?.id_transporte) {
                 Alert.alert('Éxito', 'Transportista agregado');
-                setCarrierModalVisible(false);
-                setCarrierForm({ nombreTransporte: '', patenteTransporte: '' });
+                closeCarrierModal();
                 fetchData();
             } else {
-                Alert.alert('Error', 'No se pudo agregar el transportista');
+                Alert.alert('Error', res?.error || 'No se pudo agregar el transportista');
             }
-        } catch (error) {
+        } catch (_error) {
             Alert.alert('Error', 'Hubo un problema al conectar con el servidor.');
         } finally {
             setSaving(false);
@@ -108,10 +136,11 @@ export default function DispatchScreen({ token }) {
                             method: 'DELETE',
                             token
                         });
-                        if (res.ok || res.mensaje) {
+
+                        if (res.ok || res?.data?.mensaje) {
                             fetchData();
                         } else {
-                            Alert.alert('Error', 'No se pudo eliminar el transportista.');
+                            Alert.alert('Error', res?.error || 'No se pudo eliminar el transportista.');
                         }
                     }
                 }
@@ -120,12 +149,15 @@ export default function DispatchScreen({ token }) {
     };
 
     const handleConfirmDelivery = async () => {
-        if (!selectedDispatch) return;
+        if (!selectedDispatch?.dispatchId) {
+            Alert.alert('Error', 'No se pudo identificar el despacho a entregar.');
+            return;
+        }
 
         setSaving(true);
         try {
             const res = await apiRequest({
-                endpoint: `/despachos/${selectedDispatch.id}/estado`,
+                endpoint: `/despachos/${selectedDispatch.dispatchId}/estado`,
                 method: 'PUT',
                 body: {
                     estado: 'ENTREGADO',
@@ -134,14 +166,14 @@ export default function DispatchScreen({ token }) {
                 token
             });
 
-            if (res.ok || res.mensaje) {
+            if (res.ok || res?.data?.mensaje) {
                 Alert.alert('Éxito', 'Despacho marcado como entregado');
-                setDeliveryModalVisible(false);
+                closeDeliveryModal();
                 fetchData();
             } else {
-                Alert.alert('Error', 'No se pudo procesar la entrega');
+                Alert.alert('Error', res?.error || 'No se pudo procesar la entrega');
             }
-        } catch (error) {
+        } catch (_error) {
             Alert.alert('Error', 'Hubo un problema al conectar con el servidor.');
         } finally {
             setSaving(false);
@@ -150,22 +182,28 @@ export default function DispatchScreen({ token }) {
 
     const handleCancelDispatch = (item) => {
         const performCancel = async () => {
+            if (!item?.dispatchId) {
+                Alert.alert('Error', 'No se pudo identificar el despacho a cancelar.');
+                return;
+            }
+
             try {
                 const res = await apiRequest({
-                    endpoint: `/despachos/${item.id}/estado`,
+                    endpoint: `/despachos/${item.dispatchId}/estado`,
                     method: 'PUT',
                     body: { estado: 'CANCELADO' },
                     token
                 });
-                if (res.ok || res.mensaje) {
+
+                if (res.ok || res?.data?.mensaje) {
                     fetchData();
                     if (Platform.OS === 'web') alert('Despacho cancelado');
                     else Alert.alert('Éxito', 'Despacho cancelado');
                 } else {
-                    if (Platform.OS === 'web') alert('No se pudo cancelar el despacho');
-                    else Alert.alert('Error', 'No se pudo cancelar el despacho');
+                    if (Platform.OS === 'web') alert(res?.error || 'No se pudo cancelar el despacho');
+                    else Alert.alert('Error', res?.error || 'No se pudo cancelar el despacho');
                 }
-            } catch (error) {
+            } catch (_error) {
                 if (Platform.OS === 'web') alert('Error de conexión');
                 else Alert.alert('Error', 'Error de conexión');
             }
@@ -174,82 +212,103 @@ export default function DispatchScreen({ token }) {
         if (Platform.OS === 'web') {
             const confirmed = window.confirm('¿Realmente deseas cancelar este despacho? El stock será devuelto y la venta anulada.');
             if (confirmed) performCancel();
-        } else {
-            Alert.alert(
-                'Cancelar Despacho',
-                '¿Realmente deseas cancelar este despacho? El stock será devuelto y la venta anulada.',
-                [
-                    { text: 'No', style: 'cancel' },
-                    {
-                        text: 'Sí, Cancelar',
-                        style: 'destructive',
-                        onPress: performCancel
-                    }
-                ]
-            );
+            return;
         }
+
+        Alert.alert(
+            'Cancelar Despacho',
+            '¿Realmente deseas cancelar este despacho? El stock será devuelto y la venta anulada.',
+            [
+                { text: 'No', style: 'cancel' },
+                {
+                    text: 'Sí, Cancelar',
+                    style: 'destructive',
+                    onPress: performCancel
+                }
+            ]
+        );
     };
 
-    const pendingDispatches = dispatches.filter(d => d.estado?.toUpperCase() === 'EN_RUTA');
-    const historyDispatches = dispatches.filter(d => d.estado?.toUpperCase() !== 'EN_RUTA');
+    const pendingDispatches = dispatches.filter((dispatch) => dispatch.status === 'EN_RUTA');
+    const historyDispatches = dispatches.filter((dispatch) => dispatch.status !== 'EN_RUTA');
 
     const renderDispatchItem = ({ item }) => {
-        const isPending = item.estado?.toUpperCase() === 'EN_RUTA';
+        const isPending = item.status === 'EN_RUTA';
+        const isDelivered = item.status === 'ENTREGADO' || item.status === 'FINALIZADO';
 
         return (
             <Card style={styles.dispatchCard}>
                 <View style={styles.cardHeader}>
                     <View style={styles.refInfo}>
                         <Text style={styles.refLabel}>VENTA / REF</Text>
-                        <Text style={styles.refValue}>{item.venta || '#' + item.id}</Text>
+                        <Text style={styles.refValue}>{item.saleLabel}</Text>
                     </View>
-                    <View style={[styles.statusBadge, {
-                        backgroundColor: isPending ? brandColors.accentSoft : brandColors.background
-                    }]}>
-                        <Text style={[styles.statusText, {
-                            color: isPending ? brandColors.accent : brandColors.textMuted
-                        }]}>
-                            {item.estado?.replace('_', ' ')}
+                    <View
+                        style={[
+                            styles.statusBadge,
+                            {
+                                backgroundColor: isPending
+                                    ? brandColors.accentSoft
+                                    : isDelivered
+                                        ? '#ECFDF5'
+                                        : brandColors.backgroundAlt
+                            }
+                        ]}
+                    >
+                        <Text
+                            style={[
+                                styles.statusText,
+                                {
+                                    color: isPending
+                                        ? brandColors.accent
+                                        : isDelivered
+                                            ? brandColors.success
+                                            : brandColors.textMuted
+                                }
+                            ]}
+                        >
+                            {item.status.replace('_', ' ')}
                         </Text>
                     </View>
                 </View>
 
                 <View style={styles.cardBody}>
                     <View style={styles.infoRow}>
-                        <Ionicons name="truck-outline" size={16} color={brandColors.textMuted} />
-                        <Text style={styles.infoText}>{item.transporte || 'Particular'} - {item.patenteTransporte || 'S/P'}</Text>
+                        <Ionicons name="car-outline" size={16} color={brandColors.textMuted} />
+                        <Text style={styles.infoText}>{item.carrierLabel} - {item.plateLabel}</Text>
                     </View>
                     <View style={styles.infoRow}>
                         <Ionicons name="calendar-outline" size={16} color={brandColors.textMuted} />
                         <Text style={styles.infoText}>
-                            {item.fecha ? new Date(item.fecha).toLocaleString() : 'Pendiente'}
+                            {item.dateValue ? new Date(item.dateValue).toLocaleString() : 'Pendiente'}
                         </Text>
                     </View>
                     <View style={styles.priceRow}>
                         <Text style={styles.totalLabel}>TOTAL</Text>
-                        <Text style={styles.totalValue}>
-                            ${Number(item.total || 0).toLocaleString('es-CL')}
-                        </Text>
+                        <Text style={styles.totalValue}>${item.totalValue.toLocaleString('es-CL')}</Text>
                     </View>
                 </View>
 
                 {isPending && (
                     <View style={styles.cardActions}>
-                        <SecondaryButton
-                            title="Entregar"
-                            icon="checkmark-circle-outline"
-                            onPress={() => {
-                                setSelectedDispatch(item);
-                                setDeliveryModalVisible(true);
-                            }}
-                            style={styles.actionBtn}
-                        />
-                        <DangerButton
-                            title="Cancelar"
-                            icon="close-circle-outline"
-                            onPress={() => handleCancelDispatch(item)}
-                            style={styles.actionBtn}
-                        />
+                        <View style={styles.actionColumn}>
+                            <SecondaryButton
+                                title="Entregar"
+                                onPress={() => {
+                                    setSelectedDispatch(item);
+                                    setPaymentMethod('EFECTIVO');
+                                    setDeliveryModalVisible(true);
+                                }}
+                                style={styles.actionBtn}
+                            />
+                        </View>
+                        <View style={styles.actionColumn}>
+                            <DangerButton
+                                title="Cancelar"
+                                onPress={() => handleCancelDispatch(item)}
+                                style={styles.actionBtn}
+                            />
+                        </View>
                     </View>
                 )}
             </Card>
@@ -286,12 +345,14 @@ export default function DispatchScreen({ token }) {
                     </View>
                 )}
             </TouchableOpacity>
+
             <TouchableOpacity
                 style={[styles.tab, activeTab === 'history' && styles.activeTab]}
                 onPress={() => setActiveTab('history')}
             >
                 <Text style={[styles.tabText, activeTab === 'history' && styles.activeTabText]}>HISTORIAL</Text>
             </TouchableOpacity>
+
             <TouchableOpacity
                 style={[styles.tab, activeTab === 'carriers' && styles.activeTab]}
                 onPress={() => setActiveTab('carriers')}
@@ -320,12 +381,12 @@ export default function DispatchScreen({ token }) {
                     </View>
                 ) : (
                     <FlatList
-                        data={activeTab === 'pending' ? pendingDispatches : (activeTab === 'history' ? historyDispatches : carriers)}
-                        keyExtractor={(item) => String(item.id || item.id_transporte)}
+                        data={activeTab === 'pending' ? pendingDispatches : activeTab === 'history' ? historyDispatches : carriers}
+                        keyExtractor={(item) => String(item.dispatchId || item.id || item.id_despacho || item.id_transporte)}
                         renderItem={activeTab === 'carriers' ? renderCarrierItem : renderDispatchItem}
                         ListEmptyComponent={
                             <EmptyState
-                                title={activeTab === 'carriers' ? "Sin flota registrada" : "Sin despachos"}
+                                title={activeTab === 'carriers' ? 'Sin flota registrada' : 'Sin despachos'}
                                 message="No hay datos para mostrar en esta sección."
                             />
                         }
@@ -336,52 +397,48 @@ export default function DispatchScreen({ token }) {
                 {activeTab === 'carriers' && (
                     <PrimaryButton
                         title="Registrar Transportista"
-                        icon="add-outline"
                         onPress={() => setCarrierModalVisible(true)}
                         style={styles.fab}
                     />
                 )}
             </View>
 
-            {/* Modal para Nuevo Transportista */}
             <FormModal
                 visible={carrierModalVisible}
                 title="Nuevo Transportista"
-                onClose={() => setCarrierModalVisible(false)}
-                onSave={handleAddCarrier}
-                saving={saving}
+                onClose={closeCarrierModal}
+                onSubmit={handleAddCarrier}
+                submitLabel={saving ? 'Guardando...' : 'Guardar'}
             >
                 <Field
                     label="Nombre / Empresa"
                     value={carrierForm.nombreTransporte}
-                    onChangeText={(val) => setCarrierForm({ ...carrierForm, nombreTransporte: val })}
+                    onChangeText={(value) => setCarrierForm({ ...carrierForm, nombreTransporte: value })}
                     placeholder="Ej: Transportes Valmu"
                 />
                 <Field
                     label="Patente Vehículo"
                     value={carrierForm.patenteTransporte}
-                    onChangeText={(val) => setCarrierForm({ ...carrierForm, patenteTransporte: val })}
+                    onChangeText={(value) => setCarrierForm({ ...carrierForm, patenteTransporte: value })}
                     placeholder="Ej: ABCD-12"
                     autoCapitalize="characters"
                 />
             </FormModal>
 
-            {/* Modal para Confirmar Entrega */}
             <FormModal
                 visible={deliveryModalVisible}
                 title="Confirmar Entrega"
-                onClose={() => setDeliveryModalVisible(false)}
-                onSave={handleConfirmDelivery}
-                saving={saving}
-                saveTitle="Confirmar"
+                onClose={closeDeliveryModal}
+                onSubmit={handleConfirmDelivery}
+                submitLabel={saving ? 'Confirmando...' : 'Confirmar'}
             >
                 <Text style={styles.modalText}>
-                    ¿Cómo realizó el pago el cliente para el despacho de la venta {selectedDispatch?.venta}?
+                    ¿Cómo realizó el pago el cliente para el despacho de la venta {selectedDispatch?.saleLabel}?
                 </Text>
                 <PickerField
                     label="Método de Pago"
                     value={paymentMethod}
-                    onValueChange={(val) => setPaymentMethod(val)}
+                    onValueChange={(value) => setPaymentMethod(value)}
                     options={[
                         { label: 'Efectivo', value: 'EFECTIVO' },
                         { label: 'Tarjeta', value: 'TARJETA' },
@@ -446,7 +503,7 @@ const styles = StyleSheet.create({
     },
     listContent: {
         padding: 16,
-        paddingBottom: 100
+        paddingBottom: 120
     },
     dispatchCard: {
         padding: 16,
@@ -462,14 +519,15 @@ const styles = StyleSheet.create({
         marginBottom: 12
     },
     refInfo: {
-        flex: 1
+        flex: 1,
+        paddingRight: 12
     },
     refLabel: {
-        fontSize: 9,
+        fontSize: 10,
         fontWeight: '900',
         color: brandColors.textMuted,
         letterSpacing: 1,
-        marginBottom: 2
+        marginBottom: 4
     },
     refValue: {
         fontSize: 16,
@@ -478,8 +536,8 @@ const styles = StyleSheet.create({
     },
     statusBadge: {
         paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 12
+        paddingVertical: 5,
+        borderRadius: 999
     },
     statusText: {
         fontSize: 10,
@@ -492,10 +550,11 @@ const styles = StyleSheet.create({
     infoRow: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
-        marginBottom: 6
+        marginBottom: 8
     },
     infoText: {
+        flex: 1,
+        marginLeft: 8,
         fontSize: 13,
         color: brandColors.text,
         fontWeight: '600'
@@ -504,7 +563,7 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'flex-end',
-        marginTop: 8
+        marginTop: 10
     },
     totalLabel: {
         fontSize: 10,
@@ -519,11 +578,14 @@ const styles = StyleSheet.create({
     },
     cardActions: {
         flexDirection: 'row',
-        gap: 8,
-        flexWrap: 'wrap'
+        alignItems: 'stretch',
+        justifyContent: 'space-between'
+    },
+    actionColumn: {
+        flex: 1
     },
     actionBtn: {
-        flex: 1
+        width: '100%'
     },
     carrierCard: {
         flexDirection: 'row',

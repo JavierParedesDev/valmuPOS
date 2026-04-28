@@ -6,6 +6,7 @@ export const SESSION_KEYS = {
     printerName: 'valmu_cajero_printer_name',
     printerPaper: 'valmu_cajero_printer_paper',
     customerDisplayEnabled: 'valmu_cajero_customer_display_enabled',
+    customerDisplayTarget: 'valmu_cajero_customer_display_target',
     releaseRepo: 'valmu_cajero_release_repo',
     cashHistory: 'valmu_cajero_cash_history',
     salesHistory: 'valmu_cajero_sales_history',
@@ -123,7 +124,8 @@ export const catalogState = {
 export const saleState = {
     cart: [],
     documentType: 'Boleta',
-    customer: null
+    customer: null,
+    collaboratorDiscountEnabled: false
 };
 
 export const cashSessionState = {

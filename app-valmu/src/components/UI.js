@@ -135,7 +135,7 @@ export function SwitchField({ label, value, onValueChange }) {
     );
 }
 
-export function FormModal({ visible, title, onClose, onSubmit, submitLabel, children }) {
+export function FormModal({ visible, title, onClose, onSubmit, submitLabel, submitDisabled = false, children }) {
     return (
         <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
             <View style={styles.modalBackdrop}>
@@ -149,7 +149,7 @@ export function FormModal({ visible, title, onClose, onSubmit, submitLabel, chil
                     </ScrollView>
                     <View style={styles.modalActions}>
                         <SecondaryButton title="Cancelar" onPress={onClose} style={styles.modalButton} />
-                        <PrimaryButton title={submitLabel} onPress={onSubmit} style={styles.modalButton} />
+                        <PrimaryButton title={submitLabel} onPress={onSubmit} disabled={submitDisabled} style={styles.modalButton} />
                     </View>
                 </View>
             </View>

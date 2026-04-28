@@ -172,6 +172,10 @@
                             <i class="bi bi-person-x-fill"></i>
                             <span>Quitar Cliente</span>
                         </button>
+                        <button class="footer-action-btn" id="collaborator-discount-btn" type="button">
+                            <i class="bi bi-percent"></i>
+                            <span>Descuento colaboradores</span>
+                        </button>
                     </div>
                 </div>
 
@@ -206,10 +210,6 @@
 
 
                     <div class="summary-breakdown-box retail-breakdown-box" id="sale-breakdown-box">
-                        <div class="summary-row">
-                            <span>Subtotal</span>
-                            <strong id="summary-subtotal">$0</strong>
-                        </div>
                         <div class="summary-row">
                             <span>Descuento</span>
                             <strong id="summary-discount">$0</strong>
@@ -655,6 +655,13 @@
                                     <input id="customer-display-enabled-input" type="checkbox">
                                     <span>Activar segunda pantalla al iniciar caja</span>
                                 </label>
+                                <div style="margin: 0 0 1rem 0;">
+                                    <label class="input-label" for="customer-display-target-select">Pantalla de
+                                        cliente</label>
+                                    <select id="customer-display-target-select" class="form-select">
+                                        <option value="">Detectar automaticamente</option>
+                                    </select>
+                                </div>
                                 <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.8rem;">
                                     <button class="secondary-btn" id="save-customer-display-settings-btn"
                                         type="button">Guardar</button>
@@ -887,8 +894,10 @@
                 </div>
 
                 <div class="close-cash-entry-card">
-                    <label class="input-label" for="close-counted-cash-input">Solo ingresa el efectivo contado en caja</label>
-                    <input class="input-control close-cash-main-input" id="close-counted-cash-input" type="number" min="0" placeholder="0">
+                    <label class="input-label" for="close-counted-cash-input">Solo ingresa el efectivo contado en
+                        caja</label>
+                    <input class="input-control close-cash-main-input" id="close-counted-cash-input" type="number"
+                        min="0" placeholder="0">
 
                     <div class="close-cash-readonly-grid">
                         <div class="close-cash-readonly-item">

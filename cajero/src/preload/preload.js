@@ -4,7 +4,7 @@ const DEFAULT_API_BASE_URL = (process.env.VALMU_API_URL || 'http://64.176.17.147
 
 contextBridge.exposeInMainWorld('cajeroAPI', {
     appName: 'Valmu Cajero',
-    version: '2.0.3',
+    version: '2.0.5',
     apiBaseUrl: DEFAULT_API_BASE_URL,
     getAppVersion: () => ipcRenderer.invoke('app:get-version'),
     getUpdateState: () => ipcRenderer.invoke('update:get-state'),
@@ -19,8 +19,9 @@ contextBridge.exposeInMainWorld('cajeroAPI', {
     saveXml: ({ filename, data, folder }) => ipcRenderer.invoke('sii:save-xml', { filename, data, folder }),
     getPrinters: () => ipcRenderer.invoke('settings:get-printers'),
     printReceipt: (payload) => ipcRenderer.invoke('printer:print-receipt', payload),
-    openCustomerDisplay: () => ipcRenderer.invoke('display:open-customer'),
+    openCustomerDisplay: (payload) => ipcRenderer.invoke('display:open-customer', payload),
     closeCustomerDisplay: () => ipcRenderer.invoke('display:close-customer'),
+    listCustomerDisplays: () => ipcRenderer.invoke('display:list-targets'),
     updateCustomerDisplay: (payload) => ipcRenderer.invoke('display:update-customer', payload),
     getCustomerDisplayState: () => ipcRenderer.invoke('display:get-customer-state'),
     toggleFullscreen: () => ipcRenderer.invoke('app:toggle-fullscreen'),

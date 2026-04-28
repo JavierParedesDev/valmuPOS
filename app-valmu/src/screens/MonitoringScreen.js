@@ -37,6 +37,7 @@ export default function MonitoringScreen({ token, navigateTo }) {
     const [branchSplitRows, setBranchSplitRows] = useState([]);
     const [recentSales, setRecentSales] = useState([]);
     const [criticalItems, setCriticalItems] = useState([]);
+    const [showCriticalListModal, setShowCriticalListModal] = useState(false);
 
     // Modal para detalle de venta
     const [showModal, setShowModal] = useState(false);
@@ -180,7 +181,7 @@ export default function MonitoringScreen({ token, navigateTo }) {
             setBranchSplitRows(resolveBranchSplitRows(branchSplitData, localBranchSplitRows, todayCount));
 
             setRecentSales(allSales.slice(0, 10));
-            setCriticalItems(tempCritical.slice(0, 15));
+            setCriticalItems(tempCritical);
 
         } catch (error) {
             console.error('Error fetching monitoring data:', error);
@@ -304,6 +305,7 @@ export default function MonitoringScreen({ token, navigateTo }) {
                         caption="Bajo umbral (10)"
                         icon="warning-outline"
                         color={brandColors.danger}
+                        onPress={() => setShowCriticalListModal(true)}
                     />
                 </View>
 
@@ -537,13 +539,60 @@ export default function MonitoringScreen({ token, navigateTo }) {
                         </TouchableOpacity>
                     </View>
                 </Modal>
+
+                <Modal
+                    visible={showCriticalListModal}
+                    onDismiss={() => setShowCriticalListModal(false)}
+                    contentContainerStyle={styles.modalScroll}
+                >
+                    <View style={styles.modalHeader}>
+                        <View style={styles.modalHandle} />
+                        <Text style={styles.modalTitle}>Stock crítico</Text>
+                        <Text style={styles.modalSubtitle}>Productos con bajo stock</Text>
+                    </View>
+                    <View style={styles.modalBody}>
+                        {criticalItems.length > 0 ? (
+                            <ScrollView
+                                showsVerticalScrollIndicator={false}
+                                contentContainerStyle={styles.criticalModalScrollContent}
+                            >
+                                {criticalItems.map((item, index) => (
+                                    <View key={`${item.id_producto || index}-${item.id_sucursal || 's'}`} style={styles.criticalModalRow}>
+                                        <View style={styles.criticalModalInfo}>
+                                            <Text style={styles.rowTitle} numberOfLines={2}>{item.nombreProducto}</Text>
+                                            <Text style={styles.rowSubtitle}>
+                                                {item.branchName} • {item.codigoBarras || 'S/C'} • {item.esPesable ? item.stock.toFixed(3) : Math.round(item.stock)} {item.esPesable ? 'Kg' : 'un.'}
+                                            </Text>
+                                        </View>
+                                        <TouchableOpacity
+                                            style={styles.criticalAdjustBtn}
+                                            onPress={() => {
+                                                setShowCriticalListModal(false);
+                                                setStockItem(item);
+                                                setStockQty('1');
+                                                setShowStockModal(true);
+                                            }}
+                                        >
+                                            <Text style={styles.criticalAdjustBtnText}>Ajustar stock</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                ))}
+                            </ScrollView>
+                        ) : (
+                            <Text style={styles.emptyText}>No hay alertas de stock crítico.</Text>
+                        )}
+                    </View>
+                    <TouchableOpacity style={styles.closeBtn} onPress={() => setShowCriticalListModal(false)}>
+                        <Text style={styles.closeBtnText}>Cerrar</Text>
+                    </TouchableOpacity>
+                </Modal>
             </Portal>
         </Screen>
     );
 }
 
-function StatCard({ label, value, caption, icon, color }) {
-    return (
+function StatCard({ label, value, caption, icon, color, onPress }) {
+    const content = (
         <Card style={styles.statCard}>
             <View style={[styles.statIcon, { backgroundColor: color + '15', marginRight: 16 }]}>
                 <Ionicons name={icon} size={22} color={color} />
@@ -562,6 +611,16 @@ function StatCard({ label, value, caption, icon, color }) {
             </View>
         </Card>
     );
+
+    if (typeof onPress === 'function') {
+        return (
+            <TouchableOpacity activeOpacity={0.85} onPress={onPress}>
+                {content}
+            </TouchableOpacity>
+        );
+    }
+
+    return content;
 }
 
 function SplitChannelCard({ title, subtitle, icon, data, tone = 'caja' }) {
@@ -1054,6 +1113,32 @@ const styles = StyleSheet.create({
         fontWeight: '900',
         color: brandColors.accent
     },
+    criticalModalRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: brandColors.outline
+    },
+    criticalModalInfo: {
+        flex: 1,
+        marginRight: 12
+    },
+    criticalModalScrollContent: {
+        paddingBottom: 12
+    },
+    criticalAdjustBtn: {
+        backgroundColor: brandColors.accentSoft,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderRadius: 12
+    },
+    criticalAdjustBtnText: {
+        color: brandColors.accent,
+        fontWeight: '900',
+        fontSize: 12
+    },
     modalScroll: {
         backgroundColor: brandColors.surface,
         margin: 20,
@@ -1087,7 +1172,8 @@ const styles = StyleSheet.create({
     },
     modalBody: {
         padding: 20,
-        minHeight: 200
+        minHeight: 200,
+        maxHeight: 420
     },
     modalLoader: {
         flex: 1,

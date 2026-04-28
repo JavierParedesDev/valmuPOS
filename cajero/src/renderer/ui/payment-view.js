@@ -1,6 +1,7 @@
 import { formatCurrency } from '../utils/formatters.js';
 
 export function openPaymentModalView({ documentType, total, customer }) {
+    const paymentTotal = Math.round(Number(total || 0));
     const totalLabel = document.getElementById('payment-total-label');
     const documentLabel = document.getElementById('payment-document-label');
     const customerLabel = document.getElementById('payment-customer-label');
@@ -22,7 +23,7 @@ export function openPaymentModalView({ documentType, total, customer }) {
         .map(([, label]) => label);
 
     if (totalLabel) {
-        totalLabel.textContent = `$${formatCurrency(total)}`;
+        totalLabel.textContent = `$${formatCurrency(paymentTotal)}`;
     }
 
     if (documentLabel) {
@@ -41,10 +42,10 @@ export function openPaymentModalView({ documentType, total, customer }) {
 
     if (copyLabel) {
         copyLabel.textContent = documentType === 'Vale interno'
-            ? `Confirma vale interno por $${formatCurrency(total)}.`
+            ? `Confirma vale interno por $${formatCurrency(paymentTotal)}.`
             : documentType === 'Factura'
-                ? `Confirma factura para ${customer?.name || 'cliente'} por $${formatCurrency(total)}.`
-                : `Confirma ${documentType.toLowerCase()} por $${formatCurrency(total)}.`;
+                ? `Confirma factura para ${customer?.name || 'cliente'} por $${formatCurrency(paymentTotal)}.`
+                : `Confirma ${documentType.toLowerCase()} por $${formatCurrency(paymentTotal)}.`;
     }
 
     if (documentNote) {
@@ -67,7 +68,7 @@ export function openPaymentModalView({ documentType, total, customer }) {
     }
 
     if (receivedInput) {
-        receivedInput.value = String(total);
+        receivedInput.value = String(paymentTotal);
     }
 
     document.getElementById('payment-modal-backdrop')?.classList.remove('hidden');
@@ -80,17 +81,20 @@ export function closePaymentModalView() {
 }
 
 export function renderPaymentMethodView({ isCash, total }) {
+    const paymentTotal = Math.round(Number(total || 0));
     const receivedGroup = document.getElementById('payment-received-group');
     const receivedInput = document.getElementById('payment-received-input');
 
     receivedGroup?.classList.toggle('hidden', !isCash);
 
     if (isCash && receivedInput && !receivedInput.value) {
-        receivedInput.value = String(total);
+        receivedInput.value = String(paymentTotal);
     }
 }
 
 export function renderPaymentChangeView({ method, total, received }) {
+    const paymentTotal = Math.round(Number(total || 0));
+    const paymentReceived = Math.round(Number(received || 0));
     const row = document.getElementById('payment-change-row');
     const label = document.getElementById('payment-change-label');
     const remainingRow = document.getElementById('payment-remaining-row');
@@ -100,7 +104,7 @@ export function renderPaymentChangeView({ method, total, received }) {
         row?.classList.add('hidden');
         remainingRow?.classList.remove('hidden');
 
-        const remaining = total - received;
+        const remaining = paymentTotal - paymentReceived;
         if (remainingLabel) {
             remainingLabel.textContent = `$${formatCurrency(Math.max(0, remaining))}`;
             remainingLabel.classList.toggle('paid', remaining <= 0);
@@ -118,7 +122,7 @@ export function renderPaymentChangeView({ method, total, received }) {
         return;
     }
 
-    const change = Math.max(0, received - total);
+    const change = Math.max(0, paymentReceived - paymentTotal);
 
     row?.classList.remove('hidden');
     if (label) {

@@ -10,6 +10,10 @@ export function findCatalogProducts(products, term) {
     const normalizedTerm = normalizeCatalogText(term);
 
     return products.filter((product) => {
+        if (product?.dispatchOnly) {
+            return false;
+        }
+
         const haystack = normalizeCatalogText(`${product.name} ${product.code} ${product.category}`);
         return haystack.includes(normalizedTerm);
     });

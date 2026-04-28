@@ -7,16 +7,13 @@ const advertisingState = {
     currentIndex: 0,
     timerId: null,
     currentPayload: null,
-    failedUrls: new Set()
-};
-
-const autoScrollState = {
-    animationId: null,
-    timeoutId: null,
-    direction: 1, // 1 for down, -1 for up
-    speed: 0.8, // pixels per frame
-    lastItemsCount: 0,
-    pauseUntil: 0
+    failedUrls: new Set(),
+    lastCartKey: null,
+    imageUrls: {
+        idle: '',
+        inline: '',
+        fullscreen: ''
+    }
 };
 
 function formatItemCount(count) {
@@ -99,19 +96,23 @@ function renderAdvertising() {
         fullscreenContainer.classList.toggle('hidden', !hasAdvertising || hasItemsInCart);
     }
 
-    if (idleImage && hasAdvertising) {
-        idleImage.src = imageUrl;
-        idleImage.alt = item?.titulo || 'Publicidad activa';
+    setAdvertisingImage(idleImage, 'idle', imageUrl, item?.titulo || 'Publicidad activa', hasAdvertising);
+    setAdvertisingImage(inlineImage, 'inline', imageUrl, item?.titulo || 'Publicidad activa', hasAdvertising);
+    setAdvertisingImage(fullscreenImage, 'fullscreen', imageUrl, item?.titulo || 'Publicidad activa', hasAdvertising);
+}
+
+function setAdvertisingImage(imageElement, slot, imageUrl, altText, hasAdvertising) {
+    if (!imageElement || !hasAdvertising) {
+        return;
     }
 
-    if (inlineImage && hasAdvertising) {
-        inlineImage.src = imageUrl;
-        inlineImage.alt = item?.titulo || 'Publicidad activa';
+    if (advertisingState.imageUrls[slot] !== imageUrl) {
+        imageElement.src = imageUrl;
+        advertisingState.imageUrls[slot] = imageUrl;
     }
 
-    if (fullscreenImage && hasAdvertising) {
-        fullscreenImage.src = imageUrl;
-        fullscreenImage.alt = item?.titulo || 'Publicidad activa';
+    if (imageElement.alt !== altText) {
+        imageElement.alt = altText;
     }
 }
 
@@ -202,8 +203,9 @@ function markAdvertisingImageAsFailed(imageUrl) {
 function bindAdvertisingImageGuards() {
     const idleImage = document.getElementById('customer-idle-ad-image');
     const inlineImage = document.getElementById('customer-inline-ad-image');
+    const fullscreenImage = document.getElementById('customer-fullscreen-ad-image');
 
-    [idleImage, inlineImage].forEach((imageElement) => {
+    [idleImage, inlineImage, fullscreenImage].forEach((imageElement) => {
         imageElement?.addEventListener('error', () => {
             markAdvertisingImageAsFailed(imageElement.currentSrc || imageElement.src);
         });
@@ -214,7 +216,6 @@ function renderCustomerDisplay(payload = {}) {
     advertisingState.currentPayload = payload;
     const displayRoot = document.querySelector('.customer-display');
     const branchLabel = document.getElementById('customer-branch-label');
-    const documentLabel = document.getElementById('customer-document-label');
     const itemsCountLabel = document.getElementById('customer-items-count');
     const itemsList = document.getElementById('customer-items-list');
     const statusLabel = document.getElementById('customer-status-label');
@@ -222,7 +223,6 @@ function renderCustomerDisplay(payload = {}) {
     const totalLabel = document.getElementById('customer-total-label');
 
     if (branchLabel) branchLabel.textContent = payload.branchName || 'Sucursal';
-    if (documentLabel) documentLabel.textContent = payload.documentType || 'Boleta';
     if (itemsCountLabel) itemsCountLabel.textContent = formatItemCount(payload.itemsCount);
     if (statusLabel) statusLabel.textContent = payload.statusLabel || 'Pantalla cliente lista';
     if (customerNameLabel) customerNameLabel.textContent = payload.customerLabel || 'Cliente general';
@@ -240,9 +240,28 @@ function renderCustomerDisplay(payload = {}) {
         displayRoot.classList.toggle('customer-display-dense', compactLevel === 'dense');
     }
 
+    // Identificador único para el estado actual del carrito
+    const cartKey = cart
+        .map((item) => [
+            item.id,
+            item.name,
+            item.meta,
+            item.quantityLabel,
+            item.unitPriceLabel,
+            item.lineTotalLabel
+        ].join(':'))
+        .join('|');
+
+    if (cartKey === advertisingState.lastCartKey) {
+        syncScroll(payload, itemsList);
+        renderAdvertising();
+        return;
+    }
+
+    advertisingState.lastCartKey = cartKey;
+
     // Si no hay items, limpiamos la lista pero mantenemos el contenedor de publicidad
     if (!cart.length) {
-        // Buscamos si ya existe el emptyState para no recrearlo y borrar la publicidad
         let emptyState = itemsList.querySelector('.customer-empty');
         if (!emptyState) {
             emptyState = document.createElement('div');
@@ -255,7 +274,6 @@ function renderCustomerDisplay(payload = {}) {
             <p>${payload.mode === 'locked' ? 'La caja aun no esta lista para vender.' : 'Escanea tus productos para ver el detalle aqui.'}</p>
         `;
 
-        // Removemos cualquier item previo
         itemsList.querySelectorAll('.customer-item').forEach(el => el.remove());
         itemsList.scrollTop = 0;
 
@@ -265,14 +283,13 @@ function renderCustomerDisplay(payload = {}) {
 
     // Si hay items, removemos el empty state y renderizamos los items
     itemsList.querySelector('.customer-empty')?.remove();
+    itemsList.querySelectorAll('.customer-item').forEach(el => el.remove());
 
-    // Obtener todos los items actuales para actualizar/reemplazar sin tocar la publicidad
-    const existingItems = itemsList.querySelectorAll('.customer-item');
-    existingItems.forEach(el => el.remove());
+    const fragment = document.createDocumentFragment();
 
-    cart.forEach((item) => {
+    cart.forEach((item, index) => {
         const article = document.createElement('article');
-        article.className = 'customer-item';
+        article.className = `customer-item${index === 0 ? ' is-latest' : ''}`;
         article.innerHTML = `
             <div>
                 <strong class="customer-item-name">${item.name || 'Producto'}</strong>
@@ -287,59 +304,27 @@ function renderCustomerDisplay(payload = {}) {
                 <span>Total</span>
             </div>
         `;
-        itemsList.appendChild(article);
+        fragment.appendChild(article);
     });
 
+    itemsList.appendChild(fragment);
+    syncScroll(payload, itemsList);
     renderAdvertising();
-    handleAutoScroll(itemsList, cart.length);
 }
 
-function handleAutoScroll(scrollContainer, currentItemsCount) {
-    if (autoScrollState.animationId) {
-        cancelAnimationFrame(autoScrollState.animationId);
-        autoScrollState.animationId = null;
-    }
-    if (autoScrollState.timeoutId) {
-        clearTimeout(autoScrollState.timeoutId);
-        autoScrollState.timeoutId = null;
-    }
+function syncScroll(payload, itemsList) {
+    if (!itemsList) return;
 
-    if (!scrollContainer) return;
+    const sourceScrollTop = Number(payload?.scrollState?.top || 0);
+    const sourceScrollHeight = Number(payload?.scrollState?.height || 0);
+    const sourceViewport = Number(payload?.scrollState?.viewport || 0);
+    const sourceMaxScroll = Math.max(0, sourceScrollHeight - sourceViewport);
+    const targetMaxScroll = Math.max(0, itemsList.scrollHeight - itemsList.clientHeight);
+    const nextScrollTop = sourceMaxScroll > 0
+        ? Math.round((sourceScrollTop / sourceMaxScroll) * targetMaxScroll)
+        : 0;
 
-    // Always start from current position and go down
-    autoScrollState.direction = 1;
-
-    const runAnimation = () => {
-        const max = scrollContainer.scrollHeight - scrollContainer.clientHeight;
-
-        if (max <= 5) return;
-
-        if (autoScrollState.pauseUntil && Date.now() < autoScrollState.pauseUntil) {
-            autoScrollState.animationId = requestAnimationFrame(runAnimation);
-            return;
-        }
-
-        if (autoScrollState.direction === 1) {
-            scrollContainer.scrollTop += autoScrollState.speed;
-            if (scrollContainer.scrollTop >= max - 1) {
-                autoScrollState.direction = -1;
-                autoScrollState.pauseUntil = Date.now() + 2000; // Pause 2s at bottom
-            }
-        } else {
-            scrollContainer.scrollTop -= autoScrollState.speed;
-            if (scrollContainer.scrollTop <= 1) {
-                autoScrollState.direction = 1;
-                autoScrollState.pauseUntil = Date.now() + 2000; // Pause 2s at top
-            }
-        }
-
-        autoScrollState.animationId = requestAnimationFrame(runAnimation);
-    };
-
-    autoScrollState.timeoutId = setTimeout(() => {
-        console.log("Starting auto-scroll animation...");
-        runAnimation();
-    }, 4000);
+    itemsList.scrollTop = nextScrollTop;
 }
 
 async function bootCustomerDisplay() {
@@ -349,9 +334,8 @@ async function bootCustomerDisplay() {
         window.cajeroAPI.onCustomerDisplayUpdate(renderCustomerDisplay);
     }
 
-    // Ensure advertising loads regardless of IPC state
     await loadAdvertising();
-    window.setInterval(loadAdvertising, 30000);
+    window.setInterval(loadAdvertising, 120000);
 
     if (typeof window.cajeroAPI?.getCustomerDisplayState === 'function') {
         try {
