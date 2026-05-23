@@ -208,6 +208,7 @@ window.ValmuInvoicingDocuments = {
         const total = getTag('MntTotal');
         const neto = getTag('MntNeto');
         const iva = getTag('IVA');
+        const exento = getTag('MntExe');
 
         let tipoTxt = 'DOCUMENTO TRIBUTARIO';
         let subTipoTxt = 'ELECTRONICO';
@@ -343,25 +344,40 @@ window.ValmuInvoicingDocuments = {
                 return el ? el.textContent : '';
             };
 
+            const rawPrc = getSub('PrcItem') || '0';
+            const numPrc = parseFloat(rawPrc);
+            const formattedPrc = isNaN(numPrc) ? '$0' : '$' + numPrc.toLocaleString('es-CL', {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: rawPrc.includes('.') ? 4 : 0
+            });
+
+            const rawMonto = getSub('MontoItem') || '0';
+            const numMonto = parseFloat(rawMonto);
+            const formattedMonto = isNaN(numMonto) ? '$0' : '$' + Math.round(numMonto).toLocaleString('es-CL');
+
             items.push([
                 getSub('QtyItem'),
                 getSub('NmbItem'),
-                '$' + parseInt(getSub('PrcItem') || 0, 10).toLocaleString('es-CL'),
-                '$' + parseInt(getSub('MontoItem') || 0, 10).toLocaleString('es-CL')
+                formattedPrc,
+                formattedMonto
             ]);
         }
 
+        const isNetDocument = tipo === '33' || tipo === '61' || tipo === '56';
+        const prcHeader = isNetDocument ? 'P. UNITARIO' : 'P. UNITARIO';
+        const subtotalHeader = isNetDocument ? 'SUBTOTAL NETO' : 'SUBTOTAL';
+
         doc.autoTable({
             startY: currentY,
-            head: [['CANTIDAD', 'DESCRIPCION', 'P. UNITARIO', 'TOTAL']],
+            head: [['CANTIDAD', 'DESCRIPCION', prcHeader, subtotalHeader]],
             body: items,
             theme: 'grid',
             styles: { fontSize: 8, cellPadding: 2, lineWidth: 0.1, lineColor: 150 },
             headStyles: { fillColor: [240, 240, 240], textColor: 0, fontStyle: 'bold', halign: 'center' },
             columnStyles: {
                 0: { halign: 'center', cellWidth: 20 },
-                2: { halign: 'right', cellWidth: 30 },
-                3: { halign: 'right', cellWidth: 30 }
+                2: { halign: 'right', cellWidth: 35 },
+                3: { halign: 'right', cellWidth: 35 }
             },
             margin: { left: 10, right: 10 }
         });
@@ -374,18 +390,42 @@ window.ValmuInvoicingDocuments = {
 
         const totalsW = 70;
         const totalsX = 210 - totalsW - 10;
+
+        const parsedNeto = neto ? parseInt(neto, 10) : 0;
+        const parsedIva = iva ? parseInt(iva, 10) : 0;
+        const parsedExento = exento ? parseInt(exento, 10) : 0;
+        const parsedTotal = total ? parseInt(total, 10) : 0;
+
+        let currentTotalY = bottomY;
         doc.setFontSize(9);
         doc.setFont('helvetica', 'bold');
-        doc.text('MONTO NETO:', totalsX, bottomY);
-        doc.text('$' + parseInt(neto || 0, 10).toLocaleString('es-CL'), 200, bottomY, { align: 'right' });
-        doc.text('IVA 19%:', totalsX, bottomY + 5);
-        doc.text('$' + parseInt(iva || 0, 10).toLocaleString('es-CL'), 200, bottomY + 5, { align: 'right' });
+
+        if (parsedNeto > 0) {
+            doc.text('SUBTOTAL:', totalsX, currentTotalY);
+            doc.text('$' + parsedNeto.toLocaleString('es-CL'), 200, currentTotalY, { align: 'right' });
+            currentTotalY += 5;
+        }
+
+        if (parsedIva > 0) {
+            const tasaIva = getTag('TasaIVA') || '19';
+            doc.text(`IVA ${tasaIva}%:`, totalsX, currentTotalY);
+            doc.text('$' + parsedIva.toLocaleString('es-CL'), 200, currentTotalY, { align: 'right' });
+            currentTotalY += 5;
+        }
+
+        if (parsedExento > 0) {
+            doc.text('EXENTO:', totalsX, currentTotalY);
+            doc.text('$' + parsedExento.toLocaleString('es-CL'), 200, currentTotalY, { align: 'right' });
+            currentTotalY += 5;
+        }
+
+        // Draw the total box
         doc.setFillColor(240, 240, 240);
-        doc.rect(totalsX, bottomY + 8, totalsW, 8, 'F');
-        doc.rect(totalsX, bottomY + 8, totalsW, 8, 'S');
+        doc.rect(totalsX, currentTotalY + 3, totalsW, 8, 'F');
+        doc.rect(totalsX, currentTotalY + 3, totalsW, 8, 'S');
         doc.setFontSize(10);
-        doc.text('TOTAL:', totalsX + 2, bottomY + 14);
-        doc.text('$' + parseInt(total || 0, 10).toLocaleString('es-CL'), 200, bottomY + 14, { align: 'right' });
+        doc.text('TOTAL:', totalsX + 2, currentTotalY + 9);
+        doc.text('$' + parsedTotal.toLocaleString('es-CL'), 200, currentTotalY + 9, { align: 'right' });
 
         const timbreY = bottomY;
         try {

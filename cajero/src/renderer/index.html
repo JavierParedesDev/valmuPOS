@@ -93,6 +93,8 @@
                     <div class="retail-header-actions">
                         <button class="header-utility-btn" id="header-fullscreen-btn" type="button"
                             title="Pantalla Completa"><i class="bi bi-arrows-fullscreen"></i></button>
+                        <button class="header-utility-btn" id="header-sync-btn" type="button"
+                            title="Sincronizar Catálogo"><i class="bi bi-arrow-clockwise"></i> <span>Sincronizar</span></button>
                         <button class="header-utility-btn" id="header-settings-btn" type="button">Ajustes</button>
                         <button class="header-utility-btn" id="header-cash-withdrawal-btn" type="button">Retiro</button>
                         <button class="header-close-cash-btn" id="header-close-cash-btn" type="button">Cerrar
@@ -176,6 +178,10 @@
                             <i class="bi bi-percent"></i>
                             <span>Descuento colaboradores</span>
                         </button>
+                        <button class="footer-action-btn" id="extra-charge-btn" type="button">
+                            <i class="bi bi-plus-circle"></i>
+                            <span>Recargo 2%</span>
+                        </button>
                     </div>
                 </div>
 
@@ -213,6 +219,10 @@
                         <div class="summary-row">
                             <span>Descuento</span>
                             <strong id="summary-discount">$0</strong>
+                        </div>
+                        <div class="summary-row">
+                            <span>Recargo (2%)</span>
+                            <strong id="summary-extra-charge">$0</strong>
                         </div>
                         <div class="summary-row">
                             <span>IVA (19%)</span>
@@ -471,6 +481,10 @@
                                 <i class="bi bi-file-earmark-text-fill"></i>
                                 <span>Facturación SII</span>
                             </button>
+                            <button class="settings-nav-item" data-tab="pending-dtes" type="button">
+                                <i class="bi bi-cloud-arrow-up-fill"></i>
+                                <span>DTEs Pendientes</span>
+                            </button>
                             <button class="settings-nav-item" data-tab="hardware" type="button">
                                 <i class="bi bi-gpu-card"></i>
                                 <span>Hardware</span>
@@ -605,17 +619,39 @@
                                         <div class="caf-settings-head">
                                             <div>
                                                 <strong>Sobre de Boletas</strong>
-                                                <span>Agrupacion automatica cada 45 minutos</span>
+                                                <span id="boleta-envelope-desc-label">Configuración del envío automático</span>
                                             </div>
-                                            <div class="caf-status-badge" id="boleta-envelope-status">Sin pendientes
-                                            </div>
+                                            <div class="caf-status-badge" id="boleta-envelope-status">Sin pendientes</div>
                                         </div>
                                         <div class="settings-info-row compact-row">
                                             <span>Pendientes en cola</span>
                                             <strong id="boleta-envelope-count-label">0 boletas</strong>
                                         </div>
-                                        <button class="secondary-btn" id="force-boleta-envelope-btn"
-                                            type="button">Forzar envio del sobre</button>
+
+                                        <div style="margin-top: 0.8rem; border-top: 1px dashed rgba(0,0,0,0.05); padding-top: 0.8rem;">
+                                            <label class="input-label" for="sii-boleta-env-mode">Criterio de envío</label>
+                                            <select class="input-control" id="sii-boleta-env-mode">
+                                                <option value="both">Tiempo o Cantidad (Lo que ocurra primero)</option>
+                                                <option value="time">Solo Tiempo (Cada X minutos)</option>
+                                                <option value="count">Solo Cantidad (Cada Y boletas)</option>
+                                            </select>
+                                        </div>
+
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-top: 0.5rem;">
+                                            <div>
+                                                <label class="input-label" for="sii-boleta-env-minutes">Minutos (Tiempo)</label>
+                                                <input class="input-control" id="sii-boleta-env-minutes" type="number" min="1" placeholder="60">
+                                            </div>
+                                            <div>
+                                                <label class="input-label" for="sii-boleta-env-limit">Límite (Boletas)</label>
+                                                <input class="input-control" id="sii-boleta-env-limit" type="number" min="1" placeholder="50">
+                                            </div>
+                                        </div>
+
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-top: 0.8rem;">
+                                            <button class="secondary-btn" id="save-boleta-env-settings-btn" type="button">Guardar sobre</button>
+                                            <button class="secondary-btn" id="force-boleta-envelope-btn" type="button">Forzar envío</button>
+                                        </div>
                                     </div>
 
                                     <div class="caf-settings-item">
@@ -639,6 +675,243 @@
                                     usara
                                     el cajero para
                                     boleta y factura.</div>
+                            </article>
+                        </div>
+
+                        <!-- TAB: PENDING DTES -->
+                        <div class="settings-tab-content" id="settings-tab-pending-dtes">
+                            <style>
+                                /* Custom Queue Styles */
+                                #settings-tab-pending-dtes .dte-queue-header {
+                                    display: flex;
+                                    justify-content: space-between;
+                                    align-items: center;
+                                    margin-bottom: 1.5rem;
+                                    padding-bottom: 1rem;
+                                    border-bottom: 1px dashed rgba(0, 0, 0, 0.08);
+                                }
+                                #settings-tab-pending-dtes .dte-queue-title h3 {
+                                    font-size: 1.2rem;
+                                    font-weight: 700;
+                                    color: #1e293b;
+                                    margin: 0;
+                                }
+                                #settings-tab-pending-dtes .dte-queue-title span.header-kicker {
+                                    font-size: 0.7rem;
+                                    font-weight: 800;
+                                    text-transform: uppercase;
+                                    letter-spacing: 0.05em;
+                                    color: #ef4444;
+                                    display: block;
+                                    margin-bottom: 0.15rem;
+                                }
+                                #settings-tab-pending-dtes .api-status-card {
+                                    display: flex;
+                                    align-items: center;
+                                    gap: 0.5rem;
+                                    padding: 0.4rem 0.8rem;
+                                    border-radius: 9999px;
+                                    font-size: 0.75rem;
+                                    font-weight: 700;
+                                    transition: all 0.3s ease;
+                                }
+                                #settings-tab-pending-dtes .api-status-card.status-online {
+                                    background: rgba(18, 183, 106, 0.08);
+                                    border: 1px solid rgba(18, 183, 106, 0.2);
+                                    color: #12b76a;
+                                }
+                                #settings-tab-pending-dtes .api-status-card.status-warning {
+                                    background: rgba(253, 176, 34, 0.08);
+                                    border: 1px solid rgba(253, 176, 34, 0.2);
+                                    color: #fdb022;
+                                }
+                                #settings-tab-pending-dtes .api-status-card.status-offline {
+                                    background: rgba(240, 68, 56, 0.08);
+                                    border: 1px solid rgba(240, 68, 56, 0.2);
+                                    color: #f04438;
+                                }
+                                #settings-tab-pending-dtes .dte-queue-actions {
+                                    display: flex;
+                                    gap: 0.75rem;
+                                    margin-bottom: 1.5rem;
+                                }
+                                #settings-tab-pending-dtes .dte-queue-actions button {
+                                    display: inline-flex;
+                                    align-items: center;
+                                    gap: 0.4rem;
+                                    font-size: 0.8rem;
+                                    font-weight: 700;
+                                    padding: 0.5rem 1rem;
+                                    border-radius: 8px;
+                                    cursor: pointer;
+                                    transition: all 0.2s ease;
+                                    border: 1px solid transparent;
+                                    height: 38px;
+                                }
+                                #settings-tab-pending-dtes .btn-check-conn {
+                                    background-color: #ef4444;
+                                    color: white;
+                                }
+                                #settings-tab-pending-dtes .btn-check-conn:hover {
+                                    background-color: #dc2626;
+                                    transform: translateY(-1px);
+                                }
+                                #settings-tab-pending-dtes .btn-retry-all {
+                                    background-color: white;
+                                    border-color: #cbd5e1 !important;
+                                    color: #334155;
+                                }
+                                #settings-tab-pending-dtes .btn-retry-all:hover {
+                                    background-color: #f8fafc;
+                                    border-color: #94a3b8 !important;
+                                    transform: translateY(-1px);
+                                }
+                                #settings-tab-pending-dtes .btn-clear-queue {
+                                    background-color: white;
+                                    border-color: #fee2e2 !important;
+                                    color: #ef4444;
+                                }
+                                #settings-tab-pending-dtes .btn-clear-queue:hover {
+                                    background-color: #fef2f2;
+                                    border-color: #fca5a5 !important;
+                                    transform: translateY(-1px);
+                                }
+                                #settings-tab-pending-dtes .dte-table-container {
+                                    background: white;
+                                    border: 1px solid #e2e8f0;
+                                    border-radius: 10px;
+                                    overflow: hidden;
+                                    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+                                    max-height: 400px;
+                                    overflow-y: auto;
+                                }
+                                #settings-tab-pending-dtes .dte-queue-table {
+                                    width: 100%;
+                                    border-collapse: collapse;
+                                    text-align: left;
+                                }
+                                #settings-tab-pending-dtes .dte-queue-table th {
+                                    background: #f8fafc;
+                                    padding: 0.85rem 1rem;
+                                    font-size: 0.75rem;
+                                    font-weight: 700;
+                                    text-transform: uppercase;
+                                    letter-spacing: 0.05em;
+                                    color: #475569;
+                                    border-bottom: 1px solid #e2e8f0;
+                                    position: sticky;
+                                    top: 0;
+                                    z-index: 10;
+                                }
+                                #settings-tab-pending-dtes .dte-queue-table td {
+                                    padding: 0.85rem 1rem;
+                                    font-size: 0.8rem;
+                                    color: #334155;
+                                    border-bottom: 1px solid #f1f5f9;
+                                    vertical-align: middle;
+                                }
+                                #settings-tab-pending-dtes .dte-queue-table tbody tr:last-child td {
+                                    border-bottom: none;
+                                }
+                                #settings-tab-pending-dtes .dte-queue-table tbody tr:hover td {
+                                    background-color: #f8fafc;
+                                }
+                                #settings-tab-pending-dtes .sale-id-badge {
+                                    font-family: monospace;
+                                    font-size: 0.8rem;
+                                    background: #f1f5f9;
+                                    padding: 0.15rem 0.4rem;
+                                    border-radius: 5px;
+                                    color: #475569;
+                                    font-weight: 600;
+                                }
+                                #settings-tab-pending-dtes .dte-type-badge {
+                                    display: inline-flex;
+                                    align-items: center;
+                                    gap: 0.3rem;
+                                    font-size: 0.75rem;
+                                    font-weight: 600;
+                                    padding: 0.15rem 0.5rem;
+                                    border-radius: 9999px;
+                                }
+                                #settings-tab-pending-dtes .dte-type-badge.type-boleta {
+                                    background: rgba(16, 185, 129, 0.1);
+                                    color: #059669;
+                                }
+                                #settings-tab-pending-dtes .dte-type-badge.type-factura {
+                                    background: rgba(59, 130, 246, 0.1);
+                                    color: #2563eb;
+                                }
+                                #settings-tab-pending-dtes .dte-amount {
+                                    font-weight: 700;
+                                    color: #0f172a;
+                                }
+                                #settings-tab-pending-dtes .btn-action-retry {
+                                    display: inline-flex;
+                                    align-items: center;
+                                    gap: 0.3rem;
+                                    background: rgba(239, 68, 68, 0.05);
+                                    border: 1px solid rgba(239, 68, 68, 0.1);
+                                    color: #ef4444;
+                                    padding: 0.3rem 0.6rem;
+                                    border-radius: 5px;
+                                    font-size: 0.75rem;
+                                    font-weight: 700;
+                                    cursor: pointer;
+                                    transition: all 0.2s ease;
+                                }
+                                #settings-tab-pending-dtes .btn-action-retry:hover {
+                                    background: #ef4444;
+                                    color: white;
+                                    border-color: #ef4444;
+                                    transform: translateY(-1px);
+                                }
+                            </style>
+                            <article class="settings-card" style="padding: 1.5rem;">
+                                <div class="dte-queue-header">
+                                    <div class="dte-queue-title">
+                                        <span class="header-kicker">SimpleAPI</span>
+                                        <h3>Boletas Pendientes de Envío</h3>
+                                    </div>
+                                    <div id="simpleapi-status-card" class="api-status-card status-offline">
+                                        <span id="simpleapi-status-dot" style="width: 8px; height: 8px; border-radius: 50%; display: inline-block; transition: all 0.3s ease;"></span>
+                                        <span id="simpleapi-status-text" style="transition: all 0.3s ease;">SimpleAPI Fuera de Servicio</span>
+                                    </div>
+                                </div>
+
+                                <div class="dte-queue-actions">
+                                    <button class="btn-check-conn" id="simpleapi-check-status-btn" type="button">
+                                        <i class="bi bi-arrow-repeat"></i> Verificar Conexión
+                                    </button>
+                                    <button class="btn-retry-all" id="dte-queue-retry-all-btn" type="button">
+                                        <i class="bi bi-cloud-arrow-up"></i> Reintentar Envío de Todo
+                                    </button>
+                                    <button class="btn-clear-queue" id="dte-queue-clear-btn" type="button">
+                                        <i class="bi bi-trash"></i> Limpiar Cola
+                                    </button>
+                                </div>
+
+                                <div class="dte-table-container custom-scrollbar">
+                                    <table class="dte-queue-table">
+                                        <thead>
+                                            <tr>
+                                                <th>ID Venta</th>
+                                                <th>Tipo Doc</th>
+                                                <th>Folio</th>
+                                                <th>Monto</th>
+                                                <th>Fecha</th>
+                                                <th style="text-align: right;">Acción</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="dte-queue-table-body">
+                                            <tr>
+                                                <td colspan="6" style="padding: 2.5rem; text-align: center; color: var(--text-soft); font-weight: 500;">
+                                                    No hay boletas pendientes de envío.
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
                             </article>
                         </div>
 

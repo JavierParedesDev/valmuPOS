@@ -138,7 +138,7 @@ export default function AdvertisingScreen({ token }) {
     const deleteAd = async (ad) => {
         Alert.alert(
             'Confirmar eliminación',
-            `¿Estás seguro de que quieres borrar "${ad.titulo || 'esta publicidad'}"?`,
+            `¿Estás seguro de que quieres borrar "${ad.titulo || 'esta publicidad'}"`,
             [
                 { text: 'Cancelar', style: 'cancel' },
                 {
@@ -169,7 +169,7 @@ export default function AdvertisingScreen({ token }) {
     const getImageUrl = (path) => {
         if (!path) return 'https://via.placeholder.com/150';
         if (path.startsWith('http')) return path;
-        const origin = API_BASE_URL.replace(/\/api\/?$/, '');
+        const origin = API_BASE_URL.replace(/\/api\/a$/, '');
         return `${origin}${path}`;
     };
 

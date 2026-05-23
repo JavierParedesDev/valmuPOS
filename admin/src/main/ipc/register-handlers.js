@@ -9,16 +9,20 @@ const { loginUser } = require('../services/auth-service');
 const { requestJson } = require('../services/http-client');
 const fs = require('fs');
 
-// Ensure a local directory exists for SII files, as requested by the user to avoid Windows strictness issues.
-const siiDataDir = path.join(process.cwd(), 'sii_data');
-if (!fs.existsSync(siiDataDir)) {
-    fs.mkdirSync(siiDataDir, { recursive: true });
-}
-
 let activeWindow = null;
 let isRegistered = false;
 let updaterController = null;
 const invoiceFolders = ['facturas', 'notas_de_credito', 'notas_de_debito'];
+
+let siiDataDir = null;
+
+function getSiiDataDir() {
+    if (!siiDataDir) {
+        siiDataDir = path.join(app.getPath('userData'), 'sii_data');
+    }
+
+    return siiDataDir;
+}
 
 function ensureDir(dirPath) {
     if (!fs.existsSync(dirPath)) {
@@ -26,9 +30,88 @@ function ensureDir(dirPath) {
     }
 }
 
+function getLegacySiiDataCandidates() {
+    const candidates = [
+        path.join(process.cwd(), 'sii_data'),
+        path.join(__dirname, '../../../sii_data')
+    ];
+
+    try {
+        candidates.push(path.join(path.dirname(app.getPath('exe')), 'sii_data'));
+    } catch (_error) {
+        // Electron may not expose the executable path in every runtime.
+    }
+
+    if (process.resourcesPath) {
+        candidates.push(path.join(process.resourcesPath, 'sii_data'));
+    }
+
+    return Array.from(new Set(candidates.map((candidate) => path.resolve(candidate))));
+}
+
+function copyMissingFiles(sourceDir, targetDir) {
+    if (!fs.existsSync(sourceDir) || path.resolve(sourceDir) === path.resolve(targetDir)) {
+        return;
+    }
+
+    ensureDir(targetDir);
+
+    for (const entry of fs.readdirSync(sourceDir, { withFileTypes: true })) {
+        const sourcePath = path.join(sourceDir, entry.name);
+        const targetPath = path.join(targetDir, entry.name);
+
+        if (entry.isDirectory()) {
+            copyMissingFiles(sourcePath, targetPath);
+            continue;
+        }
+
+        if (entry.isFile() && !fs.existsSync(targetPath)) {
+            fs.copyFileSync(sourcePath, targetPath);
+        }
+    }
+}
+
+function readJsonFile(filePath) {
+    try {
+        if (fs.existsSync(filePath)) {
+            return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        }
+    } catch (error) {
+        console.warn(`No se pudo leer JSON ${filePath}:`, error);
+    }
+
+    return null;
+}
+
+function migrateSiiDataIfNeeded() {
+    const persistentSiiDataDir = getSiiDataDir();
+    ensureDir(persistentSiiDataDir);
+
+    const legacySiiDataCandidates = getLegacySiiDataCandidates();
+
+    for (const candidate of legacySiiDataCandidates) {
+        copyMissingFiles(candidate, persistentSiiDataDir);
+    }
+
+    const targetConfigPath = path.join(persistentSiiDataDir, 'config.json');
+    const targetConfig = readJsonFile(targetConfigPath) || {};
+    let mergedConfig = { ...targetConfig };
+
+    for (const candidate of legacySiiDataCandidates) {
+        const legacyConfig = readJsonFile(path.join(candidate, 'config.json'));
+        if (legacyConfig) {
+            mergedConfig = { ...legacyConfig, ...mergedConfig };
+        }
+    }
+
+    if (Object.keys(mergedConfig).length > 0) {
+        fs.writeFileSync(targetConfigPath, JSON.stringify(mergedConfig, null, 2), 'utf8');
+    }
+}
+
 function getInvoiceFolderPath(folder = '') {
     const safeFolder = String(folder || '').trim();
-    return path.join(siiDataDir, safeFolder);
+    return path.join(getSiiDataDir(), safeFolder);
 }
 
 function bufferFromPayload(data) {
@@ -137,6 +220,7 @@ async function runPythonReceiptPrint(payload) {
 function registerIpcHandlers(mainWindow, updaterApi = null) {
     activeWindow = mainWindow;
     updaterController = updaterApi;
+    migrateSiiDataIfNeeded();
 
     if (isRegistered) {
         return;
@@ -192,7 +276,7 @@ function registerIpcHandlers(mainWindow, updaterApi = null) {
     });
 
     ipcMain.handle(IPC_CHANNELS.GET_SII_CONFIG, () => {
-        const configPath = path.join(siiDataDir, 'config.json');
+        const configPath = path.join(getSiiDataDir(), 'config.json');
         if (fs.existsSync(configPath)) {
             return JSON.parse(fs.readFileSync(configPath, 'utf8'));
         }
@@ -200,7 +284,7 @@ function registerIpcHandlers(mainWindow, updaterApi = null) {
     });
 
     ipcMain.handle(IPC_CHANNELS.SAVE_SII_CONFIG, (_event, config) => {
-        const configPath = path.join(siiDataDir, 'config.json');
+        const configPath = path.join(getSiiDataDir(), 'config.json');
         fs.writeFileSync(configPath, JSON.stringify(config, null, 2), 'utf8');
         return { success: true };
     });
@@ -209,7 +293,7 @@ function registerIpcHandlers(mainWindow, updaterApi = null) {
         try {
             const rawBase64 = base64Data.replace(/^data:.*?;base64,/, "");
             const buffer = Buffer.from(rawBase64, 'base64');
-            const destPath = path.join(siiDataDir, filename);
+            const destPath = path.join(getSiiDataDir(), filename);
             fs.writeFileSync(destPath, buffer);
             return { success: true, path: destPath, filename };
         } catch (err) {
@@ -220,7 +304,7 @@ function registerIpcHandlers(mainWindow, updaterApi = null) {
 
     ipcMain.handle(IPC_CHANNELS.READ_LOCAL_CERT, async (_event, filePath) => {
         try {
-            const fullPath = path.join(siiDataDir, filePath);
+            const fullPath = path.join(getSiiDataDir(), filePath);
             if (!fs.existsSync(fullPath)) return null;
             const buffer = fs.readFileSync(fullPath);
             return buffer.toString('base64');
@@ -232,7 +316,7 @@ function registerIpcHandlers(mainWindow, updaterApi = null) {
 
     ipcMain.handle(IPC_CHANNELS.READ_LOCAL_TEXT, async (_event, filePath) => {
         try {
-            const fullPath = path.join(siiDataDir, filePath);
+            const fullPath = path.join(getSiiDataDir(), filePath);
             if (!fs.existsSync(fullPath)) return null;
             return fs.readFileSync(fullPath, 'utf8');
         } catch (e) {

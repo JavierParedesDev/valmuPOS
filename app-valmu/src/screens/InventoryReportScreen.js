@@ -69,14 +69,14 @@ export default function InventoryReportScreen({ token, user }) {
 
     const handleDelete = (id) => {
         if (Platform.OS === 'web') {
-            const confirmed = window.confirm(`¿Deseas eliminar el registro #${id}?`);
+            const confirmed = window.confirm(`¿Deseas eliminar el registro #${id}`);
             if (confirmed) {
                 performDeletion(id);
             }
         } else {
             Alert.alert(
                 'Confirmar Eliminación',
-                `¿Deseas eliminar el registro #${id}?`,
+                `¿Deseas eliminar el registro #${id}`,
                 [
                     { text: 'Cancelar', style: 'cancel' },
                     { 
@@ -121,8 +121,8 @@ export default function InventoryReportScreen({ token, user }) {
                         </View>
                         <View style={styles.qtyBadge}>
                             <Text style={[styles.qtyText, { color: info.color }]}>
-                                {item.esPesable 
-                                    ? `${parseFloat(item.cantidadMov).toFixed(3)} KG` 
+                                {item.esPesable ?
+                                    `${parseFloat(item.cantidadMov).toFixed(3)} KG`
                                     : `${Math.round(item.cantidadMov)} UN.`}
                             </Text>
                         </View>

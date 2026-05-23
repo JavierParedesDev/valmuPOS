@@ -116,10 +116,20 @@ export async function loginRequest(username, password) {
     });
 
     if (response.ok) {
+        const user = response.data?.usuario || null;
+        const normalizedUser = user ? {
+            ...user,
+            id_usuario: user.id_usuario ?? user.idUsuario ?? user.usuario_id ?? user.id ?? null,
+            idUsuario: user.idUsuario ?? user.id_usuario ?? user.usuario_id ?? user.id ?? null,
+            id_sucursal: user.id_sucursal ?? user.idSucursal ?? user.sucursal_id ?? null,
+            idSucursal: user.idSucursal ?? user.id_sucursal ?? user.sucursal_id ?? null,
+            nombreSucursal: user.nombreSucursal || user.sucursalNombre || user.sucursal || ''
+        } : null;
+
         return {
             success: true,
             token: response.data?.token,
-            user: response.data?.usuario
+            user: normalizedUser
         };
     }
 

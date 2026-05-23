@@ -1,4 +1,4 @@
-import { normalizeApiBaseUrl, parseJsonResponse } from '../utils/formatters.js';
+import { normalizeApiBaseUrl, parseJsonResponse, unwrapApiArray } from '../utils/formatters.js';
 
 async function authorizedGet(url, token, fallbackError) {
     const response = await fetch(url, {
@@ -12,7 +12,7 @@ async function authorizedGet(url, token, fallbackError) {
         throw new Error(payload?.error || fallbackError);
     }
 
-    return Array.isArray(payload) ? payload : [];
+    return unwrapApiArray(payload);
 }
 
 export async function fetchBranches({ apiBaseUrl, token }) {

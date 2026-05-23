@@ -1,20 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
-    FlatList,
     RefreshControl,
     ScrollView,
     StyleSheet,
     Text,
-    TextInput,
     TouchableOpacity,
     View
 } from 'react-native';
 import { Modal, Portal, Divider } from 'react-native-paper';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { apiRequest } from '../services/api';
-import { Card, Screen, SectionHeader, Badge } from '../components/UI';
+import { Card, Screen, SectionHeader } from '../components/UI';
 import { brandColors } from '../theme';
 import { formatCurrency } from '../utils/format';
 
@@ -27,7 +24,6 @@ export default function MonitoringScreen({ token, navigateTo }) {
         salesToday: 0,
         profitToday: 0,
         inventoryValue: 0,
-        lowStockCount: 0,
         salesCount: 0
     });
     const [salesSplit, setSalesSplit] = useState({
@@ -35,21 +31,14 @@ export default function MonitoringScreen({ token, navigateTo }) {
         despacho: { ventasSII: 0, ventasInternas: 0, gananciaNeta: 0 }
     });
     const [branchSplitRows, setBranchSplitRows] = useState([]);
+    const [shiftPaymentRows, setShiftPaymentRows] = useState([]);
     const [recentSales, setRecentSales] = useState([]);
-    const [criticalItems, setCriticalItems] = useState([]);
-    const [showCriticalListModal, setShowCriticalListModal] = useState(false);
 
     // Modal para detalle de venta
     const [showModal, setShowModal] = useState(false);
     const [selectedSale, setSelectedSale] = useState(null);
     const [saleDetail, setSaleDetail] = useState(null);
     const [loadingDetail, setLoadingDetail] = useState(false);
-
-    // Modal para ingreso rápido de stock
-    const [showStockModal, setShowStockModal] = useState(false);
-    const [stockItem, setStockItem] = useState(null);
-    const [stockQty, setStockQty] = useState('1');
-    const [savingStock, setSavingStock] = useState(false);
 
     const fetchData = async () => {
         try {
@@ -61,18 +50,24 @@ export default function MonitoringScreen({ token, navigateTo }) {
                 apiRequest({ endpoint: '/reportes/ventas-por-sucursal', token })
             ]);
 
-            const products = Array.isArray(prodRes?.data) ? prodRes.data : [];
-            const allSales = Array.isArray(salesRes?.data) ? salesRes.data : (Array.isArray(salesRes) ? salesRes : []);
-            const branches = Array.isArray(branchRes?.data) ? branchRes.data : [];
-            const kpiData = kpisRes?.ok && kpisRes?.data ? kpisRes.data : null;
-            const branchSplitData = branchSplitRes?.ok && Array.isArray(branchSplitRes?.data) ? branchSplitRes.data : [];
+            const products = unwrapArrayResponse(prodRes);
+            const allSales = unwrapArrayResponse(salesRes);
+            const branches = unwrapArrayResponse(branchRes);
+            const kpiData = kpisRes?.ok ? unwrapObjectResponse(kpisRes) : null;
+            const branchSplitData = unwrapArrayResponse(branchSplitRes);
 
             const hoyStr = getChileDateKey(new Date());
 
             const productMap = {};
             products.forEach(p => {
-                productMap[p.id_producto] = { costo: parseFloat(p.precioCosto) || 0 };
+                const cost = resolveProductCost(p);
+                const productId = resolveProductId(p);
+                if (productId) productMap[productId] = { costo: cost };
+                resolveProductLookupKeys(p).forEach((key) => {
+                    productMap[key] = { costo: cost };
+                });
             });
+            const salesForCalculations = await enrichTodaySalesForGain(allSales, productMap, hoyStr, token);
 
             // Stats hoy
             let todaySales = 0;
@@ -86,12 +81,14 @@ export default function MonitoringScreen({ token, navigateTo }) {
             };
 
             branches.forEach(b => {
-                branchSalesMap[b.id_sucursal] = { total: 0, count: 0, name: b.nombreSucursal };
-                branchSplitMap[b.id_sucursal] = createEmptyBranchSplit(b);
+                const branchId = resolveBranchId(b);
+                if (!branchId) return;
+                branchSalesMap[branchId] = { total: 0, count: 0, name: resolveBranchName(b) };
+                branchSplitMap[branchId] = createEmptyBranchSplit(b);
             });
 
-            allSales.forEach(s => {
-                const rawDate = (s.fecha_venta || s.fechaVenta || s.created_at || '');
+            salesForCalculations.forEach(s => {
+                const rawDate = (s.fecha_venta || s.fechaVenta || s.fecha || s.created_at || '');
                 if (!rawDate) return;
 
                 const dateObj = parseSaleDateValue(rawDate);
@@ -101,7 +98,7 @@ export default function MonitoringScreen({ token, navigateTo }) {
                     const total = resolveSaleTotal(s);
                     todaySales += total;
                     todayCount++;
-                    const gain = resolveSaleGain(s, total);
+                    const gain = resolveSaleGain(s, total, productMap);
                     todayProfit += gain;
 
                     const channel = resolveSaleOrigin(s) === 'DESPACHO' ? 'despacho' : 'caja';
@@ -136,15 +133,17 @@ export default function MonitoringScreen({ token, navigateTo }) {
             const kpiProfit = parseMoney(kpiData?.gananciaNeta);
             const kpiHasUsefulTotals = kpiData && (kpiTotal > 0 || kpiProfit > 0 || todayCount === 0);
             const resolvedSplit = resolveSalesSplit(kpiData, localSplit, todayCount);
+            const splitSales = getSplitSalesTotal(resolvedSplit);
+            const splitProfit = getSplitProfitTotal(resolvedSplit);
+            const resolvedProfit = Math.max(splitProfit, kpiProfit, todayProfit);
+            const totalGains = getSplitProfitTotal(resolvedSplit) || resolvedProfit;
             const localBranchSplitRows = Object.values(branchSplitMap).filter(hasBranchSplitAmounts);
 
-            // Valorización e Inventario Crítico
+            // Valorizacion de inventario
             let totalValue = 0;
-            const tempCritical = [];
-            const lowStockThreshold = 10;
 
             const inventoryPromises = branches.map(b =>
-                apiRequest({ endpoint: `/productos/inventario?id_sucursal=${b.id_sucursal}`, token })
+                apiRequest({ endpoint: `/productos/inventario?id_sucursal=${resolveBranchId(b)}`, token })
             );
             const invResults = await Promise.all(inventoryPromises);
 
@@ -154,34 +153,24 @@ export default function MonitoringScreen({ token, navigateTo }) {
 
                 stockItems.forEach(item => {
                     const stock = parseFloat(item.stockActual || item.cantidad || item.stock || 0);
-                    const itemCosto = parseFloat(item.precioCosto || item.costo || 0) || (productMap[item.id_producto]?.costo || 0);
+                    const itemCosto = resolveProductCost(item) || lookupProductCost(productMap, item);
 
                     totalValue += (stock * itemCosto);
-
-                    if (stock >= 0 && stock <= lowStockThreshold) {
-                        tempCritical.push({
-                            ...item,
-                            id_sucursal: branch.id_sucursal,
-                            branchName: branch.nombreSucursal,
-                            stock
-                        });
-                    }
                 });
             });
 
             setStats({
-                salesToday: kpiHasUsefulTotals ? kpiTotal : todaySales,
-                profitToday: kpiHasUsefulTotals ? kpiProfit : todayProfit,
+                salesToday: kpiHasUsefulTotals ? (splitSales || kpiTotal) : todaySales,
+                profitToday: totalGains,
                 inventoryValue: totalValue,
-                lowStockCount: tempCritical.length,
                 salesCount: todayCount,
                 salesByBranch // New field
             });
             setSalesSplit(resolvedSplit);
             setBranchSplitRows(resolveBranchSplitRows(branchSplitData, localBranchSplitRows, todayCount));
+            setShiftPaymentRows(buildShiftPaymentRowsFromSales(salesForCalculations, hoyStr));
 
             setRecentSales(allSales.slice(0, 10));
-            setCriticalItems(tempCritical);
 
         } catch (error) {
             console.error('Error fetching monitoring data:', error);
@@ -202,51 +191,20 @@ export default function MonitoringScreen({ token, navigateTo }) {
         setSaleDetail(null);
         try {
             const saleId = sale.id_venta || sale.folio || sale.id;
-            // Usamos la ruta real de tu servidor: /api/ventas/:id
             const res = await apiRequest({ endpoint: `/ventas/${saleId}`, token });
             
-            if (res.ok && res.data) {
-                // Adaptamos tu estructura { cabecera, productos, pagos } a lo que la vista espera
+            const detailData = res?.data?.data || res?.data;
+            if (res.ok && detailData) {
+                // Adaptamos tu estructura { cabecera, productos, pagos } ?? lo que la vista espera
                 setSaleDetail({
-                    items: res.data.productos || [],
-                    pagos: res.data.pagos || []
+                    items: detailData.productos || [],
+                    pagos: detailData.pagos || []
                 });
             }
         } catch (error) {
             console.error('Error loading sale detail:', error);
         } finally {
             setLoadingDetail(false);
-        }
-    };
-
-    const handleQuickInbound = async () => {
-        if (!stockItem || !stockQty || parseFloat(stockQty) <= 0) return;
-        
-        setSavingStock(true);
-        try {
-            const res = await apiRequest({
-                endpoint: '/productos/ingreso',
-                method: 'POST',
-                body: {
-                    id_producto: parseInt(stockItem.id_producto),
-                    id_sucursal: parseInt(stockItem.id_sucursal),
-                    cantidadIngreso: parseFloat(stockQty),
-                    numeroFactura: 'AJUSTE-RAPIDO'
-                },
-                token
-            });
-
-            if (res.ok) {
-                Alert.alert('Éxito', 'Stock actualizado correctamente.');
-                setShowStockModal(false);
-                fetchData(); // Recargar datos
-            } else {
-                Alert.alert('Error', res.error || 'No se pudo actualizar el stock');
-            }
-        } catch (error) {
-            Alert.alert('Error', 'Fallo en la comunicación con el servidor');
-        } finally {
-            setSavingStock(false);
         }
     };
 
@@ -286,26 +244,18 @@ export default function MonitoringScreen({ token, navigateTo }) {
                         color={brandColors.accent}
                     />
                     <StatCard
-                        label="Utilidad Bruta"
+                        label="Ganancias"
                         value={formatCurrency(stats.profitToday)}
-                        caption="Margen estimado"
+                        caption="Caja + despacho"
                         icon="trending-up-outline"
                         color={brandColors.success}
                     />
                     <StatCard
-                        label="Inversión Stock"
+                        label="Inversion Stock"
                         value={formatCurrency(stats.inventoryValue)}
                         caption="Valor de inventario"
                         icon="cube-outline"
                         color={brandColors.shell}
-                    />
-                    <StatCard
-                        label="Stock Crítico"
-                        value={stats.lowStockCount}
-                        caption="Bajo umbral (10)"
-                        icon="warning-outline"
-                        color={brandColors.danger}
-                        onPress={() => setShowCriticalListModal(true)}
                     />
                 </View>
 
@@ -400,27 +350,40 @@ export default function MonitoringScreen({ token, navigateTo }) {
                     </View>
                 ) : null}
 
-                <View style={styles.section}>
-                    <SectionHeader title="Productos Críticos" compact />
-                    {criticalItems.length > 0 ? (
-                        criticalItems.map((item, idx) => (
-                            <CriticalRow 
-                                key={idx} 
-                                item={item} 
-                                onAddStock={() => {
-                                    setStockItem(item);
-                                    setStockQty('1');
-                                    setShowStockModal(true);
-                                }}
-                            />
-                        ))
-                    ) : (
-                        <Text style={styles.emptyText}>No hay alertas de stock crítico.</Text>
-                    )}
-                </View>
+                {shiftPaymentRows.length > 0 ? (
+                    <View style={styles.section}>
+                        <SectionHeader
+                            title="Ventas por turno"
+                            subtitle="Efectivo, transferencia y tarjeta separados"
+                            compact
+                        />
+                        <Card style={styles.branchContainer}>
+                            {shiftPaymentRows.map((turno, idx) => (
+                                <View key={turno.id_turno || idx} style={[styles.branchSplitBlock, idx === shiftPaymentRows.length - 1 && { borderBottomWidth: 0 }]}>
+                                    <View style={styles.branchSplitHeader}>
+                                        <View style={styles.branchInfo}>
+                                            <Text style={styles.branchName}>
+                                                {turno.nombre_usuario || `Turno ${turno.id_turno}`}
+                                            </Text>
+                                            <Text style={styles.branchCount}>
+                                                {turno.nombre_sucursal || 'Sucursal'} - {turno.estado || 'Sin estado'}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                    <View style={styles.branchSplitGrid}>
+                                        <BranchMetricCard label="Efectivo" value={turno.efectivo} tone="cash" />
+                                        <BranchMetricCard label="Transferencia" value={turno.transferencia} tone="transfer" />
+                                        <BranchMetricCard label="Tarjeta" value={turno.tarjeta} tone="card" />
+                                        <BranchMetricCard label="Total turno" value={turno.total} tone="gain" />
+                                    </View>
+                                </View>
+                            ))}
+                        </Card>
+                    </View>
+                ) : null}
 
                 <View style={[styles.section, { marginBottom: 120 }]}>
-                    <SectionHeader title="Últimas Ventas" compact />
+                    <SectionHeader title="Ultimas Ventas" compact />
                     {recentSales.length > 0 ? (
                         recentSales.map((sale, idx) => (
                             <RecentSaleRow key={idx} sale={sale} onPress={() => fetchSaleDetail(sale)} />
@@ -497,95 +460,6 @@ export default function MonitoringScreen({ token, navigateTo }) {
                     </TouchableOpacity>
                 </Modal>
 
-                <Modal
-                    visible={showStockModal}
-                    onDismiss={() => !savingStock && setShowStockModal(false)}
-                    contentContainerStyle={styles.modalSmall}
-                >
-                    <View style={styles.modalHeader}>
-                        <Text style={styles.modalTitle}>Ingreso Rápido</Text>
-                        <Text style={styles.modalSubtitle}>{stockItem?.nombreProducto}</Text>
-                        <Text style={styles.branchBadge}>{stockItem?.branchName}</Text>
-                    </View>
-                    <View style={styles.modalBodySmall}>
-                        <Text style={styles.inputLabel}>Cantidad a ingresar:</Text>
-                        <TextInput
-                            style={styles.bigInput}
-                            value={stockQty}
-                            onChangeText={setStockQty}
-                            keyboardType="numeric"
-                            autoFocus
-                            selectTextOnFocus
-                        />
-                        
-                        <TouchableOpacity 
-                            style={[styles.confirmBtn, savingStock && { opacity: 0.7 }]} 
-                            onPress={handleQuickInbound}
-                            disabled={savingStock}
-                        >
-                            {savingStock ? (
-                                <ActivityIndicator color="#fff" />
-                            ) : (
-                                <Text style={styles.confirmBtnText}>REGISTRAR STOCK</Text>
-                            )}
-                        </TouchableOpacity>
-
-                        <TouchableOpacity 
-                            style={styles.cancelBtn} 
-                            onPress={() => setShowStockModal(false)}
-                            disabled={savingStock}
-                        >
-                            <Text style={styles.cancelBtnText}>Cancelar</Text>
-                        </TouchableOpacity>
-                    </View>
-                </Modal>
-
-                <Modal
-                    visible={showCriticalListModal}
-                    onDismiss={() => setShowCriticalListModal(false)}
-                    contentContainerStyle={styles.modalScroll}
-                >
-                    <View style={styles.modalHeader}>
-                        <View style={styles.modalHandle} />
-                        <Text style={styles.modalTitle}>Stock crítico</Text>
-                        <Text style={styles.modalSubtitle}>Productos con bajo stock</Text>
-                    </View>
-                    <View style={styles.modalBody}>
-                        {criticalItems.length > 0 ? (
-                            <ScrollView
-                                showsVerticalScrollIndicator={false}
-                                contentContainerStyle={styles.criticalModalScrollContent}
-                            >
-                                {criticalItems.map((item, index) => (
-                                    <View key={`${item.id_producto || index}-${item.id_sucursal || 's'}`} style={styles.criticalModalRow}>
-                                        <View style={styles.criticalModalInfo}>
-                                            <Text style={styles.rowTitle} numberOfLines={2}>{item.nombreProducto}</Text>
-                                            <Text style={styles.rowSubtitle}>
-                                                {item.branchName} • {item.codigoBarras || 'S/C'} • {item.esPesable ? item.stock.toFixed(3) : Math.round(item.stock)} {item.esPesable ? 'Kg' : 'un.'}
-                                            </Text>
-                                        </View>
-                                        <TouchableOpacity
-                                            style={styles.criticalAdjustBtn}
-                                            onPress={() => {
-                                                setShowCriticalListModal(false);
-                                                setStockItem(item);
-                                                setStockQty('1');
-                                                setShowStockModal(true);
-                                            }}
-                                        >
-                                            <Text style={styles.criticalAdjustBtnText}>Ajustar stock</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                ))}
-                            </ScrollView>
-                        ) : (
-                            <Text style={styles.emptyText}>No hay alertas de stock crítico.</Text>
-                        )}
-                    </View>
-                    <TouchableOpacity style={styles.closeBtn} onPress={() => setShowCriticalListModal(false)}>
-                        <Text style={styles.closeBtnText}>Cerrar</Text>
-                    </TouchableOpacity>
-                </Modal>
             </Portal>
         </Screen>
     );
@@ -661,6 +535,18 @@ function MiniMetric({ label, value, accent }) {
     );
 }
 
+function getSplitSalesTotal(split = {}) {
+    return parseMoney(split?.caja?.ventasSII)
+        + parseMoney(split?.caja?.ventasInternas)
+        + parseMoney(split?.despacho?.ventasSII)
+        + parseMoney(split?.despacho?.ventasInternas);
+}
+
+function getSplitProfitTotal(split = {}) {
+    return parseMoney(split?.caja?.gananciaNeta)
+        + parseMoney(split?.despacho?.gananciaNeta);
+}
+
 function BranchMetricCard({ label, value, tone = 'caja' }) {
     const toneStyles = getChannelToneStyles(tone);
 
@@ -675,6 +561,27 @@ function BranchMetricCard({ label, value, tone = 'caja' }) {
 }
 
 function getChannelToneStyles(tone) {
+    if (tone === 'cash') {
+        return {
+            accent: '#16A34A',
+            soft: '#DCFCE7'
+        };
+    }
+
+    if (tone === 'transfer') {
+        return {
+            accent: '#0284C7',
+            soft: '#E0F2FE'
+        };
+    }
+
+    if (tone === 'card') {
+        return {
+            accent: '#7C3AED',
+            soft: '#EDE9FE'
+        };
+    }
+
     if (tone === 'despacho') {
         return {
             accent: '#0284C7',
@@ -695,20 +602,160 @@ function getChannelToneStyles(tone) {
     };
 }
 
-function CriticalRow({ item, onAddStock }) {
-    return (
-        <TouchableOpacity style={styles.row} onPress={onAddStock} activeOpacity={0.7}>
-            <View style={styles.rowInfo}>
-                <Text style={styles.rowTitle} numberOfLines={1}>{item.nombreProducto}</Text>
-                <Text style={styles.rowSubtitle}>{item.branchName} • {item.codigoBarras || 'S/C'}</Text>
-            </View>
-            <Badge
-                label={`${item.esPesable ? item.stock.toFixed(3) : Math.round(item.stock)} ${item.esPesable ? 'Kg' : 'un.'}`}
-                type="danger"
-            />
-            <Ionicons name="chevron-forward" size={16} color={brandColors.outline} style={{ marginLeft: 8 }} />
-        </TouchableOpacity>
+function unwrapArrayResponse(response) {
+    if (Array.isArray(response?.data?.data)) return response.data.data;
+    if (Array.isArray(response?.data)) return response.data;
+    if (Array.isArray(response)) return response;
+    return [];
+}
+
+function unwrapObjectResponse(response) {
+    if (response?.data?.data && typeof response.data.data === 'object') return response.data.data;
+    if (response?.data && typeof response.data === 'object') return response.data;
+    return null;
+}
+
+function resolveBranchId(branch) {
+    return branch?.id_sucursal || branch?.id || branch?.branchId;
+}
+
+function resolveBranchName(branch) {
+    return branch?.nombreSucursal || branch?.nombre_sucursal || branch?.nombre || branch?.name || 'Desconocida';
+}
+
+function normalizeShiftPaymentRow(row = {}) {
+    const efectivo = parseMoney(row.efectivo ?? row.total_efectivo);
+    const transferencia = parseMoney(row.transferencia ?? row.total_transferencia);
+    const tarjeta = parseMoney(row.tarjeta ?? row.total_tarjeta);
+    const total = parseMoney(row.total) || efectivo + transferencia + tarjeta;
+
+    return {
+        ...row,
+        id_turno: row.id_turno || row.id,
+        nombre_usuario: row.nombre_usuario || row.username || row.cajero,
+        nombre_sucursal: row.nombre_sucursal || row.nombreSucursal || row.sucursal,
+        efectivo,
+        transferencia,
+        tarjeta,
+        total
+    };
+}
+
+function hasShiftPaymentAmounts(row = {}) {
+    return parseMoney(row.efectivo) + parseMoney(row.transferencia) + parseMoney(row.tarjeta) + parseMoney(row.total) > 0;
+}
+
+function buildShiftPaymentRowsFromSales(sales = [], todayKey = getChileDateKey(new Date())) {
+    const rowsByShift = new Map();
+
+    sales.forEach((sale) => {
+        if (!isSaleReportable(sale)) return;
+
+        const rawDate = sale.fecha_venta || sale.fechaVenta || sale.fecha || sale.created_at;
+        const dateObj = parseSaleDateValue(rawDate);
+        if (!dateObj || getChileDateKey(dateObj) !== todayKey) return;
+
+        const shiftId = sale.id_turno || sale.id_cajaTurno || sale.idCajaTurno || sale.turno || sale.id_usuario || 'sin-turno';
+        const key = String(shiftId);
+        if (!rowsByShift.has(key)) {
+            rowsByShift.set(key, {
+                id_turno: shiftId,
+                nombre_usuario: sale.vendedor || sale.nombre_usuario || sale.username || 'Turno actual',
+                nombre_sucursal: sale.nombreSucursal || sale.sucursal || sale.nombre_sucursal || 'Sucursal',
+                estado: 'Abierto',
+                efectivo: 0,
+                transferencia: 0,
+                tarjeta: 0,
+                total: 0
+            });
+        }
+
+        const row = rowsByShift.get(key);
+        const total = resolveSaleTotal(sale);
+        const payments = resolveSalePaymentBreakdown(sale, total);
+
+        row.efectivo += payments.efectivo;
+        row.transferencia += payments.transferencia;
+        row.tarjeta += payments.tarjeta;
+
+        row.total += total;
+    });
+
+    return Array.from(rowsByShift.values()).filter(hasShiftPaymentAmounts);
+}
+
+function resolveSalePaymentBreakdown(sale = {}, total = 0) {
+    const direct = {
+        efectivo: parseMoney(sale.pago_efectivo ?? sale.pagoEfectivo ?? sale.efectivo ?? sale.total_efectivo),
+        transferencia: parseMoney(sale.pago_transferencia ?? sale.pagoTransferencia ?? sale.transferencia ?? sale.total_transferencia),
+        tarjeta: parseMoney(sale.pago_tarjeta ?? sale.pagoTarjeta ?? sale.tarjeta ?? sale.total_tarjeta)
+    };
+
+    if (direct.efectivo + direct.transferencia + direct.tarjeta > 0) {
+        return direct;
+    }
+
+    const pagos = extractSalePayments(sale);
+    if (pagos.length > 0) {
+        return pagos.reduce((acc, payment) => {
+            const amount = parseMoney(payment.monto_pagado ?? payment.montoPago ?? payment.monto ?? payment.amount);
+            const method = normalizePaymentMethodText(payment);
+
+            if (method.includes('transfe')) {
+                acc.transferencia += amount;
+            } else if (method.includes('tarjeta') || method.includes('debito') || method.includes('credito')) {
+                acc.tarjeta += amount;
+            } else {
+                acc.efectivo += amount;
+            }
+
+            return acc;
+        }, { efectivo: 0, transferencia: 0, tarjeta: 0 });
+    }
+
+    const method = normalizePaymentMethodText(sale);
+    if (method.includes('transfe')) return { efectivo: 0, transferencia: total, tarjeta: 0 };
+    if (method.includes('tarjeta') || method.includes('debito') || method.includes('credito')) return { efectivo: 0, transferencia: 0, tarjeta: total };
+    return { efectivo: total, transferencia: 0, tarjeta: 0 };
+}
+
+function extractSalePayments(sale = {}) {
+    const candidates = [
+        sale.pagos,
+        sale.payments,
+        sale.pagos_mixtos,
+        sale.paymentDetails
+    ];
+
+    return candidates.find(Array.isArray) || [];
+}
+
+function hasSalePaymentAmounts(sale = {}) {
+    const directTotal = parseMoney(sale.pago_efectivo ?? sale.pagoEfectivo ?? sale.efectivo ?? sale.total_efectivo)
+        + parseMoney(sale.pago_transferencia ?? sale.pagoTransferencia ?? sale.transferencia ?? sale.total_transferencia)
+        + parseMoney(sale.pago_tarjeta ?? sale.pagoTarjeta ?? sale.tarjeta ?? sale.total_tarjeta);
+
+    if (directTotal > 0) return true;
+
+    return extractSalePayments(sale).some((payment) =>
+        parseMoney(payment.monto_pagado ?? payment.montoPago ?? payment.monto ?? payment.amount) > 0
     );
+}
+
+function normalizePaymentMethodText(sale = {}) {
+    return String(
+        sale.medio_pago
+        || sale.medioPago
+        || sale.metodo_pago
+        || sale.metodoPago
+        || sale.metodo
+        || sale.nombre
+        || sale.method
+        || sale.payment_method
+        || sale.forma_pago
+        || sale.formaPago
+        || 'efectivo'
+    ).toLowerCase();
 }
 
 function resolveSalesSplit(kpiData, localSplit, todayCount) {
@@ -732,7 +779,30 @@ function resolveSalesSplit(kpiData, localSplit, todayCount) {
         + kpiSplit.caja.gananciaNeta
         + kpiSplit.despacho.gananciaNeta;
 
-    return kpiData && (kpiTotal > 0 || todayCount === 0) ? kpiSplit : localSplit;
+    if (!kpiData || (kpiTotal <= 0 && todayCount > 0)) {
+        return localSplit;
+    }
+
+    return {
+        caja: mergeSplitChannel(kpiSplit.caja, localSplit.caja),
+        despacho: mergeSplitChannel(kpiSplit.despacho, localSplit.despacho)
+    };
+}
+
+function mergeSplitChannel(apiChannel = {}, localChannel = {}) {
+    const apiSalesSII = parseMoney(apiChannel.ventasSII);
+    const apiSalesInternas = parseMoney(apiChannel.ventasInternas);
+    const localSalesSII = parseMoney(localChannel.ventasSII);
+    const localSalesInternas = parseMoney(localChannel.ventasInternas);
+
+    return {
+        ventasSII: apiSalesSII || localSalesSII,
+        ventasInternas: apiSalesInternas || localSalesInternas,
+        gananciaNeta: Math.max(
+            parseMoney(apiChannel.gananciaNeta),
+            parseMoney(localChannel.gananciaNeta)
+        )
+    };
 }
 
 function resolveBranchSplitRows(apiRows, localRows, todayCount) {
@@ -743,8 +813,8 @@ function resolveBranchSplitRows(apiRows, localRows, todayCount) {
 
 function createEmptyBranchSplit(branch) {
     return {
-        id_sucursal: branch.id_sucursal,
-        nombreSucursal: branch.nombreSucursal || 'Desconocida',
+        id_sucursal: resolveBranchId(branch),
+        nombreSucursal: resolveBranchName(branch),
         ventasSIICaja: 0,
         ventasInternasCaja: 0,
         gananciaCaja: 0,
@@ -818,12 +888,156 @@ function resolveSaleTotal(sale) {
     return parseMoney(sale.total ?? sale.monto_total ?? sale.monto ?? sale.totalVenta ?? sale.total_venta ?? 0);
 }
 
-function resolveSaleGain(sale, total) {
+async function enrichTodaySalesForGain(sales, productMap, todayKey, token) {
+    return Promise.all((sales || []).map(async (sale) => {
+        if (!isSaleReportable(sale)) return sale;
+
+        const rawDate = sale.fecha_venta || sale.fechaVenta || sale.fecha || sale.created_at;
+        const dateObj = parseSaleDateValue(rawDate);
+        if (!dateObj || getChileDateKey(dateObj) !== todayKey) return sale;
+
+        const total = resolveSaleTotal(sale);
+        const hasGain = resolveSaleGain(sale, total, productMap) !== 0;
+        const hasItems = extractSaleItems(sale).length > 0;
+        const hasPaymentAmounts = hasSalePaymentAmounts(sale);
+
+        if (hasGain && hasItems && hasPaymentAmounts) {
+            return sale;
+        }
+
+        const saleId = sale.id_venta || sale.id || sale.folio;
+        if (!saleId) return sale;
+
+        try {
+            const res = await apiRequest({ endpoint: `/ventas/${saleId}`, token });
+            if (!res?.ok) return sale;
+
+            const detail = res?.data?.data || res?.data || {};
+            const detailItems = detail.productos || detail.items || detail.detalle || detail.detalle_productos || [];
+
+            return {
+                ...sale,
+                productos: Array.isArray(detailItems) ? detailItems : sale.productos,
+                pagos: detail.pagos || sale.pagos
+            };
+        } catch (error) {
+            return sale;
+        }
+    }));
+}
+
+function resolveSaleGain(sale, total, productMap = {}) {
     const explicitGain = parseMoney(sale.gananciaNeta ?? sale.ganancia_neta ?? sale.utilidad ?? sale.profit ?? 0);
     if (explicitGain) return explicitGain;
 
     const cost = parseMoney(sale.costo_total ?? sale.costoTotal ?? 0);
-    return cost ? total - cost : total * 0.22;
+    if (cost) return total - cost;
+
+    const itemGain = calculateItemsGain(extractSaleItems(sale), productMap);
+    return itemGain || 0;
+}
+
+function calculateItemsGain(items, productMap = {}) {
+    if (!Array.isArray(items) || items.length === 0) return 0;
+
+    return items.reduce((sum, item) => {
+        const quantity = resolveItemQuantity(item);
+        if (quantity <= 0) return sum;
+
+        const unitCost = resolveProductCost(item) || lookupProductCost(productMap, item);
+        const unitPrice = resolveItemUnitPrice(item);
+        const subtotal = resolveItemSubtotal(item, unitPrice, quantity);
+
+        if (!subtotal || !unitCost) return sum;
+        return sum + (subtotal - (unitCost * quantity));
+    }, 0);
+}
+
+function extractSaleItems(sale = {}) {
+    const candidates = [
+        sale.productos,
+        sale.items,
+        sale.detalle,
+        sale.detalle_productos,
+        sale.carrito
+    ];
+
+    return candidates.find(Array.isArray) || [];
+}
+
+function resolveProductId(product = {}) {
+    return product.id_producto
+        || product.producto_id
+        || product.idProducto
+        || product.id
+        || product.productId
+        || product.idProduct
+        || product.id_producto_fk;
+}
+
+function resolveProductLookupKeys(product = {}) {
+    const keys = [];
+    const productId = resolveProductId(product);
+    const barcode = product.codigoBarras || product.codigo_barra_externo || product.codigo_barra || product.barcode;
+    const name = product.nombreProducto || product.nombre || product.name;
+
+    if (productId) keys.push(`id:${productId}`);
+    if (barcode) keys.push(`barcode:${String(barcode).trim().toLowerCase()}`);
+    if (name) keys.push(`name:${String(name).trim().toLowerCase()}`);
+
+    return keys;
+}
+
+function lookupProductCost(productMap = {}, product = {}) {
+    for (const key of resolveProductLookupKeys(product)) {
+        const cost = productMap[key]?.costo;
+        if (cost) return cost;
+    }
+
+    const productId = resolveProductId(product);
+    return productId ? (productMap[productId]?.costo || 0) : 0;
+}
+
+function resolveProductCost(product = {}) {
+    return parseMoney(
+        product.precioCostoVenta
+        ?? product.precio_costo_venta
+        ?? product.precioCosto
+        ?? product.precio_costo
+        ?? product.costoProducto
+        ?? product.costo_producto
+        ?? product.costo_unitario
+        ?? product.costo
+        ?? product.cost
+        ?? 0
+    );
+}
+
+function resolveItemQuantity(item = {}) {
+    return parseMoney(item.cantidad ?? item.qty ?? item.quantity ?? item.peso ?? 0);
+}
+
+function resolveItemUnitPrice(item = {}) {
+    return parseMoney(
+        item.precioVenta
+        ?? item.precio_venta
+        ?? item.precio_unitario
+        ?? item.precioUnitario
+        ?? item.unitPrice
+        ?? item.price
+        ?? 0
+    );
+}
+
+function resolveItemSubtotal(item = {}, unitPrice = 0, quantity = 0) {
+    return parseMoney(
+        item.subtotalLinea
+        ?? item.subtotal_linea
+        ?? item.subtotal
+        ?? item.total_linea
+        ?? item.lineTotal
+        ?? 0
+    ) || (unitPrice * quantity);
 }
 
 function parseSaleDateValue(rawDate) {
@@ -880,13 +1094,13 @@ function parseMoney(value) {
 
 function RecentSaleRow({ sale, onPress }) {
     const total = resolveSaleTotal(sale);
-    const dateStr = (sale.fecha_venta || sale.fechaVenta || sale.created_at || '').slice(11, 16);
+    const dateStr = (sale.fecha_venta || sale.fechaVenta || sale.fecha || sale.created_at || '').slice(11, 16);
 
     return (
         <TouchableOpacity style={styles.row} onPress={onPress} activeOpacity={0.7}>
             <View style={styles.rowInfo}>
                 <Text style={styles.rowTitle}>Ticket {sale.id_venta || sale.folio || '#'}</Text>
-                <Text style={styles.rowSubtitle}>{dateStr} • {sale.medio_pago || 'Efectivo'}</Text>
+                <Text style={styles.rowSubtitle}>{dateStr} - {sale.medio_pago || 'Efectivo'}</Text>
             </View>
             <View style={styles.rowValueContainer}>
                 <Text style={styles.rowValue}>{formatCurrency(total)}</Text>
@@ -1113,32 +1327,6 @@ const styles = StyleSheet.create({
         fontWeight: '900',
         color: brandColors.accent
     },
-    criticalModalRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: brandColors.outline
-    },
-    criticalModalInfo: {
-        flex: 1,
-        marginRight: 12
-    },
-    criticalModalScrollContent: {
-        paddingBottom: 12
-    },
-    criticalAdjustBtn: {
-        backgroundColor: brandColors.accentSoft,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        borderRadius: 12
-    },
-    criticalAdjustBtnText: {
-        color: brandColors.accent,
-        fontWeight: '900',
-        fontSize: 12
-    },
     modalScroll: {
         backgroundColor: brandColors.surface,
         margin: 20,
@@ -1287,71 +1475,4 @@ const styles = StyleSheet.create({
         fontSize: 14,
         textTransform: 'uppercase'
     },
-    modalSmall: {
-        backgroundColor: brandColors.surface,
-        margin: 40,
-        borderRadius: 24,
-        overflow: 'hidden',
-        elevation: 10
-    },
-    modalBodySmall: {
-        padding: 24,
-        alignItems: 'center'
-    },
-    inputLabel: {
-        fontSize: 13,
-        fontWeight: '700',
-        color: brandColors.textMuted,
-        marginBottom: 12
-    },
-    bigInput: {
-        width: '100%',
-        height: 60,
-        backgroundColor: brandColors.background,
-        borderRadius: 16,
-        fontSize: 28,
-        fontWeight: '900',
-        color: brandColors.text,
-        textAlign: 'center',
-        borderWidth: 2,
-        borderColor: brandColors.outline,
-        marginBottom: 24
-    },
-    confirmBtn: {
-        width: '100%',
-        height: 54,
-        backgroundColor: brandColors.accent,
-        borderRadius: 16,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 12,
-        shadowColor: brandColors.accent,
-        shadowOpacity: 0.3,
-        shadowRadius: 10,
-        shadowOffset: { width: 0, height: 4 }
-    },
-    confirmBtnText: {
-        color: '#ffffff',
-        fontWeight: '900',
-        fontSize: 15
-    },
-    cancelBtn: {
-        padding: 12
-    },
-    cancelBtnText: {
-        color: brandColors.textMuted,
-        fontWeight: '700',
-        fontSize: 14
-    },
-    branchBadge: {
-        fontSize: 10,
-        fontWeight: '900',
-        color: brandColors.accent,
-        backgroundColor: brandColors.accentSoft,
-        paddingHorizontal: 8,
-        paddingVertical: 2,
-        borderRadius: 6,
-        marginTop: 6,
-        textTransform: 'uppercase'
-    }
 });

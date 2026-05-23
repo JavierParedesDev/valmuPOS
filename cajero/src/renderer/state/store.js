@@ -15,6 +15,7 @@ export const SESSION_KEYS = {
     saleReceipts: 'valmu_cajero_sale_receipts',
     dispatchReceipts: 'valmu_cajero_dispatch_receipts',
     saleDraft: 'valmu_cajero_sale_draft',
+    dispatchDraft: 'valmu_cajero_dispatch_draft',
     pendingBoletaEnvelope: 'valmu_cajero_pending_boleta_envelope'
 };
 
@@ -125,7 +126,8 @@ export const saleState = {
     cart: [],
     documentType: 'Boleta',
     customer: null,
-    collaboratorDiscountEnabled: false
+    collaboratorDiscountEnabled: false,
+    extraChargeEnabled: false
 };
 
 export const cashSessionState = {

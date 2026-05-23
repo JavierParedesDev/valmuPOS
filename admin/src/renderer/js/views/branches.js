@@ -54,12 +54,40 @@ function bindBranchSelectionListener() {
 async function refreshCurrentBranchInventory() {
     if (!adminBranchInventoryPagination.branchId) return;
 
-    await renderBranchInventory(
-        adminBranchInventoryPagination.branchId,
-        adminBranchInventoryPagination.branchName,
-        adminBranchInventoryPagination.page,
-        { isBodegueroView: adminBranchInventoryPagination.isBodegueroView }
-    );
+    try {
+        await loadBranchInventoryData(
+            adminBranchInventoryPagination.branchId,
+            adminBranchInventoryPagination.isBodegueroView
+        );
+        renderBranchInventoryRows();
+    } catch (error) {
+        console.warn('No se pudo refrescar inventario sin recargar la vista:', error);
+    }
+}
+
+async function loadBranchInventoryData(branchId, isBodegueroView = false) {
+    const token = getAuthToken();
+    const response = await apiRequest({ endpoint: `/productos/inventario?id_sucursal=${branchId}`, token });
+    const branchInventory = Array.isArray(response) ? response : (Array.isArray(response?.data) ? response.data : []);
+
+    if (isBodegueroView) {
+        const branchesResponse = await apiRequest({ endpoint: '/sucursales', token });
+        const branches = Array.isArray(branchesResponse?.data) ? branchesResponse.data : [];
+        const inventoryResults = await Promise.all(
+            branches.map((branch) => apiRequest({ endpoint: `/productos/inventario?id_sucursal=${branch.id_sucursal}`, token }))
+        );
+        const stockMatrix = buildBranchStockMatrix(branches, inventoryResults);
+
+        window.currentBranchStock = branchInventory.map((item) => ({
+            ...item,
+            stockPorSucursal: (stockMatrix.get(Number(item.id_producto)) || []).sort((left, right) =>
+                String(left.branchName || '').localeCompare(String(right.branchName || ''), 'es', { sensitivity: 'base' })
+            )
+        }));
+        return;
+    }
+
+    window.currentBranchStock = branchInventory;
 }
 
 function startBranchInventoryRefreshTimer() {
@@ -289,7 +317,9 @@ async function renderBranchInventory(branchId, branchName, page = 1, options = {
     adminBranchInventoryPagination.page = Math.max(1, page);
     adminBranchInventoryPagination.branchId = branchId;
     adminBranchInventoryPagination.branchName = branchName;
-    adminBranchInventoryPagination.inventorySearch = '';
+    adminBranchInventoryPagination.inventorySearch = options?.preserveSearch
+        ? adminBranchInventoryPagination.inventorySearch
+        : '';
     adminBranchInventoryPagination.isBodegueroView = isBodegueroView;
 
     contentArea.innerHTML = `
@@ -307,7 +337,7 @@ async function renderBranchInventory(branchId, branchName, page = 1, options = {
         </div>
 
         <div class="mb-4">
-            <input type="text" id="branch-stock-search-input" class="form-control max-w-md" placeholder="Buscar producto por nombre o código...">
+            <input type="text" id="branch-stock-search-input" class="form-control max-w-md" placeholder="Buscar producto por nombre o código..." value="${adminBranchInventoryPagination.inventorySearch}">
         </div>
 
         <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -356,27 +386,7 @@ async function renderBranchInventory(branchId, branchName, page = 1, options = {
     });
 
     try {
-        const token = getAuthToken();
-        const response = await apiRequest({ endpoint: `/productos/inventario?id_sucursal=${branchId}`, token });
-        const branchInventory = Array.isArray(response) ? response : (Array.isArray(response?.data) ? response.data : []);
-
-        if (isBodegueroView) {
-            const branchesResponse = await apiRequest({ endpoint: '/sucursales', token });
-            const branches = Array.isArray(branchesResponse?.data) ? branchesResponse.data : [];
-            const inventoryResults = await Promise.all(
-                branches.map((branch) => apiRequest({ endpoint: `/productos/inventario?id_sucursal=${branch.id_sucursal}`, token }))
-            );
-            const stockMatrix = buildBranchStockMatrix(branches, inventoryResults);
-
-            window.currentBranchStock = branchInventory.map((item) => ({
-                ...item,
-                stockPorSucursal: (stockMatrix.get(Number(item.id_producto)) || []).sort((left, right) =>
-                    String(left.branchName || '').localeCompare(String(right.branchName || ''), 'es', { sensitivity: 'base' })
-                )
-            }));
-        } else {
-            window.currentBranchStock = branchInventory;
-        }
+        await loadBranchInventoryData(branchId, isBodegueroView);
         renderBranchInventoryRows();
         startBranchInventoryRefreshTimer();
     } catch (e) {
@@ -520,6 +530,16 @@ function openAdjustmentFormByProductId(productId, branchId, branchName, stayInAs
 
         if (res.ok) {
             Toast.fire({ icon: 'success', title: 'Stock actualizado' });
+            item.stockActual = nuevaCantidad;
+            item.cantidad = nuevaCantidad;
+            if (Array.isArray(item.stockPorSucursal)) {
+                item.stockPorSucursal = item.stockPorSucursal.map((branchStock) => {
+                    if (Number(branchStock.branchId) !== Number(branchId)) return branchStock;
+                    return { ...branchStock, cantidad: nuevaCantidad };
+                });
+            }
+            closeModal();
+            renderBranchInventoryRows();
             window.dispatchEvent(new CustomEvent('valmu:inventory-changed', {
                 detail: {
                     source: 'branches',
@@ -529,8 +549,6 @@ function openAdjustmentFormByProductId(productId, branchId, branchName, stayInAs
                     at: Date.now()
                 }
             }));
-            closeModal();
-            renderBranchInventory(branchId, branchName, adminBranchInventoryPagination.page, { isBodegueroView: stayInAssignedBranchView });
         } else {
             Swal.fire('Error', res.data?.error || 'No se pudo actualizar', 'error');
         }

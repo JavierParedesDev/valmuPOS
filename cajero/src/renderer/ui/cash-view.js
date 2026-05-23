@@ -173,7 +173,16 @@ export function renderSalesHistoryView({ salesHistoryState, openSaleCancellation
 
     list.innerHTML = selectedItems.map((sale) => {
         const documentBadge = `<span class="sale-history-badge ${sale.isFiscal ? 'is-fiscal' : 'is-internal'}">${escapeHtml(sale.document)}</span>`;
-        const paymentBadge = `<span class="sale-history-badge is-payment">${escapeHtml(sale.paymentMethod)}</span>`;
+        let paymentBadge = `<span class="sale-history-badge is-payment">${escapeHtml(sale.paymentMethod)}</span>`;
+        if (String(sale.paymentMethod).toUpperCase() === 'MIXTO') {
+            const parts = [];
+            if (sale.paymentCash > 0) parts.push(`Ef: $${formatCurrency(sale.paymentCash)}`);
+            if (sale.paymentCard > 0) parts.push(`Tarj: $${formatCurrency(sale.paymentCard)}`);
+            if (sale.paymentTransfer > 0) parts.push(`Transf: $${formatCurrency(sale.paymentTransfer)}`);
+            if (parts.length > 0) {
+                paymentBadge += ` <span class="sale-history-badge is-payment" style="background: rgba(139, 92, 246, 0.1); color: #5b21b6; border: 1px solid rgba(139, 92, 246, 0.25); text-transform: none; font-size: 0.72rem;">${parts.join(' / ')}</span>`;
+            }
+        }
 
         const actionButtons = isCancelledTab
             ? `<button class="btn btn-ghost btn-sm product-action-btn" type="button" onclick="event.stopPropagation(); window.openSaleReceiptModal(${sale.id})">Comprobante</button>`

@@ -30,6 +30,10 @@ import {
 import { brandColors } from '../theme';
 import { formatCurrency, filterProductsLocally } from '../utils/format';
 
+function createMovementRequestId(prefix = 'MOV') {
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export default function MovementsScreen({ token, navigateTo, params, clearParams }) {
     const [loading, setLoading] = useState(true);
     const [branches, setBranches] = useState([]);
@@ -46,6 +50,7 @@ export default function MovementsScreen({ token, navigateTo, params, clearParams
 
     // Cache products for local search
     const productsRef = useRef([]);
+    const inboundBatchIdRef = useRef(createMovementRequestId('INGRESO'));
 
     const fetchData = async () => {
         setLoading(true);
@@ -55,13 +60,13 @@ export default function MovementsScreen({ token, navigateTo, params, clearParams
                 apiRequest({ endpoint: '/productos?limit=1000', token })
             ]);
 
-            const branchData = Array.isArray(branchRes?.data) ? branchRes.data : [];
+            const branchData = Array.isArray(branchRes.data) ? branchRes.data : [];
             setBranches(branchData);
             if (branchData.length > 0) {
                 setSelectedBranch(String(branchData[0].id_sucursal));
             }
 
-            productsRef.current = Array.isArray(prodRes?.data) ? prodRes.data : [];
+            productsRef.current = Array.isArray(prodRes.data) ? prodRes.data : [];
         } catch (error) {
             console.error('Error fetching data for movements:', error);
         } finally {
@@ -132,6 +137,8 @@ export default function MovementsScreen({ token, navigateTo, params, clearParams
     };
 
     const handleSubmit = async () => {
+        if (submitting) return;
+
         if (inboundItems.length === 0) {
             Alert.alert('Vacio', 'Debes agregar al menos un producto.');
             return;
@@ -151,7 +158,8 @@ export default function MovementsScreen({ token, navigateTo, params, clearParams
                         id_producto: item.product.id_producto,
                         id_sucursal: parseInt(selectedBranch),
                         cantidadIngreso: item.quantity,
-                        numeroFactura: invoiceNumber || null
+                        numeroFactura: invoiceNumber || null,
+                        comprobanteMov: `${inboundBatchIdRef.current}-${item.product.id_producto}`
                     },
                     token
                 });
@@ -166,6 +174,7 @@ export default function MovementsScreen({ token, navigateTo, params, clearParams
             Alert.alert('Exito', `Se han ingresado ${inboundItems.length} productos correctamente.`);
             setInboundItems([]);
             setInvoiceNumber('');
+            inboundBatchIdRef.current = createMovementRequestId('INGRESO');
         } catch (error) {
             Alert.alert('Error', 'Hubo un fallo en la conexión.');
         } finally {
@@ -438,7 +447,7 @@ const styles = StyleSheet.create({
     },
     footer: {
         position: 'absolute',
-        bottom: 110, // Elevado para que no quede detrás del dock (que está a bottom:30 + 72 height)
+        bottom: 110, // Elevado para que no quede detrás del dock (que está ? bottom:30 + 72 height)
         left: 20,
         right: 20,
         backgroundColor: brandColors.surface,

@@ -94,14 +94,29 @@ function finanzasRenderDesgloseCajeros() {
             };
         }
 
-        if (metodoPago.includes('efectivo')) {
-            acc[key].efectivo += monto;
-        } else if (finanzasEsMetodoTarjeta(metodoPago)) {
-            acc[key].tarjeta += monto;
-        } else if (metodoPago.includes('transfer')) {
-            acc[key].transferencia += monto;
+        const pagoEfectivo = parseNumber(venta.pago_efectivo || 0);
+        const pagoTarjeta = parseNumber(venta.pago_tarjeta || 0);
+        const pagoTransferencia = parseNumber(venta.pago_transferencia || 0);
+
+        if (pagoEfectivo > 0 || pagoTarjeta > 0 || pagoTransferencia > 0) {
+            acc[key].efectivo += pagoEfectivo;
+            acc[key].tarjeta += pagoTarjeta;
+            acc[key].transferencia += pagoTransferencia;
+            
+            // Any remaining total that wasn't captured in the 3 main fields goes to "otros"
+            const totalCapturado = pagoEfectivo + pagoTarjeta + pagoTransferencia;
+            acc[key].otros += Math.max(0, monto - totalCapturado);
         } else {
-            acc[key].otros += monto;
+            // Fallback for old sales or sales without detailed breakdown fields
+            if (metodoPago.includes('efectivo')) {
+                acc[key].efectivo += monto;
+            } else if (finanzasEsMetodoTarjeta(metodoPago)) {
+                acc[key].tarjeta += monto;
+            } else if (metodoPago.includes('transfer')) {
+                acc[key].transferencia += monto;
+            } else {
+                acc[key].otros += monto;
+            }
         }
 
         acc[key].total += monto;
@@ -174,10 +189,19 @@ async function renderFinances() {
                     <p class="text-gray-400 text-sm font-medium">Análisis de recaudación y auditoría de transacciones</p>
                 </div>
                 <div class="flex items-center gap-4">
+                    <div class="flex items-center gap-2 bg-white border border-orange-100 rounded-2xl p-1 shadow-sm">
+                        <input type="number" id="fin-audit-amount" class="pl-4 py-2 bg-transparent text-xs font-black w-24 outline-none" placeholder="Monto" value="9000">
+                        <button class="px-4 py-2 bg-orange-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-orange-700 transition-colors shadow-sm" onclick="finanzasAuditarMonto()">
+                            <i class="bi bi-search"></i> Buscar Descuadre
+                        </button>
+                    </div>
                     <label class="flex items-center gap-2 text-sm text-gray-600">
                         <input type="checkbox" id="fin-include-all" checked />
                         <span class="text-[12px]">Incluir ventas de todas las cajas</span>
                     </label>
+                    <button class="flex items-center gap-2 px-6 py-3 bg-white border border-gray-100 rounded-2xl text-gray-400 hover:text-red-600 hover:border-red-100 transition-all font-black text-[10px] uppercase tracking-widest shadow-sm" onclick="finanzasExportarPDF()">
+                        <i class="bi bi-file-earmark-pdf text-lg"></i> Exportar PDF
+                    </button>
                     <button class="flex items-center gap-2 px-6 py-3 bg-white border border-gray-100 rounded-2xl text-gray-400 hover:text-orange-600 hover:border-orange-100 transition-all font-black text-[10px] uppercase tracking-widest shadow-sm" onclick="finanzasCargarVentas()">
                         <i class="bi bi-arrow-clockwise text-lg"></i> Sincronizar Datos
                     </button>
@@ -283,7 +307,13 @@ async function renderFinances() {
                                 <option value="">Todos los medios</option>
                                 <option value="efectivo">Efectivo</option>
                                 <option value="tarjeta">Tarjeta</option>
-                                <option value="transferencia">Transferencia</option>
+                                <option value="transfer">Transferencia</option>
+                            </select>
+                        </div>
+                        <div class="relative group">
+                            <i class="bi bi-person absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
+                            <select id="fin-filtro-cajero" class="pl-12 pr-4 py-3 bg-white border border-gray-100 rounded-2xl text-xs font-bold shadow-sm focus:border-orange-200 outline-none w-48 transition-all" onchange="finanzasAplicarFiltros()">
+                                <option value="">Todos los cajeros</option>
                             </select>
                         </div>
                         <button class="h-11 px-4 text-[10px] font-black text-gray-400 hover:text-orange-600 uppercase tracking-widest transition-colors" onclick="
@@ -292,12 +322,14 @@ async function renderFinances() {
                             document.getElementById('fin-busqueda').value='';
                             document.getElementById('fin-filtro-sucursal').value='';
                             document.getElementById('fin-filtro-medio').value='';
+                            document.getElementById('fin-filtro-cajero').value='';
                             finanzasAplicarFiltros()">
                             Limpiar Filtros
                         </button>
                     </div>
                     <div id="fin-resumen-filtro" class="px-6 py-2 bg-gray-900 rounded-full text-[10px] font-black text-white uppercase tracking-widest shadow-lg shadow-gray-200/50"></div>
                 </div>
+
 
                 <div class="overflow-x-auto">
                     <table class="w-full text-left">
@@ -357,6 +389,17 @@ async function finanzasCargarUsuarios() {
             if (id > 0) acc[id] = usuario;
             return acc;
         }, {});
+
+        // Llenar el filtro de cajeros
+        const select = document.getElementById('fin-filtro-cajero');
+        if (select) {
+            const sortedUsers = Object.values(finanzasUsuariosMap).sort((a, b) => (a.nombre || '').localeCompare(b.nombre || ''));
+            select.innerHTML = '<option value="">Todos los cajeros</option>' +
+                sortedUsers.map(u => {
+                    const nombre = u.nombreCompleto || u.nombre || u.username || `Usuario #${u.id_usuario}`;
+                    return `<option value="${u.id_usuario || u.id}">${nombre}</option>`;
+                }).join('');
+        }
     } catch (error) {
         console.warn('No se pudieron cargar usuarios para el desglose de cajeros:', error);
         finanzasUsuariosMap = {};
@@ -445,6 +488,7 @@ function finanzasAplicarFiltros() {
     const sucursal = document.getElementById('fin-filtro-sucursal')?.value || '';
     const sucursalLabel = document.getElementById('fin-filtro-sucursal')?.selectedOptions?.[0]?.textContent?.trim() || '';
     const medio = document.getElementById('fin-filtro-medio')?.value || '';
+    const cajeroId = document.getElementById('fin-filtro-cajero')?.value || '';
 
     finanzasState.filtered = finanzasState.ventas.filter((v) => {
         // 1. Filtro de Estado: Excluir solo ventas anuladas/canceladas para máxima compatibilidad
@@ -480,12 +524,27 @@ function finanzasAplicarFiltros() {
 
         if (medio) {
             const metodoPago = finanzasNormalizarMetodoPago(v);
+            const pagoTarjeta = parseNumber(v.pago_tarjeta || 0);
+            const pagoTransferencia = parseNumber(v.pago_transferencia || 0);
+            const pagoEfectivo = parseNumber(v.pago_efectivo || 0);
+
             if (medio === 'tarjeta') {
-                if (!finanzasEsMetodoTarjeta(metodoPago)) return false;
+                if (!finanzasEsMetodoTarjeta(metodoPago) && pagoTarjeta <= 0) return false;
+            } else if (medio === 'efectivo') {
+                if (!metodoPago.includes('efectivo') && pagoEfectivo <= 0) return false;
+            } else if (medio === 'transfer') {
+                if (!metodoPago.includes('transfer') && pagoTransferencia <= 0) return false;
             } else {
                 if (!metodoPago.includes(medio)) return false;
             }
         }
+
+        // 3. Filtro de Cajero
+        if (cajeroId) {
+            const idVentaUser = Number(v.id_usuario || v.idUsuario || v.id_vendedor || 0);
+            if (String(idVentaUser) !== String(cajeroId)) return false;
+        }
+
         return true;
     });
 
@@ -579,8 +638,17 @@ function finanzasRenderTabla() {
                     <td class="px-8 py-4 text-sm font-bold text-gray-700">${sucursal}</td>
                     <td class="px-8 py-4 font-black text-gray-900 text-base">$${monto.toLocaleString('es-CL')}</td>
                     <td class="px-8 py-4">
-                         <div class="flex items-center gap-1.5 text-xs font-bold text-gray-500">
-                            <i class="bi bi-wallet2 text-gray-300"></i> ${metodoPago}
+                         <div class="flex flex-col gap-0.5">
+                            <div class="flex items-center gap-1.5 text-xs font-bold text-gray-500">
+                                <i class="bi bi-wallet2 text-gray-300"></i> ${metodoPago.toUpperCase()}
+                            </div>
+                            ${(parseNumber(v.pago_efectivo) > 0 || parseNumber(v.pago_tarjeta) > 0 || parseNumber(v.pago_transferencia) > 0) ? `
+                                <div class="flex flex-wrap gap-x-2 gap-y-0.5 mt-1 opacity-80">
+                                    ${parseNumber(v.pago_efectivo) > 0 ? `<span class="text-[9px] font-black text-green-600 bg-green-50 px-1 rounded">EF: $${parseNumber(v.pago_efectivo).toLocaleString('es-CL')}</span>` : ''}
+                                    ${parseNumber(v.pago_tarjeta) > 0 ? `<span class="text-[9px] font-black text-blue-600 bg-blue-50 px-1 rounded">TRJ: $${parseNumber(v.pago_tarjeta).toLocaleString('es-CL')}</span>` : ''}
+                                    ${parseNumber(v.pago_transferencia) > 0 ? `<span class="text-[9px] font-black text-purple-600 bg-purple-50 px-1 rounded">TRF: $${parseNumber(v.pago_transferencia).toLocaleString('es-CL')}</span>` : ''}
+                                </div>
+                            ` : ''}
                          </div>
                     </td>
                     <td class="px-8 py-4">
@@ -872,5 +940,207 @@ async function finanzasImprimirTicket(ventaData) {
     } catch (error) {
         console.error('Error al imprimir:', error);
         Swal.fire('Error de impresion', error.message, 'error');
+    }
+}
+async function finanzasAuditarMonto() {
+    const targetInput = document.getElementById('fin-audit-amount');
+    const target = Math.abs(parseNumber(targetInput?.value || 0));
+    if (target <= 0) {
+        Swal.fire('Error', 'Ingresa un monto válido para buscar.', 'warning');
+        return;
+    }
+
+    const ventas = finanzasState.filtered;
+    const matches = [];
+
+    // 1. Single sales that match exactly in total or in a breakdown field
+    ventas.forEach(v => {
+        const total = parseNumber(v.total || v.monto_total || 0);
+        const card = parseNumber(v.pago_tarjeta || 0);
+        const cash = parseNumber(v.pago_efectivo || 0);
+        const transfer = parseNumber(v.pago_transferencia || 0);
+
+        if (total === target || card === target || cash === target || transfer === target) {
+            matches.push({
+                type: 'individual',
+                ventas: [v],
+                detail: `Venta #${v.id_venta || v.id} coincide exactamente con el monto.`
+            });
+        }
+    });
+
+    // 2. Pairs of sales that sum up to target
+    for (let i = 0; i < ventas.length; i++) {
+        for (let j = i + 1; j < ventas.length; j++) {
+            const v1 = ventas[i];
+            const v2 = ventas[j];
+            const total1 = parseNumber(v1.total || v1.monto_total || 0);
+            const total2 = parseNumber(v2.total || v2.monto_total || 0);
+
+            if (total1 + total2 === target) {
+                matches.push({
+                    type: 'par',
+                    ventas: [v1, v2],
+                    detail: `La suma de las ventas #${v1.id_venta || v1.id} y #${v2.id_venta || v2.id} da el monto buscado.`
+                });
+            }
+            
+            // Also check card portions for pairs
+            const card1 = parseNumber(v1.pago_tarjeta || 0);
+            const card2 = parseNumber(v2.pago_tarjeta || 0);
+            if (card1 > 0 && card2 > 0 && card1 + card2 === target) {
+                matches.push({
+                    type: 'par_tarjeta',
+                    ventas: [v1, v2],
+                    detail: `La suma de los pagos con TARJETA de las ventas #${v1.id_venta || v1.id} y #${v2.id_venta || v2.id} da el monto buscado.`
+                });
+            }
+        }
+    }
+
+    if (matches.length === 0) {
+        Swal.fire({
+            title: 'Sin coincidencias',
+            text: `No se encontraron ventas individuales ni pares que sumen exactly $${target.toLocaleString('es-CL')}.`,
+            icon: 'info',
+            confirmButtonColor: '#f97316'
+        });
+        return;
+    }
+
+    const html = `
+        <div class="text-left space-y-4 max-h-[60vh] overflow-auto pr-2">
+            <div class="flex items-center justify-between">
+                <p class="text-xs text-gray-500 font-bold uppercase tracking-widest">Se encontraron ${matches.length} coincidencia(s)</p>
+                <div class="text-[9px] font-black bg-gray-100 px-2 py-0.5 rounded-full text-gray-400">BUSCANDO EN ${ventas.length} VENTAS FILTRADAS</div>
+            </div>
+            ${matches.map((m, idx) => `
+                <div class="p-4 rounded-2xl bg-orange-50 border border-orange-100">
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="px-2 py-0.5 rounded-full bg-orange-600 text-white text-[9px] font-black uppercase">${m.type}</span>
+                        <strong class="text-sm text-gray-900">$${target.toLocaleString('es-CL')}</strong>
+                    </div>
+                    <p class="text-xs text-gray-600 mb-3">${m.detail}</p>
+                    <div class="space-y-1">
+                        ${m.ventas.map(v => {
+                            const fecha = v.fecha_venta || v.created_at || v.fechaVenta || '';
+                            const dateStr = fecha ? new Date(fecha).toLocaleDateString('es-CL', { day: '2-digit', month: '2-digit' }) : '—';
+                            const timeStr = fecha ? new Date(fecha).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }) : '';
+                            const cajero = finanzasObtenerNombreCajero(v);
+                            return `
+                                <div class="flex flex-col gap-1 bg-white p-3 rounded-xl border border-orange-100/50">
+                                    <div class="flex items-center justify-between">
+                                        <span class="font-black text-gray-900 text-xs">Venta #${v.id_venta || v.id}</span>
+                                        <span class="font-black text-orange-600 text-sm">$${(parseNumber(v.total || v.monto_total || 0)).toLocaleString('es-CL')}</span>
+                                    </div>
+                                    <div class="flex items-center justify-between text-[10px] text-gray-500 font-bold uppercase tracking-tight">
+                                        <span><i class="bi bi-person-fill"></i> ${cajero}</span>
+                                        <span><i class="bi bi-clock"></i> ${dateStr} ${timeStr}</span>
+                                    </div>
+                                    <button class="mt-1 w-full py-1 bg-gray-50 text-blue-600 hover:bg-blue-50 rounded-lg font-black uppercase text-[9px] transition-colors" onclick="Swal.close(); finanzasVerDetalleVenta(${v.id_venta || v.id})">
+                                        Ver detalle de productos
+                                    </button>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+
+    Swal.fire({
+        title: 'Auditoría de Descuadre',
+        html: html,
+        width: '500px',
+        confirmButtonText: 'Cerrar',
+        confirmButtonColor: '#111827'
+    });
+}
+
+async function finanzasExportarPDF() {
+    const { filtered } = finanzasState;
+    if (!filtered.length) {
+        Swal.fire('Atención', 'No hay datos para exportar con los filtros actuales.', 'info');
+        return;
+    }
+
+    try {
+        Swal.fire({
+            title: 'Generando PDF...',
+            allowOutsideClick: false,
+            didOpen: () => { Swal.showLoading(); }
+        });
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('l', 'mm', 'a4'); // Paisaje para más columnas
+        
+        const fechaFiltro = document.getElementById('fin-filtro-fecha')?.value || 'Hoy';
+        const sucursalFiltro = document.getElementById('fin-filtro-sucursal')?.selectedOptions?.[0]?.textContent?.trim() || 'Todas';
+        const cajeroFiltro = document.getElementById('fin-filtro-cajero')?.selectedOptions?.[0]?.textContent?.trim() || 'Todos';
+
+        // Estilos y Logo
+        doc.setFontSize(22);
+        doc.setTextColor(249, 115, 22); // Orange 500
+        doc.text('VALMU ECOSYSTEM', 14, 20);
+        
+        doc.setFontSize(16);
+        doc.setTextColor(17, 24, 39); // Gray 900
+        doc.text('Reporte de Auditoría de Ventas', 14, 30);
+        
+        doc.setFontSize(10);
+        doc.setTextColor(107, 114, 128); // Gray 500
+        doc.text(`Fecha: ${fechaFiltro} | Sucursal: ${sucursalFiltro} | Cajero: ${cajeroFiltro}`, 14, 38);
+        doc.text(`Generado el: ${new Date().toLocaleString('es-CL')}`, 14, 44);
+
+        // Totales en el PDF
+        const totalMonto = filtered.reduce((s, v) => s + parseNumber(v.total || v.monto_total || 0), 0);
+        doc.setFontSize(12);
+        doc.setTextColor(17, 24, 39);
+        doc.text(`Total Recaudado: $${totalMonto.toLocaleString('es-CL')}`, 280, 44, { align: 'right' });
+
+        const head = [['ID', 'Fecha/Hora', 'Sucursal', 'Cajero', 'Medio Pago', 'Desglose (EF/TRJ/TRF)', 'Total']];
+        const body = filtered.map(v => {
+            const fecha = v.fecha_venta || v.created_at || v.fechaVenta || '';
+            const dateStr = fecha ? new Date(fecha).toLocaleString('es-CL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+            
+            const ef = parseNumber(v.pago_efectivo || 0);
+            const trj = parseNumber(v.pago_tarjeta || 0);
+            const trf = parseNumber(v.pago_transferencia || 0);
+            
+            let desglose = '';
+            if (ef > 0) desglose += `EF: $${ef.toLocaleString('es-CL')} `;
+            if (trj > 0) desglose += `TRJ: $${trj.toLocaleString('es-CL')} `;
+            if (trf > 0) desglose += `TRF: $${trf.toLocaleString('es-CL')}`;
+            
+            return [
+                v.id_venta || v.id || '—',
+                dateStr,
+                v.nombre_sucursal || v.sucursal || '—',
+                finanzasObtenerNombreCajero(v),
+                finanzasNormalizarMetodoPago(v).toUpperCase(),
+                desglose || 'S/D',
+                `$${parseNumber(v.total || v.monto_total || 0).toLocaleString('es-CL')}`
+            ];
+        });
+
+        doc.autoTable({
+            startY: 50,
+            head: head,
+            body: body,
+            theme: 'striped',
+            headStyles: { fillColor: [17, 24, 39], fontStyle: 'bold' },
+            alternateRowStyles: { fillColor: [249, 250, 251] },
+            margin: { top: 50 },
+            styles: { fontSize: 8, cellPadding: 3 }
+        });
+
+        const fileName = `reporte_ventas_${fechaFiltro.replace(/-/g, '')}_${new Date().getTime()}.pdf`;
+        doc.save(fileName);
+        Swal.close();
+        
+    } catch (error) {
+        console.error('Error generating PDF:', error);
+        Swal.fire('Error', 'No se pudo generar el PDF. Revisa la consola.', 'error');
     }
 }

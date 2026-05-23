@@ -13,6 +13,7 @@ import {
     Platform,
     StatusBar
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { brandColors } from '../theme';
 
 export function Screen({ children }) {
@@ -157,7 +158,7 @@ export function FormModal({ visible, title, onClose, onSubmit, submitLabel, subm
     );
 }
 
-export function PrimaryButton({ title, onPress, disabled = false, compact = false, style }) {
+export function PrimaryButton({ title, icon, onPress, disabled = false, compact = false, style }) {
     return (
         <TouchableOpacity
             style={[
@@ -170,23 +171,26 @@ export function PrimaryButton({ title, onPress, disabled = false, compact = fals
             disabled={disabled}
             activeOpacity={0.8}
         >
+            {icon ? <Ionicons name={icon} size={18} color="#FFFFFF" style={title ? styles.buttonIcon : null} /> : null}
             <Text style={styles.primaryButtonText} numberOfLines={1} adjustsFontSizeToFit>{title}</Text>
         </TouchableOpacity>
     );
 }
 
-export function SecondaryButton({ title, onPress, style }) {
+export function SecondaryButton({ title, icon, onPress, style }) {
     return (
         <TouchableOpacity style={[styles.secondaryButton, style]} onPress={onPress} activeOpacity={0.7}>
-            <Text style={styles.secondaryButtonText} numberOfLines={1} adjustsFontSizeToFit>{title}</Text>
+            {icon ? <Ionicons name={icon} size={18} color={brandColors.textMuted} style={title ? styles.buttonIcon : null} /> : null}
+            {title ? <Text style={styles.secondaryButtonText} numberOfLines={1} adjustsFontSizeToFit>{title}</Text> : null}
         </TouchableOpacity>
     );
 }
 
-export function DangerButton({ title, onPress, style }) {
+export function DangerButton({ title, icon, onPress, style }) {
     return (
         <TouchableOpacity style={[styles.dangerButton, style]} onPress={onPress} activeOpacity={0.7}>
-            <Text style={styles.dangerButtonText} numberOfLines={1} adjustsFontSizeToFit>{title}</Text>
+            {icon ? <Ionicons name={icon} size={18} color={brandColors.danger} style={title ? styles.buttonIcon : null} /> : null}
+            {title ? <Text style={styles.dangerButtonText} numberOfLines={1} adjustsFontSizeToFit>{title}</Text> : null}
         </TouchableOpacity>
     );
 }
@@ -422,6 +426,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 24,
         paddingVertical: 16,
         borderRadius: 18,
+        flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: 48,
@@ -454,6 +459,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 12,
         paddingVertical: 14,
         borderRadius: 18,
+        flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: 48
@@ -468,6 +474,7 @@ const styles = StyleSheet.create({
         paddingHorizontal: 12,
         paddingVertical: 14,
         borderRadius: 18,
+        flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         minHeight: 48
@@ -476,6 +483,9 @@ const styles = StyleSheet.create({
         color: brandColors.danger,
         fontWeight: '700',
         fontSize: 14
+    },
+    buttonIcon: {
+        marginRight: 8
     },
     buttonDisabled: {
         opacity: 0.5,
@@ -531,4 +541,3 @@ const styles = StyleSheet.create({
         color: brandColors.success
     }
 });
-

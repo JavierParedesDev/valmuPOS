@@ -1,4 +1,4 @@
-import { normalizeApiBaseUrl, parseJsonResponse } from '../utils/formatters.js';
+import { normalizeApiBaseUrl, parseJsonResponse, unwrapApiArray, unwrapApiObject } from '../utils/formatters.js';
 
 export async function fetchSalesHistory({ apiBaseUrl, token }) {
     const response = await fetch(`${normalizeApiBaseUrl(apiBaseUrl)}/ventas`, {
@@ -12,7 +12,7 @@ export async function fetchSalesHistory({ apiBaseUrl, token }) {
         throw new Error(payload?.error || 'No se pudo cargar el historial de ventas.');
     }
 
-    return Array.isArray(payload) ? payload : [];
+    return unwrapApiArray(payload);
 }
 
 export async function cancelSaleRequest({ apiBaseUrl, token, saleId }) {
@@ -28,7 +28,7 @@ export async function cancelSaleRequest({ apiBaseUrl, token, saleId }) {
         throw new Error(payload?.error || 'No se pudo anular la venta.');
     }
 
-    return payload;
+    return unwrapApiObject(payload);
 }
 
 export async function submitSaleRequest({ apiBaseUrl, token, payload }) {

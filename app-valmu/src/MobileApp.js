@@ -51,7 +51,7 @@ function formatNotificationQuantity(value) {
         return String(quantity);
     }
 
-    return quantity.toFixed(3).replace(/\.?0+$/, '');
+    return quantity.toFixed(3).replace(/\.a0+$/, '');
 }
 
 async function registerForPushNotificationsAsync() {
@@ -94,7 +94,8 @@ const MODULES = [
     { key: 'dispatch', label: 'Despachos', metric: 'Envios', icon: { set: 'Ionicons', name: 'bus-outline' }, hidden: true },
     { key: 'invoices', label: 'Facturas', metric: 'DTE', icon: { set: 'Ionicons', name: 'document-text-outline' }, hidden: true },
     { key: 'advertising', label: 'Publicidad', metric: 'Pub', icon: { set: 'Ionicons', name: 'megaphone-outline' }, hidden: true },
-    { key: 'inventory_report', label: 'Historial Stock', metric: 'Auditoría', icon: { set: 'Ionicons', name: 'receipt-outline' }, hidden: true }
+    { key: 'inventory_report', label: 'Historial Stock', metric: 'Auditoría', icon: { set: 'Ionicons', name: 'receipt-outline' }, hidden: true },
+    { key: 'critical_stock', label: 'Stock Crítico', metric: 'Alertas', icon: { set: 'Ionicons', name: 'warning-outline' }, hidden: true }
 ];
 
 const brandIcon = require('../assets/icon.png');
@@ -134,6 +135,8 @@ function resolveModuleComponent(moduleKey) {
             return require('./screens/AdvertisingScreen').default;
         case 'inventory_report':
             return require('./screens/InventoryReportScreen').default;
+        case 'critical_stock':
+            return require('./screens/CriticalStockScreen').default;
         default:
             return null;
     }
@@ -178,7 +181,7 @@ export default function MobileApp() {
         let lastMoveId = null;
         const interval = setInterval(async () => {
             try {
-                const res = await fetch(`${API_BASE_URL}/reportes/movimientos-inventario`, {
+                const res = await fetch(`${API_BASE_URL}/reportes/movimientos-inventario?excluirVentas=true`, {
                     headers: { 'Authorization': `Bearer ${session.token}` }
                 });
                 const data = await res.json();
@@ -465,11 +468,10 @@ export default function MobileApp() {
 
 function LaunchScreen({ onContinue }) {
     const heroOpacity = useRef(new Animated.Value(0)).current;
-    const heroTranslate = useRef(new Animated.Value(24)).current;
+    const heroTranslate = useRef(new Animated.Value(18)).current;
     const heroScale = useRef(new Animated.Value(0.94)).current;
-    const footerOpacity = useRef(new Animated.Value(0)).current;
-    const footerTranslate = useRef(new Animated.Value(36)).current;
     const glowPulse = useRef(new Animated.Value(0.92)).current;
+    const progress = useRef(new Animated.Value(0)).current;
     const screenFade = useRef(new Animated.Value(1)).current;
     const screenScale = useRef(new Animated.Value(1)).current;
     const isLeaving = useRef(false);
@@ -494,19 +496,11 @@ function LaunchScreen({ onContinue }) {
                 easing: Easing.out(Easing.back(1.15)),
                 useNativeDriver: true
             }),
-            Animated.timing(footerOpacity, {
+            Animated.timing(progress, {
                 toValue: 1,
-                duration: 700,
-                delay: 120,
-                easing: Easing.out(Easing.cubic),
-                useNativeDriver: true
-            }),
-            Animated.timing(footerTranslate, {
-                toValue: 0,
-                duration: 700,
-                delay: 120,
-                easing: Easing.out(Easing.cubic),
-                useNativeDriver: true
+                duration: 1800,
+                easing: Easing.inOut(Easing.cubic),
+                useNativeDriver: false
             })
         ]).start();
 
@@ -528,11 +522,13 @@ function LaunchScreen({ onContinue }) {
         );
 
         pulseLoop.start();
+        const continueTimer = setTimeout(handleContinue, 2150);
 
         return () => {
             pulseLoop.stop();
+            clearTimeout(continueTimer);
         };
-    }, [footerOpacity, footerTranslate, glowPulse, heroOpacity, heroScale, heroTranslate]);
+    }, [glowPulse, heroOpacity, heroScale, heroTranslate, progress]);
 
     const handleContinue = () => {
         if (isLeaving.current) {
@@ -555,13 +551,7 @@ function LaunchScreen({ onContinue }) {
                 useNativeDriver: true
             }),
             Animated.timing(heroTranslate, {
-                toValue: -18,
-                duration: 220,
-                easing: Easing.out(Easing.cubic),
-                useNativeDriver: true
-            }),
-            Animated.timing(footerTranslate, {
-                toValue: 22,
+                toValue: -12,
                 duration: 220,
                 easing: Easing.out(Easing.cubic),
                 useNativeDriver: true
@@ -575,8 +565,13 @@ function LaunchScreen({ onContinue }) {
         });
     };
 
+    const progressWidth = progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: ['8%', '100%']
+    });
+
     return (
-        <Pressable style={styles.launchShell} onPress={handleContinue}>
+        <Pressable style={styles.launchShell}>
             <Animated.View
                 style={[
                     styles.launchScreenLayer,
@@ -596,89 +591,33 @@ function LaunchScreen({ onContinue }) {
                     <View style={styles.launchGridOverlay} />
                 </View>
                 <View style={styles.launchContent}>
-                <Animated.View
-                    style={[
-                        styles.launchHero,
-                        {
-                            opacity: heroOpacity,
-                            transform: [{ translateY: heroTranslate }, { scale: heroScale }]
-                        }
-                    ]}
-                >
-                    <View style={styles.launchHeroTopRow}>
-                        <View style={styles.launchEyebrowPill}>
-                            <Text style={styles.launchEyebrowText}>Panel movil</Text>
-                        </View>
-                        <Text style={styles.launchVersionChip}>v{APP_VERSION}</Text>
-                    </View>
-
                     <Animated.View
-                        pointerEvents="none"
-                        style={[styles.launchLogoHalo, { transform: [{ scale: glowPulse }] }]}
-                    />
-                    <View style={styles.launchLogoCircle}>
-                        <Image source={brandIcon} style={styles.launchLogo} />
-                    </View>
-                    <View style={styles.launchBrandBlock}>
-                        <Text style={styles.launchBrand}>Valmu</Text>
-                        <Text style={styles.launchTagline}>Control simple para ventas, stock y despacho</Text>
-                    </View>
-
-                    <View style={styles.launchMetricRow}>
-                        <View style={styles.launchMetricCard}>
-                            <Text style={styles.launchMetricValue}>24/7</Text>
-                            <Text style={styles.launchMetricLabel}>Operacion conectada</Text>
-                        </View>
-                        <View style={styles.launchMetricDivider} />
-                        <View style={styles.launchMetricCard}>
-                            <Text style={styles.launchMetricValue}>Tiempo real</Text>
-                            <Text style={styles.launchMetricLabel}>Inventario y cajas</Text>
-                        </View>
-                    </View>
-                </Animated.View>
-
-                <Animated.View
-                    style={[
-                        styles.launchFooter,
-                        {
-                            opacity: footerOpacity,
-                            transform: [{ translateY: footerTranslate }]
-                        }
-                    ]}
-                >
-                    <Text style={styles.launchTitle}>Administra tu negocio con una experiencia mas clara.</Text>
-                    <Text style={styles.launchText}>
-                        Productos, sucursales, inventario y seguimiento diario en una sola app.
-                    </Text>
-
-                    <View style={styles.launchFeatureList}>
-                        <View style={styles.launchFeaturePill}>
-                            <Ionicons name="cube-outline" size={16} color={brandColors.accent} />
-                            <Text style={styles.launchFeatureText}>Catalogo ordenado</Text>
-                        </View>
-                        <View style={styles.launchFeaturePill}>
-                            <Ionicons name="pulse-outline" size={16} color={brandColors.accent} />
-                            <Text style={styles.launchFeatureText}>Monitoreo vivo</Text>
-                        </View>
-                        <View style={styles.launchFeaturePill}>
-                            <Ionicons name="bus-outline" size={16} color={brandColors.accent} />
-                            <Text style={styles.launchFeatureText}>Despachos al dia</Text>
-                        </View>
-                    </View>
-
-                    <Button
-                        mode="contained"
-                        buttonColor={brandColors.accent}
-                        textColor="#ffffff"
-                        onPress={handleContinue}
-                        style={styles.launchButton}
-                        contentStyle={styles.launchButtonContent}
-                        labelStyle={styles.launchButtonLabel}
+                        style={[
+                            styles.launchHero,
+                            {
+                                opacity: heroOpacity,
+                                transform: [{ translateY: heroTranslate }, { scale: heroScale }]
+                            }
+                        ]}
                     >
-                        Entrar al panel
-                    </Button>
-                    <Text style={styles.versionTag}>Version {APP_VERSION} | 2026 Valmu</Text>
-                </Animated.View>
+                        <Animated.View
+                            pointerEvents="none"
+                            style={[styles.launchLogoHalo, { transform: [{ scale: glowPulse }] }]}
+                        />
+                        <View style={styles.launchLogoCircle}>
+                            <Image source={brandIcon} style={styles.launchLogo} />
+                        </View>
+                        <Text style={styles.launchBrand}>Valmu</Text>
+                        <Text style={styles.launchTagline}>Cargando el sistema</Text>
+                        <View style={styles.launchProgressTrack}>
+                            <Animated.View style={[styles.launchProgressFill, { width: progressWidth }]} />
+                        </View>
+                        <View style={styles.launchStatusRow}>
+                            <ActivityIndicator size="small" color={brandColors.accent} />
+                            <Text style={styles.launchStatusText}>Preparando datos y seguridad</Text>
+                        </View>
+                    </Animated.View>
+                    <Text style={styles.versionTag}>Version {APP_VERSION}</Text>
                 </View>
             </Animated.View>
         </Pressable>
@@ -718,11 +657,11 @@ function UpdatePrompt({ state, onClose, onInstall }) {
                 </View>
 
                 <View style={styles.notesCard}>
-                    <Text style={styles.notesTitle}>Novedades en esta versión</Text>
+                    <Text style={styles.notesTitle}>Novedades en esta version</Text>
                     {notes.length ? notes.map((note, index) => (
-                        <Text key={index} style={styles.noteLine}>• {note.replace(/^[-*]\s*/, '')}</Text>
+                        <Text key={index} style={styles.noteLine}>- {note.replace(/^[-*]\s*/, '')}</Text>
                     )) : (
-                        <Text style={styles.noteLine}>Mejoras generales de estabilidad y diseño.</Text>
+                        <Text style={styles.noteLine}>Mejoras generales de estabilidad y diseno.</Text>
                     )}
                 </View>
 
@@ -737,7 +676,7 @@ function UpdatePrompt({ state, onClose, onInstall }) {
 
                 <View style={styles.updateActions}>
                     <Button mode="text" onPress={onClose} textColor={brandColors.textMuted} style={styles.flexOne}>
-                        Más tarde
+                        Mas tarde
                     </Button>
                     <Button
                         mode="contained"
@@ -764,7 +703,8 @@ function DrawerMenu({ visible, onClose, onLogout, onSelectModule }) {
         { key: 'users', label: 'Usuarios', icon: 'people-outline' },
         { key: 'invoices', label: 'Historial Facturas', icon: 'document-text-outline' },
         { key: 'advertising', label: 'Publicidad', icon: 'megaphone-outline' },
-        { key: 'inventory_report', label: 'Auditoría Stock', icon: 'receipt-outline' }
+        { key: 'inventory_report', label: 'Auditoría Stock', icon: 'receipt-outline' },
+        { key: 'critical_stock', label: 'Alertas Stock Crítico', icon: 'warning-outline' }
     ];
 
     return (
@@ -1105,59 +1045,35 @@ const styles = StyleSheet.create({
     },
     launchContent: {
         flex: 1,
-        paddingHorizontal: 24,
-        paddingTop: 56,
-        paddingBottom: 36,
-        justifyContent: 'space-between'
+        paddingHorizontal: 30,
+        paddingBottom: 42,
+        alignItems: 'center',
+        justifyContent: 'center'
     },
     launchHero: {
         position: 'relative',
-        borderRadius: 34,
-        padding: 24,
-        backgroundColor: 'rgba(255,255,255,0.06)',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)',
-        alignItems: 'center'
-    },
-    launchHeroTopRow: {
         width: '100%',
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 22
-    },
-    launchEyebrowPill: {
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 999,
-        backgroundColor: 'rgba(255,255,255,0.08)',
+        maxWidth: 360,
+        borderRadius: 36,
+        paddingVertical: 36,
+        paddingHorizontal: 26,
+        backgroundColor: 'rgba(255,255,255,0.075)',
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)'
-    },
-    launchEyebrowText: {
-        color: '#D8E1EC',
-        fontSize: 11,
-        fontWeight: '800',
-        textTransform: 'uppercase',
-        letterSpacing: 1.2
-    },
-    launchVersionChip: {
-        color: '#FFD7BD',
-        fontSize: 12,
-        fontWeight: '800'
+        borderColor: 'rgba(255,255,255,0.11)',
+        alignItems: 'center'
     },
     launchLogoHalo: {
         position: 'absolute',
-        top: 52,
-        width: 156,
-        height: 156,
-        borderRadius: 78,
-        backgroundColor: 'rgba(255,107,0,0.14)'
+        top: 26,
+        width: 178,
+        height: 178,
+        borderRadius: 89,
+        backgroundColor: 'rgba(255,107,0,0.16)'
     },
     launchLogoCircle: {
-        width: 118,
-        height: 118,
-        borderRadius: 34,
+        width: 124,
+        height: 124,
+        borderRadius: 36,
         backgroundColor: '#FFFFFF',
         justifyContent: 'center',
         alignItems: 'center',
@@ -1165,115 +1081,53 @@ const styles = StyleSheet.create({
         borderColor: 'rgba(255,255,255,0.12)'
     },
     launchLogo: {
-        width: 84,
-        height: 84,
+        width: 88,
+        height: 88,
         borderRadius: 24
     },
-    launchBrandBlock: {
-        marginTop: 22,
-        alignItems: 'center'
-    },
     launchBrand: {
+        marginTop: 26,
         color: '#ffffff',
-        fontSize: 44,
+        fontSize: 42,
         fontWeight: '900',
-        letterSpacing: -1.4
+        letterSpacing: -0.8
     },
     launchTagline: {
-        marginTop: 8,
-        color: 'rgba(255,255,255,0.72)',
-        fontSize: 15,
+        marginTop: 6,
+        color: 'rgba(255,255,255,0.76)',
+        fontSize: 16,
         lineHeight: 22,
+        fontWeight: '700',
         textAlign: 'center'
     },
-    launchMetricRow: {
+    launchProgressTrack: {
         marginTop: 28,
         width: '100%',
-        flexDirection: 'row',
-        alignItems: 'stretch',
-        borderRadius: 24,
-        backgroundColor: 'rgba(7,17,31,0.42)',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.07)',
+        height: 8,
+        borderRadius: 999,
+        backgroundColor: 'rgba(255,255,255,0.12)',
         overflow: 'hidden'
     },
-    launchMetricCard: {
-        flex: 1,
-        paddingVertical: 18,
-        paddingHorizontal: 16
+    launchProgressFill: {
+        height: '100%',
+        borderRadius: 999,
+        backgroundColor: brandColors.accent
     },
-    launchMetricDivider: {
-        width: 1,
-        backgroundColor: 'rgba(255,255,255,0.08)'
-    },
-    launchMetricValue: {
-        color: '#FFFFFF',
-        fontSize: 18,
-        fontWeight: '900'
-    },
-    launchMetricLabel: {
-        marginTop: 6,
-        color: 'rgba(255,255,255,0.58)',
-        fontSize: 12,
-        lineHeight: 18
-    },
-    launchFooter: {
-        marginTop: 24,
-        paddingHorizontal: 6,
-        marginBottom: 10
-    },
-    launchTitle: {
-        color: '#ffffff',
-        fontSize: 34,
-        fontWeight: '900',
-        lineHeight: 40,
-        letterSpacing: -0.7
-    },
-    launchText: {
-        marginTop: 14,
-        color: 'rgba(255,255,255,0.72)',
-        fontSize: 16,
-        lineHeight: 24
-    },
-    launchFeatureList: {
-        marginTop: 22,
-        gap: 10
-    },
-    launchFeaturePill: {
+    launchStatusRow: {
+        marginTop: 18,
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 14,
-        paddingVertical: 12,
-        borderRadius: 18,
-        backgroundColor: 'rgba(255,255,255,0.07)',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.08)'
+        justifyContent: 'center',
+        gap: 8
     },
-    launchFeatureText: {
-        marginLeft: 10,
-        color: '#E2E8F0',
-        fontSize: 14,
+    launchStatusText: {
+        color: 'rgba(255,255,255,0.62)',
+        fontSize: 13,
         fontWeight: '700'
     },
-    launchButton: {
-        marginTop: 28,
-        borderRadius: 20,
-        shadowColor: brandColors.accent,
-        shadowOpacity: 0.42,
-        shadowRadius: 18,
-        shadowOffset: { width: 0, height: 10 },
-        elevation: 8
-    },
-    launchButtonContent: {
-        height: 62
-    },
-    launchButtonLabel: {
-        fontSize: 18,
-        fontWeight: '900',
-        letterSpacing: 0.3
-    },
     versionTag: {
-        marginTop: 18,
+        position: 'absolute',
+        bottom: 28,
         textAlign: 'center',
         color: 'rgba(255,255,255,0.42)',
         fontSize: 12,

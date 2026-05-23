@@ -93,7 +93,7 @@ export default function SuppliersScreen({ token }) {
     };
 
     const removeSupplier = (supplier) => {
-        Alert.alert('Eliminar proveedor', `¿Quieres eliminar ${supplier.nombreProveedor}?`, [
+        Alert.alert('Eliminar proveedor', `¿Quieres eliminar ${supplier.nombreProveedor}`, [
             { text: 'Cancelar', style: 'cancel' },
             {
                 text: 'Eliminar',
@@ -195,7 +195,7 @@ export default function SuppliersScreen({ token }) {
                         <Field label="Teléfono" value={form.telefono} onChangeText={(value) => setForm((prev) => ({ ...prev, telefono: value }))} keyboardType="phone-pad" placeholder="+56 9..." />
                     </View>
                     <View style={styles.formCol}>
-                        <Field label="Email" value={form.email} onChangeText={(value) => setForm((prev) => ({ ...prev, email: value }))} keyboardType="email-address" placeholder="contacto@empresa.com" />
+                        <Field label="Email" value={form.email} onChangeText={(value) => setForm((prev) => ({ ...prev, email: value }))} keyboardType="email-address" placeholder="contacto@empres?.com" />
                     </View>
                 </View>
 
@@ -348,4 +348,3 @@ const styles = StyleSheet.create({
         flex: 1
     }
 });
-

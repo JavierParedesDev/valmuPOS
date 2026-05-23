@@ -12,7 +12,7 @@ function createMainWindow() {
             preload: path.join(__dirname, '../preload.js'),
             contextIsolation: true,
             nodeIntegration: false,
-            devTools: false
+            devTools: true
         },
         title: 'Valmu Admin',
         autoHideMenuBar: false,
@@ -20,6 +20,22 @@ function createMainWindow() {
     });
 
     mainWindow.loadFile(path.join(__dirname, '../../renderer/login.html'));
+
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+        const key = String(input.key || '').toLowerCase();
+        const shouldToggleDevTools = key === 'f12' || ((input.control || input.meta) && input.shift && key === 'i');
+        if (!shouldToggleDevTools) {
+            return;
+        }
+
+        event.preventDefault();
+        if (mainWindow.webContents.isDevToolsOpened()) {
+            mainWindow.webContents.closeDevTools();
+        } else {
+            mainWindow.setAlwaysOnTop(false);
+            mainWindow.webContents.openDevTools({ mode: 'detach' });
+        }
+    });
 
     return mainWindow;
 }

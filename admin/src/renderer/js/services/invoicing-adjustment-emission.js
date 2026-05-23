@@ -2,13 +2,18 @@ const adjustmentEmissionUtils = window.ValmuInvoicingUtils;
 const adjustmentEmissionTransport = window.ValmuInvoicingTransport;
 
 function resolveAdjustmentSiiStatus(sendResult, sendError) {
-    if (sendResult?.TrackId || sendResult?.trackId) {
+    if (adjustmentEmissionTransport?.isSuccessfulSiiSend?.(sendResult)) {
         return 'ENVIADO_SII';
     }
     if (sendError) {
         return 'ERROR_ENVIO';
     }
     return 'GENERADO';
+}
+
+function getAdjustmentFriendlySiiError(error) {
+    return adjustmentEmissionTransport?.cleanSiiErrorMessage?.(error)
+        || 'No se pudo enviar el documento al SII. No se desconto el folio ni se guardo el XML.';
 }
 
 window.ValmuInvoicingAdjustmentEmission = {
@@ -78,33 +83,19 @@ window.ValmuInvoicingAdjustmentEmission = {
             if (!clientCiudad) throw new Error('Debe ingresar la Ciudad del receptor');
 
             // ── Config ──────────────────────────────────────────────────────
-            const local = JSON.parse(localStorage.getItem('sii_config') || '{}');
+            const local = {
+                ...JSON.parse(localStorage.getItem('sii_config') || '{}'),
+                ...((await electronAPI?.getSiiConfig?.()) || {})
+            };
+            localStorage.setItem('sii_config', JSON.stringify(local));
             const config = { ...local, rutEmisor: local.rutEmisor || defaultEmisor.rut };
             const emisorRut = config.rutEmisor || config.rut;
-            const rutEnvia = config.rutEnvia || config.rutFirmante || emisorRut;
+            const configuredRutEnviaNC = config.rutEnvia || config.rutFirmante || config.siiAuthRut || '';
+            const rutEnvia = configuredRutEnviaNC ? configuredRutEnviaNC.replace(/\./g, '').trim().toUpperCase() : emisorRut.replace(/\./g, '').trim().toUpperCase();
 
             let folio = parseInt(document.getElementById('nc-folio-display')?.value || config.folio_61 || 1, 10);
             const token = await adjustmentEmissionTransport.getBearerToken();
             toast.show('Verificando folio...', 'info');
-            try {
-                const reserved = await api.requestNextFolio?.(61);
-                folio = parseInt(reserved?.folio, 10) || folio;
-                config.folio_61 = folio;
-                localStorage.setItem('sii_config', JSON.stringify(config));
-
-                const folioDisplay = document.getElementById('nc-folio-display');
-                const folioHidden = document.getElementById('nc-folio');
-                if (folioDisplay && parseInt(folioDisplay.value, 10) !== folio) {
-                    folioDisplay.value = folio;
-                }
-                if (folioHidden) {
-                    folioHidden.value = folio;
-                }
-            } catch (error) {
-                console.error('Backend folio reservation failed for NC, using fallback:', error);
-                toast.show(`No se pudo reservar folio NC en backend: ${error.message}`, 'warning');
-            }
-
             if (!folio || folio <= 0) throw new Error('Debe ingresar un Folio válido (mayor a 0)');
 
             // ── Certificado y CAF ───────────────────────────────────────────
@@ -232,13 +223,13 @@ window.ValmuInvoicingAdjustmentEmission = {
 
             // ── Guardar localmente ──────────────────────────────────────────
             try {
-                await electronAPI.saveXml(`DTE_61_Folio_${folio}.xml`, finalXml, 'notas_de_credito');
+                // El XML local se guarda solo despues de un envio SII exitoso.
             } catch (saveErr) {
                 console.warn('Could not save local copy:', saveErr);
             }
 
             // ── Avanzar folio ───────────────────────────────────────────────
-            config.folio_61 = folio + 1;
+            config.folio_61 = folio;
             localStorage.setItem('sii_config', JSON.stringify(config));
             try { await api.saveSiiSettings(config); } catch (_) { }
 
@@ -251,13 +242,34 @@ window.ValmuInvoicingAdjustmentEmission = {
                 toast.show(`Nota de Crédito #${folio} EXITOSA`, 'success');
             } catch (err) {
                 sendError = err;
-                toast.show('Error enviando al SII (XML generado OK)', 'warning');
+                toast.show(getAdjustmentFriendlySiiError(err), 'warning');
+                return;
             }
+
+            if (!adjustmentEmissionTransport.isSuccessfulSiiSend(sendResult)) {
+                sendError = new Error('Respuesta sin TrackId valido');
+                toast.show(getAdjustmentFriendlySiiError(sendError), 'warning');
+                return;
+            }
+
+            try {
+                await electronAPI.saveXml(`DTE_61_Folio_${folio}.xml`, finalXml, 'notas_de_credito');
+            } catch (saveErr) {
+                console.warn('Could not save local copy:', saveErr);
+                toast.show('Documento enviado, pero no se pudo guardar el XML localmente', 'warning');
+            }
+
+            config.folio_61 = folio + 1;
+            localStorage.setItem('sii_config', JSON.stringify(config));
+            try { await api.saveSiiSettings(config); } catch (_) { }
+            api.markFolioUsed?.({ tipoDte: 61, folio }).catch((error) => {
+                console.warn('No se pudo marcar folio NC usado en backend:', error);
+            });
 
             // ── Sync BD ─────────────────────────────────────────────────────
             try {
                 await api.uploadXml('61', folio, finalXml, {
-                    trackId: sendResult?.TrackId || sendResult?.trackId || null,
+                    trackId: adjustmentEmissionTransport.getSiiTrackId(sendResult),
                     estadoSii: resolveAdjustmentSiiStatus(sendResult, sendError)
                 });
             } catch (syncErr) {
@@ -346,24 +358,7 @@ window.ValmuInvoicingAdjustmentEmission = {
 
             // ── Sincronizar folio con BD ────────────────────────────────────
             toast.show('Sincronizando folio...', 'info');
-            let folio = 0;
-            try {
-                const reserved = await api.requestNextFolio?.(56);
-                folio = parseInt(reserved?.folio, 10) || 0;
-                const folioDisp = document.getElementById('nd-folio-display');
-                if (folioDisp && folio > 0) {
-                    folioDisp.value = folio;
-                }
-                if (folio > 0) {
-                    const reservedConfig = JSON.parse(localStorage.getItem('sii_config') || '{}');
-                    reservedConfig.folio_56 = folio;
-                    localStorage.setItem('sii_config', JSON.stringify(reservedConfig));
-                }
-            } catch (error) {
-                console.error('Backend folio reservation failed for ND, using fallback:', error);
-                toast.show(`No se pudo reservar folio ND en backend: ${error.message}`, 'warning');
-                folio = parseInt(document.getElementById('nd-folio-display')?.value || 1, 10);
-            }
+            let folio = parseInt(document.getElementById('nd-folio-display')?.value || 1, 10);
             if (!folio || folio <= 0) throw new Error('No se pudo determinar un folio válido para ND');
 
             // ── Certificado y CAF ───────────────────────────────────────────
@@ -376,10 +371,15 @@ window.ValmuInvoicingAdjustmentEmission = {
             const cafBlob = new Blob([cafText], { type: 'text/xml' });
 
             // ── Config ──────────────────────────────────────────────────────
-            const localConfig = JSON.parse(localStorage.getItem('sii_config') || '{}');
+            const localConfig = {
+                ...JSON.parse(localStorage.getItem('sii_config') || '{}'),
+                ...((await electronAPI?.getSiiConfig?.()) || {})
+            };
+            localStorage.setItem('sii_config', JSON.stringify(localConfig));
             const config = { ...defaultEmisor, ...localConfig };
             const emisorRut = localConfig.rutEmisor || config.rut || defaultEmisor.rut;
-            const rutEnvia = localConfig.rutEnvia || localConfig.rutFirmante || emisorRut;
+            const configuredRutEnviaND = localConfig.rutEnvia || localConfig.rutFirmante || localConfig.siiAuthRut || '';
+            const rutEnvia = configuredRutEnviaND ? configuredRutEnviaND.replace(/\./g, '').trim().toUpperCase() : emisorRut.replace(/\./g, '').trim().toUpperCase();
             const emisorRzn = document.getElementById('nd-emi-razon')?.value || config.razonSocial;
             const emisorGiro = document.getElementById('nd-emi-giro')?.value || config.giro;
             const emisorDir = document.getElementById('nd-emi-dir')?.value || config.direccion;
@@ -493,7 +493,7 @@ window.ValmuInvoicingAdjustmentEmission = {
 
             // ── Guardar localmente ──────────────────────────────────────────
             try {
-                await electronAPI.saveXml(`DTE_56_Folio_${folio}.xml`, finalXml, 'notas_de_debito');
+                // El XML local se guarda solo despues de un envio SII exitoso.
             } catch (saveErr) { console.warn(saveErr); }
 
             // ── Enviar al SII ───────────────────────────────────────────────
@@ -504,13 +504,27 @@ window.ValmuInvoicingAdjustmentEmission = {
                 });
             } catch (err) {
                 sendError = err;
-                toast.show('Error enviando ND al SII (XML generado OK)', 'warning');
+                toast.show(getAdjustmentFriendlySiiError(err), 'warning');
+                return;
+            }
+
+            if (!adjustmentEmissionTransport.isSuccessfulSiiSend(sendResult)) {
+                sendError = new Error('Respuesta sin TrackId valido');
+                toast.show(getAdjustmentFriendlySiiError(sendError), 'warning');
+                return;
+            }
+
+            try {
+                await electronAPI.saveXml(`DTE_56_Folio_${folio}.xml`, finalXml, 'notas_de_debito');
+            } catch (saveErr) {
+                console.warn(saveErr);
+                toast.show('Documento enviado, pero no se pudo guardar el XML localmente', 'warning');
             }
 
             // ── Sync BD ─────────────────────────────────────────────────────
             try {
                 await api.uploadXml('56', folio, finalXml, {
-                    trackId: sendResult?.TrackId || sendResult?.trackId || null,
+                    trackId: adjustmentEmissionTransport.getSiiTrackId(sendResult),
                     estadoSii: resolveAdjustmentSiiStatus(sendResult, sendError)
                 });
             } catch (syncErr) { console.error(syncErr); }
@@ -520,6 +534,9 @@ window.ValmuInvoicingAdjustmentEmission = {
             updatedConfig.folio_56 = parseInt(folio, 10) + 1;
             localStorage.setItem('sii_config', JSON.stringify(updatedConfig));
             api.saveSiiSettings(updatedConfig);
+            api.markFolioUsed?.({ tipoDte: 56, folio }).catch((error) => {
+                console.warn('No se pudo marcar folio ND usado en backend:', error);
+            });
 
             if (!sendError) toast.show(`Nota de Débito #${folio} Emitida Exitosamente`, 'success');
 

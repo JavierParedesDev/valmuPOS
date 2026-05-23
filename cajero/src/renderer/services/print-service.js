@@ -21,6 +21,7 @@ export async function printReceiptRecord({
             dateLabel: record.dateLabel,
             referenceLabel: record.referenceLabel,
             documentType: record.documentType,
+            isStockPicking: Boolean(record.isStockPicking),
             isFiscal: record.isFiscal,
             customerLabel: record.customerLabel,
             paymentMethod: record.paymentMethod,
@@ -30,6 +31,7 @@ export async function printReceiptRecord({
             subtotal: record.subtotal,
             iva: record.iva,
             total: record.total,
+            stockGroups: Array.isArray(record.stockGroups) ? record.stockGroups : [],
             items: record.items,
             lineItems: Array.isArray(record.lineItems) ? record.lineItems : [],
             preview: record.preview,
@@ -48,7 +50,8 @@ export async function printReceiptRecord({
     });
 
     if (!result?.ok) {
-        throw new Error(result?.error || 'No se pudo imprimir el comprobante.');
+        const debugSuffix = result?.debugDir ? ` Logs: ${result.debugDir}` : '';
+        throw new Error(`${result?.error || 'No se pudo imprimir el comprobante.'}${debugSuffix}`);
     }
 
     return result;

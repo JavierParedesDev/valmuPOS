@@ -2,7 +2,7 @@ const createEmissionUtils = window.ValmuInvoicingUtils;
 const createEmissionTransport = window.ValmuInvoicingTransport;
 
 function resolveSiiStatus(sendResult, sendError) {
-    if (sendResult?.TrackId || sendResult?.trackId) {
+    if (createEmissionTransport?.isSuccessfulSiiSend?.(sendResult)) {
         return 'ENVIADO_SII';
     }
 
@@ -11,6 +11,11 @@ function resolveSiiStatus(sendResult, sendError) {
     }
 
     return 'GENERADO';
+}
+
+function getFriendlySiiError(error) {
+    return createEmissionTransport?.cleanSiiErrorMessage?.(error)
+        || 'No se pudo enviar el documento al SII. No se desconto el folio ni se guardo el XML.';
 }
 
 function parseInvoiceAmount(value) {
@@ -49,6 +54,12 @@ function parseInvoiceAmount(value) {
     return Number.isFinite(amount) ? amount : 0;
 }
 
+function parseInvoiceQuantity(value) {
+    const normalized = String(value || '').trim().replace(',', '.');
+    const quantity = Number.parseFloat(normalized);
+    return Number.isFinite(quantity) ? quantity : 0;
+}
+
 window.ValmuInvoicingCreateEmission = {
     async emitInvoice({ page, api, electronAPI, toast, defaultEmisor } = {}) {
         const btn = document.getElementById('btn-emitir');
@@ -61,7 +72,11 @@ window.ValmuInvoicingCreateEmission = {
         btn.innerHTML = '<i class="fas fa-sync fa-spin"></i> Generando DTE...';
 
         try {
-            const local = JSON.parse(localStorage.getItem('sii_config') || '{}');
+            const local = {
+                ...JSON.parse(localStorage.getItem('sii_config') || '{}'),
+                ...((await electronAPI?.getSiiConfig?.()) || {})
+            };
+            localStorage.setItem('sii_config', JSON.stringify(local));
             const config = {
                 ...local,
                 rutEmisor: local.rutEmisor || defaultEmisor.rut
@@ -84,27 +99,9 @@ window.ValmuInvoicingCreateEmission = {
             const tipoDTE = parseInt(document.getElementById('dte-tipo').value, 10);
 
             toast.show('Verificando folio...', 'info');
-            let folio = 0;
-            try {
-                const reserved = await api.requestNextFolio?.(tipoDTE);
-                folio = parseInt(reserved?.folio, 10) || 0;
-
-                if (folio > 0) {
-                    config[`folio_${tipoDTE}`] = folio;
-                    localStorage.setItem('sii_config', JSON.stringify(config));
-
-                    const uiFolio = parseInt(document.getElementById('dte-folio').value, 10);
-                    if (uiFolio !== folio) {
-                        console.warn(`Folio mismatch: UI showed ${uiFolio}, backend reserved ${folio}. Auto-correcting.`);
-                        document.getElementById('dte-folio').value = folio;
-                        toast.show(`Folio reservado: #${folio}`, 'info');
-                    }
-                }
-            } catch (error) {
-                console.error('Backend folio reservation failed, using fallback:', error);
-                toast.show(`No se pudo reservar folio en backend: ${error.message}`, 'warning');
-                folio = parseInt(config[`folio_${tipoDTE}`], 10) || 1;
-            }
+            let folio = parseInt(document.getElementById('dte-folio')?.value, 10)
+                || parseInt(config[`folio_${tipoDTE}`], 10)
+                || 1;
 
             if (!folio || folio <= 0) {
                 return toast.show('No se pudo determinar un folio valido', 'error');
@@ -164,7 +161,8 @@ window.ValmuInvoicingCreateEmission = {
 
                 document.querySelectorAll('.item-row').forEach((row) => {
                     const nombre = row.querySelector('.item-nombre').value;
-                    const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+                    const qty = parseInvoiceQuantity(row.querySelector('.item-qty').value);
+                    const unidad = String(row.querySelector('.item-unit')?.value || 'un').trim() || 'un';
                     const priceInput = row.querySelector('.item-price');
                     const netPrice = parseInvoiceAmount(priceInput.value);
                     const pctDesc = parseFloat(row.querySelector('.item-pct-desc').value) || 0;
@@ -177,6 +175,7 @@ window.ValmuInvoicingCreateEmission = {
                         itemDetails.push({
                             NmbItem: nombre,
                             QtyItem: qty,
+                            UnmdItem: unidad,
                             PrcItem: netPrice,
                             DescuentoPct: pctDesc,
                             MontoItem: subTotalRounded
@@ -255,7 +254,7 @@ window.ValmuInvoicingCreateEmission = {
                             Nombre: item.NmbItem,
                             Descripcion: item.NmbItem,
                             Cantidad: item.QtyItem,
-                            UnidadMedida: 'un',
+                            UnidadMedida: item.UnmdItem,
                             Precio: parseFloat(item.PrcItem.toFixed(4)),
                             Descuento: Math.round((item.PrcItem * item.QtyItem) * (item.DescuentoPct / 100)),
                             Recargo: 0,
@@ -303,26 +302,6 @@ window.ValmuInvoicingCreateEmission = {
                     let sendError = null;
 
                     try {
-                        const filename = `DTE_${tipoDTE}_Folio_${folio}.xml`;
-                        const folder = tipoDTE == 61 ? 'notas_de_credito' : (tipoDTE == 56 ? 'notas_de_debito' : 'facturas');
-                        await electronAPI.saveXml(filename, finalXml, folder);
-                        console.log(`[FILE] Local DTE Saved in ${folder}: ${filename}`);
-                    } catch (error) {
-                        console.warn('Could not save local copy:', error);
-                        toast.show('Error guardando XML localmente', 'warning');
-                    }
-
-                    const updatedConfig = JSON.parse(localStorage.getItem('sii_config') || '{}');
-                    const nextFolio = folio + 1;
-                    updatedConfig[`folio_${tipoDTE}`] = nextFolio;
-                    localStorage.setItem('sii_config', JSON.stringify(updatedConfig));
-                    api.saveSiiSettings(updatedConfig).catch((error) => console.error('Background Sync Failed:', error));
-
-                    page.historyData = null;
-                    page.activeTab = 'history';
-                    setTimeout(() => page.updateUI(), 1500);
-
-                    try {
                         console.log('[SII] Preparing to send to SII...');
                         const dteBlob = new Blob([buffer], { type: 'application/xml' });
                         sendResult = await createEmissionTransport.sendDTE({
@@ -338,12 +317,38 @@ window.ValmuInvoicingCreateEmission = {
                     } catch (error) {
                         sendError = error;
                         console.error('[SII] Error sending:', error);
-                        toast.show('Error enviando al SII: ' + error.message, 'warning');
+                        toast.show(getFriendlySiiError(error), 'warning');
+                        return;
+                    }
+
+                    if (!createEmissionTransport.isSuccessfulSiiSend(sendResult)) {
+                        sendError = new Error('Respuesta sin TrackId valido');
+                        toast.show(getFriendlySiiError(sendError), 'warning');
+                        return;
                     }
 
                     try {
+                        const filename = `DTE_${tipoDTE}_Folio_${folio}.xml`;
+                        const folder = tipoDTE == 61 ? 'notas_de_credito' : (tipoDTE == 56 ? 'notas_de_debito' : 'facturas');
+                        await electronAPI.saveXml(filename, finalXml, folder);
+                        console.log(`[FILE] Local DTE Saved in ${folder}: ${filename}`);
+                    } catch (error) {
+                        console.warn('Could not save local copy:', error);
+                        toast.show('Documento enviado, pero no se pudo guardar el XML localmente', 'warning');
+                    }
+
+                    const updatedConfig = JSON.parse(localStorage.getItem('sii_config') || '{}');
+                    const nextFolio = folio + 1;
+                    updatedConfig[`folio_${tipoDTE}`] = nextFolio;
+                    localStorage.setItem('sii_config', JSON.stringify(updatedConfig));
+                    api.saveSiiSettings(updatedConfig).catch((error) => console.error('Background Sync Failed:', error));
+                    api.markFolioUsed?.({ tipoDte: tipoDTE, folio }).catch((error) => {
+                        console.warn('No se pudo marcar folio usado en backend:', error);
+                    });
+
+                    try {
                         const uploadRes = await api.uploadXml(tipoDTE, folio, finalXml, {
-                            trackId: sendResult?.TrackId || sendResult?.trackId || null,
+                            trackId: createEmissionTransport.getSiiTrackId(sendResult),
                             estadoSii: resolveSiiStatus(sendResult, sendError)
                         });
                         if (uploadRes?.skipped) {
@@ -360,6 +365,10 @@ window.ValmuInvoicingCreateEmission = {
                     if (!sendError) {
                         toast.show(`Documento emitido correctamente. Folio: ${folio}`, 'success');
                     }
+
+                    page.historyData = null;
+                    page.activeTab = 'history';
+                    setTimeout(() => page.updateUI(), 1500);
                 } else {
                     toast.show(`Error al emitir: ${response.status}`, 'error');
 

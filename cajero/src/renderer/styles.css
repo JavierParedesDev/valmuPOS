@@ -592,8 +592,23 @@ select.input-control:focus+.select-chevron {
 }
 
 .search-results {
+    max-height: 350px;
+    overflow-y: auto;
+    padding-right: 4px;
     display: grid;
     gap: 0.5rem;
+}
+
+.search-results::-webkit-scrollbar {
+    width: 6px;
+}
+.search-results::-webkit-scrollbar-track {
+    border-radius: 999px;
+    background: var(--primary-soft);
+}
+.search-results::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: linear-gradient(180deg, #fb8a34, var(--primary));
 }
 
 .search-result-btn {
@@ -723,12 +738,13 @@ select.input-control:focus+.select-chevron {
 .cart-qty-controls {
     display: inline-flex;
     align-items: center;
-    gap: 0.45rem;
+    gap: 0.35rem;
+    max-width: 100%;
 }
 
 .qty-btn {
-    width: 44px;
-    height: 44px;
+    width: 40px;
+    height: 40px;
     border: 1px solid var(--primary-border);
     border-radius: 14px;
     background: white;
@@ -1366,11 +1382,11 @@ select.input-control:focus+.select-chevron {
 }
 
 .dispatch-search-overlay .search-results {
-    max-height: 110px;
+    max-height: 350px;
 }
 
 .dispatch-view .search-results {
-    max-height: 110px;
+    max-height: 350px;
     overflow-y: auto;
     border-radius: 14px;
     background: #fff;
@@ -1491,10 +1507,48 @@ select.input-control:focus+.select-chevron {
     border-bottom: none;
 }
 
+.sii-diagnostic-item {
+    background: #fffdfb;
+}
+
+.sii-diagnostic-grid {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.sii-diagnostic-grid .settings-info-row {
+    align-items: flex-start;
+}
+
+.sii-diagnostic-grid strong {
+    max-width: 62%;
+    overflow-wrap: anywhere;
+    text-align: right;
+    font-size: 0.86rem;
+}
+
+.sii-diagnostic-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.8rem;
+}
+
+.sii-diagnostic-output {
+    width: 100%;
+    min-height: 150px;
+    resize: vertical;
+    border: 1px solid var(--primary-border);
+    border-radius: var(--radius-md);
+    background: #2a1a12;
+    color: #fff7f1;
+    padding: 0.85rem;
+    font: 700 0.78rem/1.45 Consolas, 'Courier New', monospace;
+}
+
 
 
 .qty-value-btn {
-    min-width: 84px;
+    min-width: 78px;
     min-height: 36px;
     border: 1px solid var(--primary-border);
     border-radius: 12px;
@@ -2328,7 +2382,7 @@ select.input-control:focus+.select-chevron {
 
 .retail-cart-header,
 .retail-cart-item {
-    grid-template-columns: 165px minmax(0, 1fr) 160px 120px 130px 60px;
+    grid-template-columns: 150px minmax(180px, 1fr) 192px 112px 132px 48px;
     gap: 0.75rem;
 }
 
@@ -2364,6 +2418,20 @@ select.input-control:focus+.select-chevron {
     align-self: center;
 }
 
+.retail-cart-item .col-qty,
+.retail-cart-item .col-discount {
+    min-width: 0;
+}
+
+.retail-cart-item .col-discount {
+    justify-self: stretch;
+}
+
+.retail-cart-item .col-discount>div {
+    min-width: 0;
+    justify-content: center !important;
+}
+
 .cart-code-pill,
 .discount-chip {
     display: inline-flex;
@@ -2381,6 +2449,7 @@ select.input-control:focus+.select-chevron {
 .discount-chip {
     background: rgba(58, 40, 29, 0.08);
     color: var(--text-soft);
+    min-width: 52px;
 }
 
 .cart-offer-btn {
@@ -2840,7 +2909,7 @@ select.input-control:focus+.select-chevron {
 .retail-cart-header,
 .retail-cart-item {
     gap: 0.75rem;
-    grid-template-columns: 145px minmax(180px, 1fr) 182px 86px 142px 46px;
+    grid-template-columns: 132px minmax(170px, 1fr) 192px 108px 132px 44px;
 }
 
 .retail-cart-header {
@@ -3301,7 +3370,7 @@ select.input-control:focus+.select-chevron {
 .retail-cart-header,
 .retail-cart-item {
     gap: 0.5rem;
-    grid-template-columns: 125px minmax(150px, 1fr) 158px 74px 116px 42px;
+    grid-template-columns: 118px minmax(140px, 1fr) 178px 96px 112px 38px;
 }
 
 .retail-cart-header {
@@ -3420,7 +3489,7 @@ select.input-control:focus+.select-chevron {
 }
 
 .dispatch-view .search-results {
-    max-height: 76px;
+    max-height: 350px;
 }
 
 .dispatch-view .cart-table-header {
@@ -3431,6 +3500,17 @@ select.input-control:focus+.select-chevron {
 .dispatch-view .retail-cart-item {
     min-height: 54px;
     padding: 0.4rem 0.48rem;
+}
+
+.dispatch-view .qty-btn {
+    width: 36px;
+    height: 36px;
+    border-radius: 12px;
+}
+
+.dispatch-view .qty-value-btn {
+    min-width: 72px;
+    min-height: 34px;
 }
 
 .dispatch-view .retail-footer-actions {
@@ -3639,7 +3719,7 @@ select.input-control:focus+.select-chevron {
 }
 
 .dispatch-search-overlay .search-results {
-    max-height: 300px;
+    max-height: 350px;
     overflow-y: auto;
     pointer-events: auto;
     border-radius: 16px;
@@ -3872,4 +3952,18 @@ select.input-control:focus+.select-chevron {
 
 .diff-bad {
     color: #ef4444 !important;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.spin-animation {
+    display: inline-block;
+    animation: spin 1s linear infinite;
 }

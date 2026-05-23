@@ -1,3 +1,166 @@
+async function resolveFreshSiiConfig(config = {}) {
+    const mergedConfig = { ...(config || {}) };
+
+    try {
+        if (typeof window.electronAPI?.getSiiConfig === 'function') {
+            const diskConfig = await window.electronAPI.getSiiConfig();
+            Object.assign(mergedConfig, diskConfig || {});
+            localStorage.setItem('sii_config', JSON.stringify(mergedConfig));
+        }
+    } catch (error) {
+        console.warn('No se pudo refrescar sii_data/config.json antes de enviar:', error);
+    }
+
+    return mergedConfig;
+}
+
+function getSiiTrackId(response) {
+    const rawTrackId = response?.TrackId ?? response?.trackId ?? response?.TRACKID ?? null;
+    const trackId = Number(rawTrackId);
+    return Number.isFinite(trackId) ? trackId : null;
+}
+
+function isSuccessfulSiiSend(response) {
+    const estado = String(response?.estado || response?.Estado || '').trim().toUpperCase();
+    const trackId = getSiiTrackId(response);
+    return trackId !== null && trackId > 0 && estado !== 'ERROR';
+}
+
+function resolveSiiResolution(config = {}) {
+    const numero = Number(config.resolucionNumero || config.numeroResolucion || config.nroResolucion || 80);
+    return {
+        numero: Number.isFinite(numero) && numero > 0 ? numero : 80,
+        fecha: config.resolucionFecha || config.fechaResolucion || '2014-08-22'
+    };
+}
+
+function resolveSiiAmbiente(config = {}) {
+    const ambiente = String(config.siiAmbiente || config.ambiente || '2').trim();
+    return ambiente === '2' || ambiente === 'produccion' || ambiente === 'PRODUCCION' ? 1 : 0;
+}
+
+function cleanSiiErrorMessage(error) {
+    if (error?.userMessage) {
+        return error.userMessage;
+    }
+
+    const rawMessage = String(error?.message || error || '').trim();
+
+    if (!rawMessage) {
+        return 'No se pudo enviar el documento al SII. Intenta nuevamente en unos minutos.';
+    }
+
+    let payload = null;
+    try {
+        payload = JSON.parse(rawMessage);
+    } catch (_error) {
+        payload = null;
+    }
+
+    const technicalText = String(payload?.responseXml || payload?.glosa || rawMessage);
+    if (/response ended prematurely|sending the request|webexception|httprequestexception/i.test(technicalText)) {
+        return 'El SII o SimpleAPI cortaron la conexion durante el envio. No se desconto el folio ni se guardo el XML. Intenta reenviar en unos minutos.';
+    }
+
+    if (/rutenvia|null|rutempresa|null|file|null/i.test(rawMessage)) {
+        return 'SimpleAPI no recibio correctamente los datos del envio. No se desconto el folio ni se guardo el XML.';
+    }
+
+    if (/solo se admiten dos archivos|archivos recibidos/i.test(rawMessage)) {
+        return 'SimpleAPI rechazo el envio por formato de archivos. No se desconto el folio ni se guardo el XML.';
+    }
+
+    if (payload?.glosa) {
+        return `El SII rechazo el envio: ${payload.glosa}`;
+    }
+
+    if (rawMessage.length > 220) {
+        return 'No se pudo enviar el documento al SII. No se desconto el folio ni se guardo el XML. Revisa la conexion e intenta nuevamente.';
+    }
+
+    return rawMessage;
+}
+
+function showSiiSuccessDialog(trackId) {
+    if (typeof Swal !== 'undefined') {
+        Swal.fire({
+            customClass: {
+                popup: 'sii-result-popup',
+                htmlContainer: 'sii-result-html',
+                confirmButton: 'sii-result-confirm'
+            },
+            buttonsStyling: false,
+            showCloseButton: true,
+            confirmButtonText: 'Aceptar',
+            html: `
+                <div class="sii-result-shell">
+                    <div class="sii-result-icon" aria-hidden="true">
+                        <i class="bi bi-check2"></i>
+                    </div>
+                    <div class="sii-result-copy">
+                        <span class="sii-result-overline">Envio confirmado</span>
+                        <h3>Documento enviado al SII</h3>
+                        <p>El documento fue recibido correctamente por el SII.</p>
+                    </div>
+                    <div class="sii-result-track">
+                        <span>TrackID</span>
+                        <strong>${trackId}</strong>
+                    </div>
+                </div>
+            `
+        });
+        return;
+    }
+
+    console.log(`ENVIADO AL SII EXITOSAMENTE - TrackID: ${trackId}`);
+}
+
+function showSiiLoadingDialog(message) {
+    if (typeof Swal === 'undefined') {
+        return;
+    }
+
+    Swal.fire({
+        title: 'Enviando al SII',
+        html: `
+            <div class="sii-loading-shell">
+                <p data-sii-loading-message>${message}</p>
+            </div>
+        `,
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+        buttonsStyling: false,
+        customClass: {
+            popup: 'sii-loading-popup',
+            htmlContainer: 'sii-loading-html'
+        },
+        didOpen: () => {
+            Swal.showLoading();
+        }
+    });
+}
+
+function updateSiiLoadingDialog(message) {
+    const messageElement = document.querySelector('[data-sii-loading-message]');
+    if (messageElement) {
+        messageElement.textContent = message;
+        return;
+    }
+
+    showSiiLoadingDialog(message);
+}
+
+function closeSiiLoadingDialog() {
+    if (typeof Swal === 'undefined') {
+        return;
+    }
+
+    if (document.querySelector('.sii-loading-popup')) {
+        Swal.close();
+    }
+}
+
 window.ValmuInvoicingTransport = {
     async testConnection({ button, toast } = {}) {
         const config = JSON.parse(localStorage.getItem('sii_config') || '{}');
@@ -118,17 +281,31 @@ window.ValmuInvoicingTransport = {
         toast?.show?.('Empaquetando y Enviando al SII...', 'info');
 
         try {
-            const nroRes = (config.nroResolucion && parseInt(config.nroResolucion, 10) > 0)
-                ? parseInt(config.nroResolucion, 10)
-                : 80;
-            const fchRes = config.fechaResolucion || '2014-08-22';
-            const rutEmisor = config.rut || config.rutEmisor || '13625745-5';
-            const rutEnvia = config.rutEnvia || config.rutFirmante || rutEmisor;
+            const freshConfig = await resolveFreshSiiConfig(config);
+            const normalizeRut = (rut) => String(rut || '').replace(/\./g, '').trim().toUpperCase();
+            
+            const resolucion = resolveSiiResolution(freshConfig);
+            const ambienteSii = resolveSiiAmbiente(freshConfig);
+            const nroRes = resolucion.numero;
+            const fchRes = resolucion.fecha;
+            const rutEmisor = normalizeRut(freshConfig.rut || freshConfig.rutEmisor || '');
+            const configuredRutEnvia = normalizeRut(freshConfig.rutEnvia || freshConfig.rutFirmante || freshConfig.siiAuthRut || '');
+            const rutEnvia = configuredRutEnvia || rutEmisor;
+            const certPassword = freshConfig.certPassword || freshConfig.passwordCert || '';
+
+            console.log('[SII] Datos de envio admin:', {
+                rutEmisor,
+                rutEnvia,
+                tipoDTE,
+                ambiente: ambienteSii === 1 ? 'produccion' : 'certificacion',
+                numeroResolucion: nroRes,
+                fechaResolucion: fchRes
+            });
 
             const wrapPayload = {
                 Certificado: {
                     Rut: rutEnvia,
-                    Password: config.certPassword || config.passwordCert || 'distribuidoraAlmi2020'
+                    Password: certPassword
                 },
                 Caratula: {
                     RutEnvia: rutEnvia,
@@ -146,9 +323,11 @@ window.ValmuInvoicingTransport = {
             const dteBlobFinal = dteXmlContent instanceof Blob
                 ? dteXmlContent
                 : new Blob([dteXmlContent], { type: 'text/xml' });
-            wrapFormData.append('files', dteBlobFinal, 'dte.xml');
+            wrapFormData.append('files2', dteBlobFinal, 'dte.xml');
 
-            const headers = { Authorization: 'Bearer ' + token };
+            const apiKey = String(freshConfig.apiKey || '').trim();
+            const headers = apiKey ? { Authorization: apiKey } : {};
+            showSiiLoadingDialog('Generando el sobre firmado. Espera un momento...');
             const wrapRes = await fetch('https://api.simpleapi.cl/api/v1/envio/generar', {
                 method: 'POST',
                 headers,
@@ -164,18 +343,33 @@ window.ValmuInvoicingTransport = {
 
             const sendPayload = {
                 Tipo: tipoDTE == 39 || tipoDTE == 41 ? 2 : 1,
-                Ambiente: 1,
+                Ambiente: ambienteSii,
+                RutCompany: rutEmisor,
+                RutEmpresa: rutEmisor,
+                RutEmisor: rutEmisor,
+                RutEnvia: rutEnvia,
+                rutCompany: rutEmisor,
+                rutEmpresa: rutEmisor,
+                rutEmisor: rutEmisor,
+                rutEnvia: rutEnvia,
                 Certificado: {
                     Rut: rutEnvia,
-                    Password: config.certPassword || config.passwordCert || 'distribuidoraAlmi2020'
+                    Password: certPassword
+                },
+                Caratula: {
+                    RutEnvia: rutEnvia,
+                    RutEmisor: rutEmisor
                 }
             };
 
             const sendFormData = new FormData();
             sendFormData.append('input', JSON.stringify(sendPayload));
             sendFormData.append('files', certBlob, 'certificado.pfx');
-            sendFormData.append('files', new Blob([envelopeXml], { type: 'text/xml' }), 'envio.xml');
 
+            const envelopeBlob = new Blob([envelopeXml], { type: 'text/xml' });
+            sendFormData.append('files2', envelopeBlob, 'envio.xml');
+
+            updateSiiLoadingDialog('Subiendo el sobre firmado al SII. Esto puede tardar unos segundos...');
             const sendRes = await fetch('https://api.simpleapi.cl/api/v1/envio/enviar', {
                 method: 'POST',
                 headers,
@@ -184,6 +378,7 @@ window.ValmuInvoicingTransport = {
 
             const sendTxt = await sendRes.text();
             console.log('-> Respuesta Envio SII:', sendTxt);
+            closeSiiLoadingDialog();
 
             if (!sendRes.ok) {
                 throw new Error(sendTxt);
@@ -196,17 +391,27 @@ window.ValmuInvoicingTransport = {
                 console.warn('No se pudo parsear la respuesta de envío:', error);
             }
 
-            if (parsedResponse?.TrackId) {
-                alert(`ENVIADO AL SII EXITOSAMENTE\n\nTrackID: ${parsedResponse.TrackId}`);
+            if (parsedResponse && !isSuccessfulSiiSend(parsedResponse)) {
+                throw new Error(sendTxt);
+            }
+
+            const trackId = getSiiTrackId(parsedResponse);
+            if (trackId) {
+                showSiiSuccessDialog(trackId);
             } else {
                 toast?.show?.('Enviado al SII', 'success');
             }
 
             return parsedResponse;
         } catch (error) {
+            closeSiiLoadingDialog();
             console.error('Manual Send Error:', error);
-            toast?.show?.('Error enviando a SII (pero XML generado): ' + error.message, 'warning');
+            error.userMessage = cleanSiiErrorMessage(error);
             throw error;
         }
-    }
+    },
+
+    getSiiTrackId,
+    isSuccessfulSiiSend,
+    cleanSiiErrorMessage
 };

@@ -1,0 +1,16 @@
+**/node_modules/
+**/.expo/
+**/.expo-check/
+**/dist/
+**/build/
+**/release/
+**/*.apk
+**/*.exe
+**/*.blockmap
+**/*.log
+**/__pycache__/
+**/*.pyc
+
+cajero/
+admin/
+api-valmu/

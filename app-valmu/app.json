@@ -2,7 +2,7 @@
   "expo": {
     "name": "Valmu App",
     "slug": "app-valmu",
-    "version": "2.0.1",
+    "version": "2.0.6",
     "icon": "./assets/icon.png",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -25,7 +25,7 @@
     ],
     "android": {
       "package": "com.valmu.app",
-      "versionCode": 21,
+      "versionCode": 26,
       "adaptiveIcon": {
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#ffffff"

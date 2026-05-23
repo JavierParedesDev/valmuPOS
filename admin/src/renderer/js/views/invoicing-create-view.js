@@ -13,7 +13,7 @@ window.ValmuInvoicingCreateView = {
  </select>
  </div>
  <div class="w-20">
- <input type="number" class="w-full border border-[#e4cbb4] bg-[#fffdf9] p-1 rounded text-right focus:border-orange-500 outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none item-qty" value="" oninput="this.value = this.value.replace(/[^0-9]/g, '')" min="0">
+ <input type="text" inputmode="decimal" class="w-full border border-[#e4cbb4] bg-[#fffdf9] p-1 rounded text-right focus:border-orange-500 outline-none item-qty" value="" oninput="this.value = this.value.replace(/[^0-9.,]/g, '').replace(/([.,].*)[.,]/g, '$1')" placeholder="0.000">
  </div>
  <div class="w-24">
  <input type="text" class="w-full border border-[#e4cbb4] bg-[#fffdf9] p-1 rounded text-right focus:border-orange-500 outline-none item-unit" value="un">

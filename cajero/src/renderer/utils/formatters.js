@@ -24,12 +24,17 @@ export function formatDateTime(isoDate) {
 }
 
 export function capitalizePaymentMethod(method) {
-    if (method === 'tarjeta') {
+    const m = String(method || '').toLowerCase().trim();
+    if (m === 'tarjeta') {
         return 'Tarjeta';
     }
 
-    if (method === 'transferencia') {
+    if (m === 'transferencia') {
         return 'Transferencia';
+    }
+
+    if (m === 'mixto') {
+        return 'Mixto';
     }
 
     return 'Efectivo';
@@ -52,6 +57,23 @@ export async function parseJsonResponse(response) {
     } catch (_error) {
         return null;
     }
+}
+
+export function unwrapApiArray(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data)) return payload.data;
+    if (Array.isArray(payload?.data?.data)) return payload.data.data;
+    if (Array.isArray(payload?.ventas)) return payload.ventas;
+    if (Array.isArray(payload?.items)) return payload.items;
+    return [];
+}
+
+export function unwrapApiObject(payload) {
+    if (payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)) {
+        return payload.data;
+    }
+
+    return payload && typeof payload === 'object' ? payload : null;
 }
 
 export function escapeHtml(value) {

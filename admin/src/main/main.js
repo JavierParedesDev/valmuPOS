@@ -17,7 +17,6 @@ app.whenReady().then(() => {
         updateManager.sendStateToWindow();
     });
 
-    Menu.setApplicationMenu(null);
     registerIpcHandlers(mainWindow, {
         getUpdateState: updateManager.getUpdateState,
         checkForUpdates: updateManager.checkForUpdates,

@@ -18,16 +18,22 @@ window.ValmuInvoicingConfig = {
         const readTrimmedValue = (id) => String(document.getElementById(id)?.value || '').trim();
         const readNumberValue = (id, fallback) => parseInt(document.getElementById(id)?.value, 10) || fallback;
 
+        const rutEmisor = readTrimmedValue('conf-rut-emisor');
+        const rutEnvia = readTrimmedValue('conf-rut-envia');
+
         return {
             ...(currentConfig || {}),
-            rutEmisor: readTrimmedValue('conf-rut-emisor'),
-            rutEnvia: readTrimmedValue('conf-rut-envia'),
+            rutEmisor,
+            rutEnvia,
             razonSocial: readTrimmedValue('conf-razon-social'),
             direccion: readTrimmedValue('conf-direccion'),
             email: readTrimmedValue('conf-email'),
             telefono: readTrimmedValue('conf-fono'),
             apiKey: readTrimmedValue('conf-api-key'),
             certPassword: readTrimmedValue('conf-cert-pass'),
+            siiAmbiente: currentConfig.siiAmbiente || '2',
+            numeroResolucion: Number(currentConfig.numeroResolucion || currentConfig.resolucionNumero || 80),
+            fechaResolucion: currentConfig.fechaResolucion || currentConfig.resolucionFecha || '2014-08-22',
             folio_33: readNumberValue('conf-folio-33', 1),
             folio_39: readNumberValue('conf-folio-39', 1),
             folio_61: readNumberValue('conf-folio-61', 1),

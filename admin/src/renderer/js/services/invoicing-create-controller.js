@@ -60,6 +60,12 @@ window.ValmuInvoicingCreateController = {
             return amount.toFixed(decimals);
         };
 
+        const parseQuantity = (value) => {
+            const normalized = String(value || '').trim().replace(',', '.');
+            const quantity = Number.parseFloat(normalized);
+            return Number.isFinite(quantity) ? quantity : 0;
+        };
+
         const findProduct = (value) => {
             const normalizedValue = normalizeText(value);
             if (!normalizedValue) {
@@ -291,7 +297,7 @@ window.ValmuInvoicingCreateController = {
                 return;
             }
 
-            const qty = parseFloat(row.querySelector('.item-qty').value) || 0;
+            const qty = parseQuantity(row.querySelector('.item-qty').value);
             const priceInput = row.querySelector('.item-price');
             const netUnitPrice = parseAmount(priceInput.value);
             const discPct = parseFloat(row.querySelector('.item-pct-desc').value) || 0;
@@ -324,7 +330,7 @@ window.ValmuInvoicingCreateController = {
             priceInput.value = formatAmount((product.sale_price || 0) / 1.19, 2);
 
             if (unitInput && !unitInput.value) {
-                unitInput.value = 'un';
+                unitInput.value = product.unit || product.unidad || 'un';
             }
 
             if (priceTypeSelect) {

@@ -33,28 +33,61 @@ export default function UsersScreen({ token }) {
     const [form, setForm] = useState(emptyUserForm());
     const [saving, setSaving] = useState(false);
 
+    const buildRolesFromUsers = (usersList) => {
+        const roleMap = new Map();
+        (usersList || []).forEach((u) => {
+            const id = u.id_rol || u.idRol || u.rol_id || u.roleId;
+            const name = u.nombreRol || u.rol || u.role || u.nombre_rol;
+            if (id && name) {
+                roleMap.set(String(id), { id_rol: String(id), nombreRol: name });
+            }
+        });
+
+        if (roleMap.size) {
+            return Array.from(roleMap.values());
+        }
+
+        return [
+            { id_rol: '1', nombreRol: 'Administrador' },
+            { id_rol: '2', nombreRol: 'Vendedor' },
+            { id_rol: '3', nombreRol: 'Bodeguero' }
+        ];
+    };
+
+    const apiRequestWithFallback = async ({ endpoints, method = 'GET', body, token }) => {
+        let lastResponse = null;
+        for (const endpoint of endpoints) {
+            const response = await apiRequest({ endpoint, method, body, token });
+            lastResponse = response;
+            if (response.ok || response.status !== 404) {
+                return response;
+            }
+        }
+        return lastResponse || { ok: false, status: 0, error: 'No se pudo conectar con el servidor' };
+    };
+
     function emptyUserForm() {
         return {
             nombreCompleto: '',
             nombreUsuario: '',
             contrasena: '',
             id_rol: '',
-            id_sucursal: ''
+            id_sucursal: 'null'
         };
     }
 
     const fetchData = async () => {
         setLoading(true);
         try {
-            const [usersRes, rolesRes, branchRes] = await Promise.all([
-                apiRequest({ endpoint: '/auth/usuarios', token }),
-                apiRequest({ endpoint: '/auth/roles', token }),
+            const [usersRes, branchRes] = await Promise.all([
+                apiRequestWithFallback({ endpoints: ['/auth/usuarios', '/usuarios'], token }),
                 apiRequest({ endpoint: '/sucursales', token })
             ]);
 
-            setUsers(Array.isArray(usersRes?.data) ? usersRes.data : []);
-            setRoles(Array.isArray(rolesRes?.data) ? rolesRes.data : (Array.isArray(rolesRes) ? rolesRes : []));
-            setBranches(Array.isArray(branchRes?.data) ? branchRes.data : []);
+            const usersData = unwrapArrayResponse(usersRes);
+            setUsers(usersData);
+            setRoles(buildRolesFromUsers(usersData));
+            setBranches(unwrapArrayResponse(branchRes));
         } catch (error) {
             console.error('Error fetching users:', error);
             Alert.alert('Error', 'No se pudieron cargar los datos de usuarios.');
@@ -79,8 +112,8 @@ export default function UsersScreen({ token }) {
             nombreCompleto: user.nombreCompleto || '',
             nombreUsuario: user.nombreUsuario || user.username || '',
             contrasena: '', // Empty to keep password
-            id_rol: String(user.id_rol || ''),
-            id_sucursal: String(user.id_sucursal || '')
+            id_rol: String(user.id_rol || user.idRol || ''),
+            id_sucursal: (user.id_sucursal !== null && user.id_sucursal !== undefined) ? String(user.id_sucursal) : 'null'
         });
         setModalVisible(true);
     };
@@ -93,16 +126,27 @@ export default function UsersScreen({ token }) {
 
         setSaving(true);
         try {
-            const endpoint = editingUser ? `/auth/usuarios/${editingUser.id_usuario || editingUser.id}` : '/auth/usuarios';
+            const userId = editingUser?.id_usuario || editingUser?.id;
+            const endpoints = editingUser ? [`/auth/usuarios/${userId}`, `/usuarios/${userId}`] : ['/auth/usuarios', '/usuarios'];
             const method = editingUser ? 'PUT' : 'POST';
 
-            const submitBody = { ...form };
-            if (editingUser && !submitBody.contrasena) {
+            const submitBody = {
+                nombreCompleto: form.nombreCompleto,
+                nombreUsuario: form.nombreUsuario,
+                contrasena: form.contrasena,
+                id_rol: form.id_rol,
+                id_sucursal: form.id_sucursal === 'null' || form.id_sucursal === '' ? null : form.id_sucursal,
+                activo: true,
+                username: form.nombreUsuario,
+                password: form.contrasena
+            };
+            if (editingUser && !form.contrasena) {
                 delete submitBody.contrasena;
+                delete submitBody.password;
             }
 
-            const res = await apiRequest({
-                endpoint,
+            const res = await apiRequestWithFallback({
+                endpoints,
                 method,
                 body: submitBody,
                 token
@@ -125,15 +169,16 @@ export default function UsersScreen({ token }) {
     const handleDelete = (user) => {
         Alert.alert(
             'Eliminar Usuario',
-            `¿Estás seguro de que deseas eliminar a ${user.nombreUsuario}?`,
+            `¿Estás seguro de que deseas eliminar a ${user.nombreUsuario}`,
             [
                 { text: 'Cancelar', style: 'cancel' },
                 {
                     text: 'Eliminar',
                     style: 'destructive',
                     onPress: async () => {
-                        const res = await apiRequest({
-                            endpoint: `/auth/usuarios/${user.id_usuario || user.id}`,
+                        const userId = user.id_usuario || user.id;
+                        const res = await apiRequestWithFallback({
+                            endpoints: [`/auth/usuarios/${userId}`, `/usuarios/${userId}`],
                             method: 'DELETE',
                             token
                         });
@@ -156,8 +201,8 @@ export default function UsersScreen({ token }) {
                 </View>
                 <View style={styles.userDetails}>
                     <Text style={styles.userName}>{item.nombreUsuario || item.username}</Text>
-                    <Text style={styles.userRole}>{item.rol || 'Sin rol'}</Text>
-                    <Text style={styles.userBranch}>{item.nombreSucursal || 'Sin sucursal'}</Text>
+                    <Text style={styles.userRole}>{item.rol || item.nombreRol || 'Sin rol'}</Text>
+                    <Text style={styles.userBranch}>{item.id_sucursal ? (item.nombreSucursal || item.sucursal || 'Sin sucursal') : 'Ambas sucursales'}</Text>
                 </View>
             </View>
             <View style={styles.actions}>
@@ -205,7 +250,7 @@ export default function UsersScreen({ token }) {
                         />
                     </View>
                 }
-                ListEmptyComponent={<EmptyState title="No hay usuarios" message="Comienza creando uno nuevo." />}
+                ListEmptyComponent={<EmptyState text="No hay usuarios registrados." />}
                 contentContainerStyle={styles.listContent}
             />
 
@@ -213,8 +258,9 @@ export default function UsersScreen({ token }) {
                 visible={modalVisible}
                 title={editingUser ? 'Editar Usuario' : 'Nuevo Usuario'}
                 onClose={() => setModalVisible(false)}
-                onSave={handleSave}
-                saving={saving}
+                onSubmit={handleSave}
+                submitLabel={saving ? 'Guardando...' : (editingUser ? 'Guardar cambios' : 'Crear usuario')}
+                submitDisabled={saving}
             >
                 <Field
                     label="Nombre Completo"
@@ -239,16 +285,19 @@ export default function UsersScreen({ token }) {
                 <PickerField
                     label="Rol de Usuario"
                     value={form.id_rol}
-                    onValueChange={(val) => setForm({ ...form, id_rol: val })}
-                    options={roles.map(r => ({ label: r.nombreRol, value: String(r.id_rol) }))}
-                    placeholder="Seleccionar rol..."
+                    onChange={(val) => setForm({ ...form, id_rol: val })}
+                    options={roles.map(r => ({ label: r.nombreRol || r.nombre || r.rol, value: String(r.id_rol || r.id) }))}
+                    emptyLabel="Seleccionar rol..."
                 />
                 <PickerField
                     label="Sucursal Asignada"
                     value={form.id_sucursal}
-                    onValueChange={(val) => setForm({ ...form, id_sucursal: val })}
-                    options={branches.map(b => ({ label: b.nombreSucursal, value: String(b.id_sucursal) }))}
-                    placeholder="Seleccionar sucursal..."
+                    onChange={(val) => setForm({ ...form, id_sucursal: val })}
+                    options={[
+                        { label: 'Ambas sucursales', value: 'null' },
+                        ...branches.map(b => ({ label: b.nombreSucursal || b.nombre, value: String(b.id_sucursal || b.id) }))
+                    ]}
+                    emptyLabel="Seleccionar sucursal..."
                 />
             </FormModal>
         </Screen>
@@ -334,3 +383,10 @@ const styles = StyleSheet.create({
         marginTop: 8
     }
 });
+
+function unwrapArrayResponse(response) {
+    if (Array.isArray(response?.data)) return response.data;
+    if (Array.isArray(response?.data?.data)) return response.data.data;
+    if (Array.isArray(response)) return response;
+    return [];
+}

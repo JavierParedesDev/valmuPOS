@@ -232,11 +232,18 @@ function parseDashboardDateValue(rawDate) {
 }
 
 function resolveApiData(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (Array.isArray(payload?.data?.data)) return payload.data.data;
+    if (payload?.data?.data && typeof payload.data.data === 'object') return payload.data.data;
     if (Array.isArray(payload?.data)) return payload.data;
     if (payload?.data && typeof payload.data === 'object') return payload.data;
-    if (Array.isArray(payload)) return payload;
     if (payload && typeof payload === 'object') return payload;
     return null;
+}
+
+function resolveApiArray(payload) {
+    const data = resolveApiData(payload);
+    return Array.isArray(data) ? data : [];
 }
 
 function renderAdminSalesSplitCards(target, metrics = {}) {
@@ -756,9 +763,9 @@ async function hydrateDashboard() {
             apiRequest({ endpoint: '/sucursales', token })
         ]);
 
-        const products = Array.isArray(prodRes?.data) ? prodRes.data : [];
-        const sales = Array.isArray(salesRes?.data) ? salesRes.data : (Array.isArray(salesRes) ? salesRes : []);
-        const allBranches = Array.isArray(branchRes?.data) ? branchRes.data : [];
+        const products = resolveApiArray(prodRes);
+        const sales = resolveApiArray(salesRes);
+        const allBranches = resolveApiArray(branchRes);
         const branches = bodegueroMode && activeBranchId
             ? allBranches.filter((branch) => Number(branch.id_sucursal) === Number(activeBranchId))
             : allBranches;
@@ -773,7 +780,7 @@ async function hydrateDashboard() {
         const invResults = await Promise.all(inventoryPromises);
 
         invResults.forEach(res => {
-            const stockItems = Array.isArray(res?.data) ? res.data : [];
+            const stockItems = resolveApiArray(res);
             stockItems.forEach(item => {
                 const stock = parseNumber(item.stockActual || item.cantidad || item.stock || 0);
                 const prodKey = item.id_producto;
@@ -791,7 +798,7 @@ async function hydrateDashboard() {
         const criticalItems = [];
         invResults.forEach((res, index) => {
             const branch = branches[index];
-            const stockItems = Array.isArray(res?.data) ? res.data : [];
+            const stockItems = resolveApiArray(res);
             stockItems.forEach(item => {
                 const stock = parseNumber(item.stockActual || item.cantidad || item.stock || 0);
                 if (stock >= 0 && stock <= lowStockThreshold) {
@@ -1079,7 +1086,7 @@ async function hydrateBodegueroDashboard() {
     try {
         // Obtener sucursales y filtrar por la asignada
         const branchRes = await apiRequest({ endpoint: '/sucursales', token });
-        const allBranches = Array.isArray(branchRes?.data) ? branchRes.data : [];
+        const allBranches = resolveApiArray(branchRes);
         const branches = activeBranchId
             ? allBranches.filter((branch) => Number(branch.id_sucursal) === Number(activeBranchId))
             : allBranches;
@@ -1095,12 +1102,12 @@ async function hydrateBodegueroDashboard() {
         );
         const lookupInventoryResults = await Promise.all(lookupInventoryPromises);
         const productRes = await apiRequest({ endpoint: '/productos?limit=10000&page=1&offset=0', token });
-        const lookupCatalog = Array.isArray(productRes?.data) ? productRes.data : [];
+        const lookupCatalog = resolveApiArray(productRes);
         const lookupMatrix = new Map();
 
         lookupInventoryResults.forEach((res, index) => {
             const branch = lookupBranches[index];
-            const stockItems = Array.isArray(res?.data) ? res.data : [];
+            const stockItems = resolveApiArray(res);
 
             stockItems.forEach((item) => {
                 const productId = Number(item?.id_producto);
@@ -1127,7 +1134,7 @@ async function hydrateBodegueroDashboard() {
 
         invResults.forEach((res, index) => {
             const branch = branches[index];
-            const stockItems = Array.isArray(res?.data) ? res.data : [];
+            const stockItems = resolveApiArray(res);
             totalProductos += stockItems.length;
 
             stockItems.forEach(item => {
@@ -1154,7 +1161,7 @@ async function hydrateBodegueroDashboard() {
         // Intentar obtener mermas del mes
         try {
             const mermasRes = await apiRequest({ endpoint: '/productos/mermas', token, silentNonJson: true });
-            const mermas = Array.isArray(mermasRes?.data) ? mermasRes.data : (Array.isArray(mermasRes) ? mermasRes : []);
+            const mermas = resolveApiArray(mermasRes);
 
             const now = new Date();
             const mesActual = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;

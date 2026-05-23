@@ -120,6 +120,33 @@ window.ValmuInvoicingApi = (() => {
         };
     };
 
+    const syncCafFolios = async ({ tipoDte, folioInicial, folioFinal }) => {
+        const controls = await getControlFolios();
+        const match = controls.find((row) => String(row.tipoDte) === String(tipoDte));
+        const response = await safeRequest('/folios/sincronizar-caf', 'POST', {
+            tipoDte: Number(tipoDte),
+            id_tipoDoc: match?.id_tipoDoc || null,
+            folioInicial: Number(folioInicial),
+            folioFinal: Number(folioFinal)
+        });
+
+        ensureOk(response, `No se pudo sincronizar el CAF ${tipoDte} con la base de datos`);
+        return unwrapData(response);
+    };
+
+    const markFolioUsed = async ({ tipoDte, folio }) => {
+        const controls = await getControlFolios();
+        const match = controls.find((row) => String(row.tipoDte) === String(tipoDte));
+        const response = await safeRequest('/folios/marcar-usado', 'POST', {
+            tipoDte: Number(tipoDte),
+            id_tipoDoc: match?.id_tipoDoc || null,
+            folio: Number(folio)
+        });
+
+        ensureOk(response, `No se pudo marcar como usado el folio ${folio}`);
+        return unwrapData(response);
+    };
+
     const getLocalSiiConfig = async () => {
         if (typeof window.electronAPI?.getSiiConfig === 'function') {
             return window.electronAPI.getSiiConfig();
@@ -165,6 +192,8 @@ window.ValmuInvoicingApi = (() => {
         saveSiiSettings: async (data) => saveLocalSiiConfig(data),
         getFoliosControl: async () => getControlFolios(),
         requestNextFolio: async (tipoDte) => requestNextFolio(tipoDte),
+        syncCafFolios: async (data) => syncCafFolios(data),
+        markFolioUsed: async (data) => markFolioUsed(data),
         getXmlList: () => safeRequest('/dte/list'),
         uploadXml: async (type, folio, content, options = {}) => {
             const idVenta = options.idVenta

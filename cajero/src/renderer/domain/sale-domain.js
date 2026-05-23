@@ -1,4 +1,10 @@
-export function getCartSnapshot({ cart, products, getPricingForProduct, collaboratorDiscountEnabled = false }) {
+export function getCartSnapshot({
+    cart,
+    products,
+    getPricingForProduct,
+    collaboratorDiscountEnabled = false,
+    extraChargeEnabled = false
+}) {
     let baseTotal = 0;
     let totalItems = 0;
     let lineDiscount = 0;
@@ -18,8 +24,12 @@ export function getCartSnapshot({ cart, products, getPricingForProduct, collabor
     const collaboratorDiscount = collaboratorDiscountEnabled
         ? Math.round(baseTotal * 0.1)
         : 0;
+    const subtotalAfterDiscount = Math.max(0, Math.round(baseTotal - collaboratorDiscount));
+    const extraCharge = extraChargeEnabled
+        ? Math.round(subtotalAfterDiscount * 0.02)
+        : 0;
     const totalDiscount = lineDiscount + collaboratorDiscount;
-    const total = Math.max(0, Math.round(baseTotal - collaboratorDiscount));
+    const total = Math.max(0, Math.round(subtotalAfterDiscount + extraCharge));
 
     return {
         total,
@@ -28,7 +38,9 @@ export function getCartSnapshot({ cart, products, getPricingForProduct, collabor
         discount: Math.round(totalDiscount),
         lineDiscount: Math.round(lineDiscount),
         collaboratorDiscount: Math.round(collaboratorDiscount),
-        collaboratorDiscountEnabled: Boolean(collaboratorDiscountEnabled)
+        collaboratorDiscountEnabled: Boolean(collaboratorDiscountEnabled),
+        extraCharge: Math.round(extraCharge),
+        extraChargeEnabled: Boolean(extraChargeEnabled)
     };
 }
 
@@ -50,7 +62,14 @@ export function validateCartStock({ cart, products, formatQuantity }) {
     return { ok: true };
 }
 
-function buildAdjustedCartLines({ cart, products, getPricingForProduct, collaboratorDiscount = 0, expectedTotal = null }) {
+function buildAdjustedCartLines({
+    cart,
+    products,
+    getPricingForProduct,
+    collaboratorDiscount = 0,
+    extraCharge = 0,
+    expectedTotal = null
+}) {
     const baseLines = cart.map((item) => {
         const product = products.find((entry) => entry.id === item.productId);
         if (!product) {
@@ -70,6 +89,7 @@ function buildAdjustedCartLines({ cart, products, getPricingForProduct, collabor
 
     const baseTotal = baseLines.reduce((sum, line) => sum + line.baseLineTotal, 0);
     let assignedDiscount = 0;
+    let assignedExtraCharge = 0;
 
     const adjustedLines = baseLines.map((line, index) => {
         const isLastLine = index === baseLines.length - 1;
@@ -82,7 +102,18 @@ function buildAdjustedCartLines({ cart, products, getPricingForProduct, collabor
 
         assignedDiscount += lineDiscount;
 
-        const adjustedLineTotal = Math.max(0, line.baseLineTotal - lineDiscount);
+        const discountedLineTotal = Math.max(0, line.baseLineTotal - lineDiscount);
+        const discountedTotal = Math.max(0, baseTotal - collaboratorDiscount);
+        const proportionalExtraCharge = extraCharge > 0 && discountedTotal > 0
+            ? Math.round((discountedLineTotal / discountedTotal) * extraCharge)
+            : 0;
+        const lineExtraCharge = isLastLine
+            ? Math.max(0, extraCharge - assignedExtraCharge)
+            : Math.max(0, proportionalExtraCharge);
+
+        assignedExtraCharge += lineExtraCharge;
+
+        const adjustedLineTotal = Math.max(0, discountedLineTotal + lineExtraCharge);
         const adjustedUnitPrice = line.quantity > 0
             ? Number((adjustedLineTotal / line.quantity).toFixed(4))
             : 0;
@@ -129,13 +160,15 @@ export function buildSalePayload({
     paymentMethodMap,
     getPricingForProduct,
     branchId = null,
-    collaboratorDiscountEnabled = false
+    collaboratorDiscountEnabled = false,
+    extraChargeEnabled = false
 }) {
     const snapshot = getCartSnapshot({
         cart,
         products,
         getPricingForProduct,
-        collaboratorDiscountEnabled
+        collaboratorDiscountEnabled,
+        extraChargeEnabled
     });
     const subtotal = Math.round(snapshot.total / 1.19);
     const iva = snapshot.total - subtotal;
@@ -148,6 +181,7 @@ export function buildSalePayload({
         products,
         getPricingForProduct,
         collaboratorDiscount: snapshot.collaboratorDiscount || 0,
+        extraCharge: snapshot.extraCharge || 0,
         expectedTotal: snapshot.total
     });
 

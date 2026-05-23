@@ -25,7 +25,7 @@ function compareVersions(a, b) {
 
 function normalizeReleaseNotes(value) {
     return String(value || '')
-        .replace(/#+\s?/g, '')
+        .replace(/#+\sa/g, '')
         .replace(/\r/g, '')
         .trim();
 }
@@ -34,6 +34,7 @@ function getInstalledVersion() {
     return (
         Constants.expoConfig?.version ||
         Constants.manifest2?.extra?.expoClient?.version ||
+        Constants.manifest?.version ||
         '0.0.0'
     );
 }

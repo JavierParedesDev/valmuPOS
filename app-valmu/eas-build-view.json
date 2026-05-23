@@ -1,0 +1,48 @@
+{
+  "id": "6403933e-50e5-4dbd-a8b6-8882b198ba5b",
+  "status": "ERRORED",
+  "platform": "ANDROID",
+  "error": {
+    "errorCode": "EAS_BUILD_UNKNOWN_GRADLE_ERROR",
+    "message": "Gradle build failed with unknown error. See logs for the \"Run gradlew\" phase for more information."
+  },
+  "artifacts": {},
+  "fingerprint": {
+    "id": "019e0634-56e7-7c63-bbf1-a308463b1b05",
+    "hash": "fd2ffa72c54dfe1b63f642857adcb4bab660584a"
+  },
+  "initiatingActor": {
+    "id": "251fd1c4-d045-4a36-91ad-dc54f627c1b6",
+    "displayName": "shapydev"
+  },
+  "logFiles": [
+    "https://storage.googleapis.com/eas-workflows-production/logs/7853b829-9bba-4cf1-b16b-22312a485521/6403933e-50e5-4dbd-a8b6-8882b198ba5b/2026-05-08T06%3A09%3A15Z-36f27e72-8df8-4768-9165-5dc0b3d28f2d.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260508%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260508T061226Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=b5344d414249865deec84d12c940250026fa95c7ab4c63fd50a6d6685c4b56dc3fd90cd14cd66dfb34d345ee1506916010f9dabe2b2cc787fd4ccb7bba0dbaa4746d2ceb160745d5b9bf499ed5fdd5ab32d263a9c6813e695d26079e4e0ee910baea8b91a04819c9b8dbed9a130f7bbc6145932cd7f6a99d963e72495fe6c6a3c41d8a44d38a76fdb9f8bc08e3ec052ef23d8e5c9d2f48940971f62d3af8fa8a9664ea86e485a1127dd28d60b0f3bb37cb5175b17ed52863c46cfadf6add93735b885552a67e326db51b917d514ff159813534396b1debb936f22d0a6d36c78fc945c6e5888dfe7e129a035838276461599d7c1dd492d3873635e9bfb4b84917"
+  ],
+  "project": {
+    "id": "7853b829-9bba-4cf1-b16b-22312a485521",
+    "name": "app-valmu",
+    "slug": "app-valmu",
+    "ownerAccount": {
+      "id": "3d1bac78-5530-419b-a50d-e30ea4a53c94",
+      "name": "shapydev"
+    }
+  },
+  "distribution": "INTERNAL",
+  "buildProfile": "apk",
+  "sdkVersion": "52.0.0",
+  "appVersion": "2.0.3",
+  "appBuildVersion": "23",
+  "gitCommitHash": "991744eb5bf62b36679b3f0152deeb3f4c0e97ce",
+  "gitCommitMessage": "act",
+  "priority": "NORMAL",
+  "createdAt": "2026-05-08T06:09:13.898Z",
+  "updatedAt": "2026-05-08T06:11:17.626Z",
+  "completedAt": "2026-05-08T06:11:17.449Z",
+  "expirationDate": "2026-05-22T06:09:13.941Z",
+  "isForIosSimulator": false,
+  "metrics": {
+    "buildWaitTime": 1212,
+    "buildQueueTime": 4521,
+    "buildDuration": 117818
+  }
+}

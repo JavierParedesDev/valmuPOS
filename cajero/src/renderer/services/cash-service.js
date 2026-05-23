@@ -9,7 +9,9 @@ export async function fetchCashStatus({ apiBaseUrl, token }) {
 
     const payload = await parseJsonResponse(response);
     if (!response.ok) {
-        throw new Error(payload?.error || 'Error al verificar estado de caja');
+        const error = new Error(payload?.error || 'Error al verificar estado de caja');
+        error.status = response.status;
+        throw error;
     }
 
     return payload;

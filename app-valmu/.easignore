@@ -1,0 +1,14 @@
+node_modules/
+.expo/
+.expo-check/
+dist/
+scratch/
+*.apk
+*.log
+phone-*.png
+
+android/.gradle/
+android/build/
+android/app/build/
+android/app/.cxx/
+android/app/release/

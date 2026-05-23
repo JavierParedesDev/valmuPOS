@@ -46,9 +46,11 @@ export default function BranchesScreen({ token }) {
         }
     };
 
-    const loadInventory = async (branch) => {
+    const loadInventory = async (branch, showSpinner = true) => {
         setSelectedBranch(branch);
-        setLoading(true);
+        if (showSpinner) {
+            setLoading(true);
+        }
 
         try {
             const response = await apiRequest({
@@ -58,7 +60,9 @@ export default function BranchesScreen({ token }) {
 
             setInventory(response.ok && Array.isArray(response.data) ? response.data : []);
         } finally {
-            setLoading(false);
+            if (showSpinner) {
+                setLoading(false);
+            }
         }
     };
 
@@ -86,9 +90,18 @@ export default function BranchesScreen({ token }) {
             return;
         }
 
+        const updatedQty = toNumber(adjustForm.nuevaCantidad);
+        setInventory((prevInventory) =>
+            prevInventory.map((prod) =>
+                prod.id_producto === currentItem.id_producto
+                    ? { ...prod, stockActual: updatedQty, cantidad: updatedQty }
+                    : prod
+            )
+        );
+
         setAdjustVisible(false);
         Alert.alert('Stock actualizado', 'El stock se actualizo correctamente.');
-        loadInventory(selectedBranch);
+        loadInventory(selectedBranch, false);
     };
 
     const openScanner = async () => {

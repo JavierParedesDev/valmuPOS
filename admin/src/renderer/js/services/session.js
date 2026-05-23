@@ -88,12 +88,21 @@ function setActiveBranch({ id, name }) {
 }
 
 function saveSession({ token, user }) {
+    const normalizedUser = {
+        ...user,
+        id_usuario: user?.id_usuario ?? user?.idUsuario ?? user?.usuario_id ?? user?.id ?? null,
+        idUsuario: user?.idUsuario ?? user?.id_usuario ?? user?.usuario_id ?? user?.id ?? null,
+        id_sucursal: user?.id_sucursal ?? user?.idSucursal ?? user?.sucursal_id ?? null,
+        idSucursal: user?.idSucursal ?? user?.id_sucursal ?? user?.sucursal_id ?? null,
+        nombreSucursal: user?.nombreSucursal || user?.sucursalNombre || user?.sucursal || ''
+    };
+
     localStorage.setItem(SESSION_KEYS.token, token);
-    localStorage.setItem(SESSION_KEYS.user, JSON.stringify(user));
+    localStorage.setItem(SESSION_KEYS.user, JSON.stringify(normalizedUser));
 
     if (!localStorage.getItem(SESSION_KEYS.activeBranchId)) {
-        const assignedBranchId = user?.id_sucursal ?? user?.idSucursal ?? user?.sucursal_id ?? null;
-        const assignedBranchName = user?.nombreSucursal || user?.sucursalNombre || user?.sucursal || '';
+        const assignedBranchId = normalizedUser?.id_sucursal ?? normalizedUser?.idSucursal ?? normalizedUser?.sucursal_id ?? null;
+        const assignedBranchName = normalizedUser?.nombreSucursal || normalizedUser?.sucursalNombre || normalizedUser?.sucursal || '';
         if (assignedBranchId != null && assignedBranchId !== '') {
             setActiveBranch({ id: assignedBranchId, name: assignedBranchName });
         }

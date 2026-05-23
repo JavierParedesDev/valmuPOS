@@ -81,7 +81,7 @@ export function renderSearchResultsView(products) {
     `).join('');
 }
 
-export function renderCartView({ cart, products, collaboratorDiscountEnabled = false }) {
+export function renderCartView({ cart, products, collaboratorDiscountEnabled = false, extraChargeEnabled = false }) {
     const cartList = document.getElementById('cart-list');
     const totalLabel = document.getElementById('sale-total');
     const itemsLabel = document.getElementById('summary-items');
@@ -102,10 +102,14 @@ export function renderCartView({ cart, products, collaboratorDiscountEnabled = f
 
         const ivaLabel = document.getElementById('sale-tax') || document.getElementById('summary-iva');
         const discountLabel = document.getElementById('summary-discount');
+        const extraChargeLabel = document.getElementById('summary-extra-charge');
         const collaboratorButton = document.getElementById('collaborator-discount-btn');
+        const extraChargeButton = document.getElementById('extra-charge-btn');
         if (ivaLabel) ivaLabel.textContent = '$0';
         if (discountLabel) discountLabel.textContent = '$0';
+        if (extraChargeLabel) extraChargeLabel.textContent = '$0';
         collaboratorButton?.classList.toggle('active', collaboratorDiscountEnabled);
+        extraChargeButton?.classList.toggle('active', extraChargeEnabled);
 
         return;
     }
@@ -186,20 +190,28 @@ export function renderCartView({ cart, products, collaboratorDiscountEnabled = f
     const collaboratorDiscount = collaboratorDiscountEnabled
         ? Math.round(baseTotal * 0.1)
         : 0;
-    const total = Math.max(0, Math.round(baseTotal - collaboratorDiscount));
+    const subtotalAfterDiscount = Math.max(0, Math.round(baseTotal - collaboratorDiscount));
+    const extraCharge = extraChargeEnabled
+        ? Math.round(subtotalAfterDiscount * 0.02)
+        : 0;
+    const total = Math.max(0, Math.round(subtotalAfterDiscount + extraCharge));
     const totalDiscount = lineDiscountTotal + collaboratorDiscount;
     const subtotalCalc = Math.round(total / 1.19);
     const ivaCalc = total - subtotalCalc;
 
     const ivaLabel = document.getElementById('sale-tax') || document.getElementById('summary-iva');
     const discountLabel = document.getElementById('summary-discount');
+    const extraChargeLabel = document.getElementById('summary-extra-charge');
     const collaboratorButton = document.getElementById('collaborator-discount-btn');
+    const extraChargeButton = document.getElementById('extra-charge-btn');
 
     totalLabel.textContent = `$${formatCurrency(total)}`;
     itemsLabel.textContent = formatQuantity(totalItems, false);
     if (ivaLabel) ivaLabel.textContent = `$${formatCurrency(ivaCalc)}`;
     if (discountLabel) discountLabel.textContent = totalDiscount > 0 ? `-$${formatCurrency(totalDiscount)}` : `$0`;
+    if (extraChargeLabel) extraChargeLabel.textContent = extraCharge > 0 ? `+$${formatCurrency(extraCharge)}` : `$0`;
     collaboratorButton?.classList.toggle('active', collaboratorDiscountEnabled);
+    extraChargeButton?.classList.toggle('active', extraChargeEnabled);
 }
 
 export function renderCatalogStatusView({ status, source }) {

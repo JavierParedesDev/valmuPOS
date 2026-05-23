@@ -64,8 +64,8 @@ export default function DispatchScreen({ token }) {
                 apiRequest({ endpoint: '/despachos/transportes', token })
             ]);
 
-            const dispatchRows = Array.isArray(dispRes?.data) ? dispRes.data : (Array.isArray(dispRes) ? dispRes : []);
-            const carrierRows = Array.isArray(carrRes?.data) ? carrRes.data : (Array.isArray(carrRes) ? carrRes : []);
+            const dispatchRows = Array.isArray(dispRes.data) ? dispRes.data : (Array.isArray(dispRes) ? dispRes : []);
+            const carrierRows = Array.isArray(carrRes.data) ? carrRes.data : (Array.isArray(carrRes) ? carrRes : []);
 
             setDispatches(dispatchRows.map(normalizeDispatch));
             setCarriers(carrierRows);
@@ -124,7 +124,7 @@ export default function DispatchScreen({ token }) {
     const handleDeleteCarrier = (carrier) => {
         Alert.alert(
             'Eliminar Transportista',
-            `¿Estás seguro de que deseas eliminar a ${carrier.nombreTransporte}?`,
+            `¿Estás seguro de que deseas eliminar a ${carrier.nombreTransporte}`,
             [
                 { text: 'Cancelar', style: 'cancel' },
                 {
@@ -198,30 +198,30 @@ export default function DispatchScreen({ token }) {
                 if (res.ok || res?.data?.mensaje) {
                     fetchData();
                     if (Platform.OS === 'web') alert('Despacho cancelado');
-                    else Alert.alert('Éxito', 'Despacho cancelado');
+                    else Alert.alert('Exito', 'Despacho cancelado');
                 } else {
                     if (Platform.OS === 'web') alert(res?.error || 'No se pudo cancelar el despacho');
                     else Alert.alert('Error', res?.error || 'No se pudo cancelar el despacho');
                 }
             } catch (_error) {
-                if (Platform.OS === 'web') alert('Error de conexión');
-                else Alert.alert('Error', 'Error de conexión');
+                if (Platform.OS === 'web') alert('Error de conexion');
+                else Alert.alert('Error', 'Error de conexion');
             }
         };
 
         if (Platform.OS === 'web') {
-            const confirmed = window.confirm('¿Realmente deseas cancelar este despacho? El stock será devuelto y la venta anulada.');
+            const confirmed = window.confirm('Realmente deseas cancelar este despacho? El stock sera devuelto y la venta anulada.');
             if (confirmed) performCancel();
             return;
         }
 
         Alert.alert(
             'Cancelar Despacho',
-            '¿Realmente deseas cancelar este despacho? El stock será devuelto y la venta anulada.',
+            'Realmente deseas cancelar este despacho? El stock sera devuelto y la venta anulada.',
             [
                 { text: 'No', style: 'cancel' },
                 {
-                    text: 'Sí, Cancelar',
+                    text: 'Si, Cancelar',
                     style: 'destructive',
                     onPress: performCancel
                 }
@@ -433,7 +433,7 @@ export default function DispatchScreen({ token }) {
                 submitLabel={saving ? 'Confirmando...' : 'Confirmar'}
             >
                 <Text style={styles.modalText}>
-                    ¿Cómo realizó el pago el cliente para el despacho de la venta {selectedDispatch?.saleLabel}?
+                    Como realizo el pago el cliente para el despacho de la venta {selectedDispatch?.saleLabel}?
                 </Text>
                 <PickerField
                     label="Método de Pago"

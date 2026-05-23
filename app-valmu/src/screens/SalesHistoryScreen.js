@@ -54,9 +54,9 @@ export default function SalesHistoryScreen({ token }) {
                 })
             ]);
 
-            const salesRows = salesResponse.ok && Array.isArray(salesResponse.data) ? salesResponse.data : [];
-            const apiRows = response.ok && Array.isArray(response.data)
-                ? response.data.map(normalizeHistoryRow).filter((row) => row.periodo)
+            const salesRows = salesResponse.ok ? unwrapArrayResponse(salesResponse) : [];
+            const apiRows = response.ok
+                ? unwrapArrayResponse(response).map(normalizeHistoryRow).filter((row) => row.periodo)
                 : [];
             const computedRows = buildHistoryRowsFromSales(salesRows, selectedInterval);
             const historyRows = ((apiRows.length > 0 ? apiRows : computedRows))
@@ -185,6 +185,8 @@ export default function SalesHistoryScreen({ token }) {
                     <BreakdownRow label="Internas" value={summary.ventasInternas} />
                     <BreakdownRow label="Caja" value={summary.ventasCaja} />
                     <BreakdownRow label="Despacho" value={summary.ventasDespacho} />
+                    <BreakdownRow label="Ganancia caja" value={summary.gananciaCaja} />
+                    <BreakdownRow label="Ganancia despacho" value={summary.gananciaDespacho} />
                     <BreakdownRow label="Ganancia neta" value={summary.gananciaNeta} />
                 </Card>
 
@@ -192,9 +194,9 @@ export default function SalesHistoryScreen({ token }) {
                     <Card style={styles.timelineCard}>
                         <Text style={styles.cardLabel}>
                             {intervalo === 'semana'
-                                ? 'Totales por día'
+                                ? 'Totales por dia'
                                 : intervalo === 'mes'
-                                    ? 'Días del mes'
+                                    ? 'Dias del mes'
                                     : 'Totales por mes'}
                         </Text>
 
@@ -209,7 +211,7 @@ export default function SalesHistoryScreen({ token }) {
                                 </View>
                             ))
                         ) : (
-                            <Text style={styles.filterHint}>No hay ventas registradas dentro de este período.</Text>
+                            <Text style={styles.filterHint}>No hay ventas registradas dentro de este periodo.</Text>
                         )}
                     </Card>
                 ) : null}
@@ -217,7 +219,7 @@ export default function SalesHistoryScreen({ token }) {
                 <View style={styles.section}>
                     <SectionHeader
                         title="Detalle"
-                        subtitle={selectedPeriod ? `Período seleccionado: ${formatPeriodLabel(selectedPeriod, intervalo)}` : 'Selecciona un período'}
+                        subtitle={selectedPeriod ? `Periodo seleccionado: ${formatPeriodLabel(selectedPeriod, intervalo)}` : 'Selecciona un periodo'}
                     />
 
                     {error ? (
@@ -418,6 +420,8 @@ function buildSelectedPeriodSummary({ sales = [], rows = [], interval = 'dia', s
             ventasInternas: 0,
             ventasCaja: 0,
             ventasDespacho: 0,
+            gananciaCaja: 0,
+            gananciaDespacho: 0,
             gananciaNeta: 0
         };
     }
@@ -430,6 +434,8 @@ function buildSelectedPeriodSummary({ sales = [], rows = [], interval = 'dia', s
             acc.ventasInternas += Number(row.ventasInternas || 0);
             acc.ventasCaja += Number(row.ventasCaja || 0);
             acc.ventasDespacho += Number(row.ventasDespacho || 0);
+            acc.gananciaCaja += Number(row.gananciaCaja || 0);
+            acc.gananciaDespacho += Number(row.gananciaDespacho || 0);
             acc.gananciaNeta += Number(row.gananciaNeta || 0);
             return acc;
         }, {
@@ -438,6 +444,8 @@ function buildSelectedPeriodSummary({ sales = [], rows = [], interval = 'dia', s
             ventasInternas: 0,
             ventasCaja: 0,
             ventasDespacho: 0,
+            gananciaCaja: 0,
+            gananciaDespacho: 0,
             gananciaNeta: 0
         });
 
@@ -462,8 +470,10 @@ function buildSelectedPeriodSummary({ sales = [], rows = [], interval = 'dia', s
 
             if (origin === 'DESPACHO') {
                 acc.ventasDespacho += total;
+                acc.gananciaDespacho += gain;
             } else {
                 acc.ventasCaja += total;
+                acc.gananciaCaja += gain;
             }
 
             return acc;
@@ -473,6 +483,8 @@ function buildSelectedPeriodSummary({ sales = [], rows = [], interval = 'dia', s
             ventasInternas: 0,
             ventasCaja: 0,
             ventasDespacho: 0,
+            gananciaCaja: 0,
+            gananciaDespacho: 0,
             gananciaNeta: 0
         });
 
@@ -482,7 +494,12 @@ function buildSelectedPeriodSummary({ sales = [], rows = [], interval = 'dia', s
             ventasInternas: computedSummary.ventasInternas || rowSummary.ventasInternas,
             ventasCaja: computedSummary.ventasCaja || rowSummary.ventasCaja,
             ventasDespacho: computedSummary.ventasDespacho || rowSummary.ventasDespacho,
-            gananciaNeta: computedSummary.gananciaNeta || rowSummary.gananciaNeta
+            gananciaCaja: computedSummary.gananciaCaja || rowSummary.gananciaCaja,
+            gananciaDespacho: computedSummary.gananciaDespacho || rowSummary.gananciaDespacho,
+            gananciaNeta: (computedSummary.gananciaCaja + computedSummary.gananciaDespacho)
+                || computedSummary.gananciaNeta
+                || (rowSummary.gananciaCaja + rowSummary.gananciaDespacho)
+                || rowSummary.gananciaNeta
         };
     }
 
@@ -569,6 +586,8 @@ function normalizeHistoryRow(row) {
     const ventasDespacho = parseMoney(row.ventasDespacho ?? row.ventas_despacho ?? row.despacho ?? 0);
     const ventasSII = parseMoney(row.ventasSII ?? row.ventas_sii ?? row.sii ?? 0);
     const ventasInternas = parseMoney(row.ventasInternas ?? row.ventas_internas ?? row.internas ?? 0);
+    const gananciaCaja = parseMoney(row.gananciaCaja ?? row.ganancia_caja ?? 0);
+    const gananciaDespacho = parseMoney(row.gananciaDespacho ?? row.ganancia_despacho ?? 0);
     const totalVentas = parseMoney(row.totalVentas ?? row.total_ventas ?? row.total ?? row.monto_total ?? 0)
         || (ventasCaja + ventasDespacho)
         || (ventasSII + ventasInternas);
@@ -581,7 +600,10 @@ function normalizeHistoryRow(row) {
         ventasInternas,
         ventasCaja,
         ventasDespacho,
-        gananciaNeta: parseMoney(row.gananciaNeta ?? row.ganancia_neta ?? row.utilidad ?? row.profit ?? 0)
+        gananciaCaja,
+        gananciaDespacho,
+        gananciaNeta: (gananciaCaja + gananciaDespacho)
+            || parseMoney(row.gananciaNeta ?? row.ganancia_neta ?? row.utilidad ?? row.profit ?? 0)
     };
 }
 
@@ -602,6 +624,8 @@ function buildHistoryRowsFromSales(sales = [], interval = 'dia') {
                 ventasInternas: 0,
                 ventasCaja: 0,
                 ventasDespacho: 0,
+                gananciaCaja: 0,
+                gananciaDespacho: 0,
                 gananciaNeta: 0
             });
         }
@@ -623,8 +647,10 @@ function buildHistoryRowsFromSales(sales = [], interval = 'dia') {
 
         if (origin === 'DESPACHO') {
             bucket.ventasDespacho += total;
+            bucket.gananciaDespacho += gain;
         } else {
             bucket.ventasCaja += total;
+            bucket.gananciaCaja += gain;
         }
     });
 
@@ -651,7 +677,7 @@ function resolveSaleOrigin(sale) {
 }
 
 function resolveSalePeriodKey(sale, interval) {
-    const rawDate = sale.fechaVenta || sale.fecha_venta || sale.created_at;
+    const rawDate = sale.fechaVenta || sale.fecha_venta || sale.fecha || sale.created_at;
     if (!rawDate) return '';
 
     const date = parseSaleDateValue(rawDate);
@@ -741,6 +767,13 @@ function resolveSaleGain(sale, total) {
 
     const cost = parseMoney(sale.costo_total ?? sale.costoTotal ?? 0);
     return cost ? total - cost : 0;
+}
+
+function unwrapArrayResponse(response) {
+    if (Array.isArray(response?.data?.data)) return response.data.data;
+    if (Array.isArray(response?.data)) return response.data;
+    if (Array.isArray(response)) return response;
+    return [];
 }
 
 function isFiscalSale(sale) {

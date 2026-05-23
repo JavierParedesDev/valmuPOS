@@ -4,7 +4,7 @@ const DEFAULT_API_BASE_URL = (process.env.VALMU_API_URL || 'http://64.176.17.147
 
 contextBridge.exposeInMainWorld('cajeroAPI', {
     appName: 'Valmu Cajero',
-    version: '2.0.5',
+    version: '2.0.25',
     apiBaseUrl: DEFAULT_API_BASE_URL,
     getAppVersion: () => ipcRenderer.invoke('app:get-version'),
     getUpdateState: () => ipcRenderer.invoke('update:get-state'),
@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('cajeroAPI', {
     downloadUpdate: () => ipcRenderer.invoke('update:download'),
     installUpdate: () => ipcRenderer.invoke('update:install'),
     getSiiConfig: () => ipcRenderer.invoke('sii:get-config'),
+    getSiiDiagnostics: () => ipcRenderer.invoke('sii:get-diagnostics'),
     saveSiiConfig: (config) => ipcRenderer.invoke('sii:save-config', config),
     uploadSiiFile: ({ filename, base64Data }) => ipcRenderer.invoke('sii:upload-file', { filename, base64Data }),
     readLocalCert: (filename) => ipcRenderer.invoke('sii:read-local-cert', filename),

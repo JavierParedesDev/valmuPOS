@@ -115,14 +115,14 @@ export default function CategoriesScreen({ token }) {
         };
 
         if (Platform.OS === 'web') {
-            const confirmed = window.confirm(`¿Quieres eliminar ${category.nombreCategoria}?`);
+            const confirmed = window.confirm(`¿Quieres eliminar ${category.nombreCategoria}`);
             if (confirmed) {
                 executeDelete();
             }
             return;
         }
 
-        Alert.alert('Eliminar categoría', `¿Quieres eliminar ${category.nombreCategoria}?`, [
+        Alert.alert('Eliminar categoría', `¿Quieres eliminar ${category.nombreCategoria}`, [
             { text: 'Cancelar', style: 'cancel' },
             {
                 text: 'Eliminar',
@@ -135,8 +135,8 @@ export default function CategoriesScreen({ token }) {
     return (
         <Screen>
             <SectionHeader
-                title="Categorías"
-                subtitle="Organiza tu catálogo por grupos"
+                title="Categorias"
+                subtitle="Organiza tu catalogo por grupos"
                 actions={<PrimaryButton title="+ Nueva" onPress={() => openModal()} compact style={{ borderRadius: 12, height: 44 }} />}
             />
 
@@ -280,4 +280,3 @@ const styles = StyleSheet.create({
         backgroundColor: '#FEE2E2'
     }
 });
-

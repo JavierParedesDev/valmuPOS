@@ -200,7 +200,9 @@ let saleHistoryClickTimer = null;
 let updateStateCleanup = null;
 let latestUpdateState = null;
 let lastUpdatePromptStatus = null;
-const BOLETA_ENVELOPE_WINDOW_MS = 45 * 60 * 1000;
+let boletaEnvelopeMode = 'both'; // 'both', 'time', 'count'
+let boletaEnvelopeWindowMs = 60 * 60 * 1000;
+let boletaEnvelopeLimit = 50;
 const LIVE_CATALOG_REFRESH_MS = 5000;
 const boletaEnvelopeState = {
     startedAt: null,
@@ -217,9 +219,23 @@ let customerDisplayKnownOpen = false;
 let customerDisplayLastPayloadKey = '';
 let autoScanTimer = null;
 
+async function initSiiEnvelopeParams() {
+    if (typeof window.cajeroAPI?.getSiiConfig === 'function') {
+        try {
+            const config = await window.cajeroAPI.getSiiConfig();
+            boletaEnvelopeMode = config?.boletaEnvMode || 'both';
+            boletaEnvelopeWindowMs = Number(config?.boletaEnvMinutes !== undefined ? config.boletaEnvMinutes : 60) * 60 * 1000;
+            boletaEnvelopeLimit = Number(config?.boletaEnvLimit !== undefined ? config.boletaEnvLimit : 50);
+        } catch (e) {
+            console.error('Error loading SII envelope config on start:', e);
+        }
+    }
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
     hydrateVersion();
     hydrateLoginForm();
+    await initSiiEnvelopeParams();
     hydratePendingBoletaEnvelopeState();
     bindLogin();
     bindLogout();
@@ -243,6 +259,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     bindSalesHistoryTabs();
     bindDispatchView();
     bindGlobalRuntimeGuards();
+    bindDteQueueSettings();
+    startDteQueueWorker();
 
     await restoreSessionOnStartup();
 });
@@ -449,6 +467,36 @@ function bindNavigation() {
     headerCashButton?.addEventListener('click', () => showAppView('cash'));
     headerSettingsButton?.addEventListener('click', () => showAppView('settings'));
 
+    const headerSyncButton = document.getElementById('header-sync-btn');
+    headerSyncButton?.addEventListener('click', async () => {
+        const icon = headerSyncButton.querySelector('i');
+        const text = headerSyncButton.querySelector('span');
+
+        headerSyncButton.disabled = true;
+        if (icon) icon.className = 'bi bi-arrow-clockwise spin-animation';
+        if (text) text.textContent = ' Sincronizando...';
+
+        try {
+            const success = await ensureFreshCatalogForSearch({ force: true });
+            if (success) {
+                renderCatalogStatus();
+                renderSearchResults([]);
+                renderCart();
+                renderDispatchSection();
+                openInfoModal('Catálogo Sincronizado', 'El catálogo de productos se ha sincronizado correctamente.');
+            } else {
+                openInfoModal('Catálogo Sincronizado', 'El catálogo ya estaba actualizado o no se realizaron cambios.');
+            }
+        } catch (error) {
+            console.error('Error al sincronizar catálogo:', error);
+            openInfoModal('Error de Sincronización', 'No se pudo conectar con el servidor para sincronizar: ' + (error?.message || error));
+        } finally {
+            headerSyncButton.disabled = false;
+            if (icon) icon.className = 'bi bi-arrow-clockwise';
+            if (text) text.textContent = ' Sincronizar';
+        }
+    });
+
     headerFullscreenButton?.addEventListener('click', async () => {
         if (window.cajeroAPI && window.cajeroAPI.toggleFullscreen) {
             await window.cajeroAPI.toggleFullscreen();
@@ -507,6 +555,7 @@ function bindSettings() {
     document.getElementById('upload-cert-btn')?.addEventListener('click', () => uploadSiiSupportFile({ kind: 'cert' }));
     document.getElementById('save-cert-password-btn')?.addEventListener('click', saveCertificatePassword);
     document.getElementById('save-sii-credentials-btn')?.addEventListener('click', saveSiiCredentials);
+    document.getElementById('save-boleta-env-settings-btn')?.addEventListener('click', saveBoletaEnvelopeSettings);
     document.getElementById('upload-caf39-btn')?.addEventListener('click', () => uploadCafFile({ type: 39 }));
     document.getElementById('upload-caf33-btn')?.addEventListener('click', () => uploadCafFile({ type: 33 }));
     document.getElementById('force-boleta-envelope-btn')?.addEventListener('click', async () => {
@@ -735,6 +784,11 @@ function bindSettingsTabs() {
                     content.classList.add('active');
                 }
             });
+
+            if (targetTab === 'pending-dtes') {
+                renderDteQueueView();
+                checkSimpleApiStatus();
+            }
         });
     });
 }
@@ -774,11 +828,31 @@ function bindDispatchView() {
     dispatchSearchInput?.addEventListener('blur', () => {
         window.setTimeout(() => renderDispatchSearchResults([]), 120);
     });
+    dispatchSearchInput?.addEventListener('focus', () => {
+        void ensureFreshCatalogForSearch().then((refreshed) => {
+            if (!refreshed) {
+                return;
+            }
+
+            const currentTerm = String(dispatchSearchInput.value || '').trim();
+            if (!currentTerm) {
+                renderCatalogStatus();
+                renderCart();
+                return;
+            }
+
+            renderDispatchSearchResults(filterDispatchProducts(catalogState.products, currentTerm, normalizeCatalogText).slice(0, 6));
+            renderCart();
+            renderCatalogStatus();
+        });
+    });
     document.getElementById('dispatch-address-input')?.addEventListener('input', (event) => {
         dispatchState.manualAddress = String(event.target?.value || '').trim();
+        persistDispatchDraft();
     });
     document.getElementById('dispatch-payment-input')?.addEventListener('change', (event) => {
         dispatchState.manualPayment = event.target?.value || 'en_ruta';
+        persistDispatchDraft();
     });
     document.getElementById('dispatch-add-manual-btn')?.addEventListener('click', addFirstDispatchSearchResult);
     document.getElementById('dispatch-clear-btn')?.addEventListener('click', clearDispatchDraft);
@@ -884,6 +958,7 @@ function bindPaymentModal() {
         renderDocumentType();
     });
     document.getElementById('collaborator-discount-btn')?.addEventListener('click', toggleCollaboratorDiscount);
+    document.getElementById('extra-charge-btn')?.addEventListener('click', toggleExtraCharge);
     document.getElementById('clear-sale-btn')?.addEventListener('click', clearCurrentSale);
     document.getElementById('manage-invoice-customer-btn')?.addEventListener('click', openInvoiceClientFlow);
     document.getElementById('clear-invoice-customer-btn')?.addEventListener('click', clearInvoiceCustomer);
@@ -1054,6 +1129,7 @@ function clearCurrentSale() {
     saleState.documentType = 'Boleta';
     saleState.customer = null;
     saleState.collaboratorDiscountEnabled = false;
+    saleState.extraChargeEnabled = false;
     renderCustomerSummary();
     renderDocumentType();
     renderSearchResults([]);
@@ -1390,6 +1466,7 @@ async function handleBranchSelectionChange(event) {
     saleState.documentType = 'Boleta';
     saleState.customer = null;
     saleState.collaboratorDiscountEnabled = false;
+    saleState.extraChargeEnabled = false;
     renderCustomerSummary();
     renderDocumentType();
     renderSearchResults([]);
@@ -1523,6 +1600,26 @@ function toggleCollaboratorDiscount() {
         saleState.collaboratorDiscountEnabled
             ? 'Descuento colaboradores activado. Se aplicara 10% al total de la compra.'
             : 'Descuento colaboradores desactivado.'
+    );
+}
+
+function toggleExtraCharge() {
+    if (isDispatchMode()) {
+        showAppView('sale');
+        return;
+    }
+
+    if (!cashSessionState.isOpen) {
+        setBackendStatus('Debes abrir caja para aplicar recargos.');
+        return;
+    }
+
+    saleState.extraChargeEnabled = !saleState.extraChargeEnabled;
+    renderCart();
+    setBackendStatus(
+        saleState.extraChargeEnabled
+            ? 'Recargo 2% activado. Se aplicara 2% al total de la compra.'
+            : 'Recargo 2% desactivado.'
     );
 }
 
@@ -1961,6 +2058,7 @@ function resetCashierRuntimeState() {
     saleState.documentType = 'Boleta';
     saleState.customer = null;
     saleState.collaboratorDiscountEnabled = false;
+    saleState.extraChargeEnabled = false;
     catalogState.products = fallbackProducts.slice();
     catalogState.source = 'demo';
     catalogState.status = 'Modo demo activo';
@@ -2063,6 +2161,13 @@ function resetTurnScopedRuntimeState(shouldPersist = true) {
     saleState.documentType = 'Boleta';
     saleState.customer = null;
     saleState.collaboratorDiscountEnabled = false;
+    saleState.extraChargeEnabled = false;
+    dispatchState.cart = [];
+    dispatchState.selectedCarrierId = null;
+    dispatchState.selectedCustomerId = null;
+    dispatchState.manualAddress = '';
+    dispatchState.manualPayment = 'en_ruta';
+    dispatchState.selectedDocumentTypeId = 3;
     resetTurnSummaryState(turnSummaryState);
 
     if (shouldPersist) {
@@ -2074,6 +2179,7 @@ function resetTurnScopedRuntimeState(shouldPersist = true) {
         setScopedSessionData(SESSION_KEYS.saleReceipts, turnScope, null);
         setScopedSessionData(SESSION_KEYS.dispatchReceipts, turnScope, null);
         setScopedSessionData(SESSION_KEYS.saleDraft, turnScope, null);
+        setScopedSessionData(SESSION_KEYS.dispatchDraft, turnScope, null);
     }
 }
 
@@ -2136,12 +2242,16 @@ function hydrateTurnScopedRuntimeState() {
             ? draft.customer
             : null;
         saleState.collaboratorDiscountEnabled = Boolean(draft.collaboratorDiscountEnabled);
+        saleState.extraChargeEnabled = Boolean(draft.extraChargeEnabled);
     } else {
         saleState.cart = [];
         saleState.documentType = 'Boleta';
         saleState.customer = null;
         saleState.collaboratorDiscountEnabled = false;
+        saleState.extraChargeEnabled = false;
     }
+
+    hydrateDispatchDraft();
 
     saleReceiptState.records = receipts && typeof receipts === 'object' ? receipts : {};
     saleReceiptState.saleId = null;
@@ -2184,6 +2294,7 @@ function hydrateSaleDraft() {
         saleState.documentType = 'Boleta';
         saleState.customer = null;
         saleState.collaboratorDiscountEnabled = false;
+        saleState.extraChargeEnabled = false;
         return;
     }
 
@@ -2195,13 +2306,15 @@ function hydrateSaleDraft() {
         ? draft.customer
         : null;
     saleState.collaboratorDiscountEnabled = Boolean(draft.collaboratorDiscountEnabled);
+    saleState.extraChargeEnabled = Boolean(draft.extraChargeEnabled);
 }
 
 function persistSaleDraft() {
     const hasDraft = saleState.cart.length > 0
         || saleState.documentType !== 'Boleta'
         || Boolean(saleState.customer?.id)
-        || saleState.collaboratorDiscountEnabled;
+        || saleState.collaboratorDiscountEnabled
+        || saleState.extraChargeEnabled;
 
     if (!hasDraft) {
         setScopedSessionData(SESSION_KEYS.saleDraft, getCurrentTurnScope(), null);
@@ -2212,7 +2325,52 @@ function persistSaleDraft() {
         cart: saleState.cart,
         documentType: saleState.documentType,
         customer: saleState.customer,
-        collaboratorDiscountEnabled: saleState.collaboratorDiscountEnabled
+        collaboratorDiscountEnabled: saleState.collaboratorDiscountEnabled,
+        extraChargeEnabled: saleState.extraChargeEnabled
+    });
+}
+
+function hydrateDispatchDraft() {
+    const draft = getScopedSessionData(SESSION_KEYS.dispatchDraft, getCurrentTurnScope());
+
+    if (!draft || typeof draft !== 'object') {
+        dispatchState.cart = [];
+        dispatchState.selectedCarrierId = null;
+        dispatchState.selectedCustomerId = null;
+        dispatchState.manualAddress = '';
+        dispatchState.manualPayment = 'en_ruta';
+        dispatchState.selectedDocumentTypeId = 3;
+        return;
+    }
+
+    dispatchState.cart = Array.isArray(draft.cart) ? draft.cart : [];
+    dispatchState.selectedCarrierId = draft.selectedCarrierId !== undefined ? draft.selectedCarrierId : null;
+    dispatchState.selectedCustomerId = draft.selectedCustomerId !== undefined ? draft.selectedCustomerId : null;
+    dispatchState.manualAddress = typeof draft.manualAddress === 'string' ? draft.manualAddress : '';
+    dispatchState.manualPayment = typeof draft.manualPayment === 'string' ? draft.manualPayment : 'en_ruta';
+    dispatchState.selectedDocumentTypeId = typeof draft.selectedDocumentTypeId === 'number' ? draft.selectedDocumentTypeId : 3;
+}
+
+function persistDispatchDraft() {
+    const hasDraft = dispatchState.cart.length > 0
+        || dispatchState.selectedCarrierId !== null
+        || dispatchState.selectedCustomerId !== null
+        || dispatchState.manualAddress !== ''
+        || dispatchState.manualPayment !== 'en_ruta'
+        || dispatchState.selectedDocumentTypeId !== 3;
+
+    if (!hasDraft) {
+        setScopedSessionData(SESSION_KEYS.dispatchDraft, getCurrentTurnScope(), null);
+        return;
+    }
+
+    setScopedSessionData(SESSION_KEYS.dispatchDraft, getCurrentTurnScope(), {
+        cart: dispatchState.cart,
+        selectedCarrierId: dispatchState.selectedCarrierId,
+        selectedCustomerId: dispatchState.selectedCustomerId,
+        manualAddress: dispatchState.manualAddress,
+        manualPayment: dispatchState.manualPayment,
+        selectedDocumentTypeId: dispatchState.selectedDocumentTypeId
     });
 }
 
@@ -2298,16 +2456,20 @@ function schedulePendingBoletaEnvelopeFlush() {
         boletaEnvelopeFlushTimer = null;
     }
 
+    if (boletaEnvelopeMode === 'count') {
+        return;
+    }
+
     if (!boletaEnvelopeState.items.length || !boletaEnvelopeState.startedAt) {
         return;
     }
 
     const elapsed = getPendingBoletaEnvelopeAgeMs();
-    const remaining = Math.max(0, BOLETA_ENVELOPE_WINDOW_MS - elapsed);
+    const remaining = Math.max(0, boletaEnvelopeWindowMs - elapsed);
 
     boletaEnvelopeFlushTimer = window.setTimeout(() => {
         void forceSendPendingBoletaEnvelope({
-            reason: 'Ventana automatica de 45 minutos',
+            reason: `Ventana automatica de ${Math.round(boletaEnvelopeWindowMs / 60000)} minutos`,
             notifyUser: false
         });
     }, remaining);
@@ -2325,6 +2487,14 @@ function appendBoletaToPendingEnvelope({ folio, tipoDte, xmlContent }) {
         queuedAt: new Date().toISOString()
     });
     persistPendingBoletaEnvelopeState();
+
+    if ((boletaEnvelopeMode === 'both' || boletaEnvelopeMode === 'count') &&
+        boletaEnvelopeState.items.length >= boletaEnvelopeLimit) {
+        void forceSendPendingBoletaEnvelope({
+            reason: `Limite de ${boletaEnvelopeLimit} boletas alcanzado`,
+            notifyUser: false
+        });
+    }
 }
 
 function takePendingBoletaEnvelopeSnapshot() {
@@ -2705,10 +2875,19 @@ function buildReceiptRecord({
         `Fecha: ${formatDateTime(saleDate)}`,
         `Cliente: ${resolvedCustomerLabel}`,
         `Pago: ${resolvedPaymentLabel}`,
+    ];
+
+    if (String(resolvedPaymentLabel).toUpperCase() === 'MIXTO') {
+        if (Number(paymentCash || 0) > 0) previewLines.push(` > EFECTIVO: $${formatCurrency(paymentCash)}`);
+        if (Number(paymentCard || 0) > 0) previewLines.push(` > TARJETA: $${formatCurrency(paymentCard)}`);
+        if (Number(paymentTransfer || 0) > 0) previewLines.push(` > TRANSF: $${formatCurrency(paymentTransfer)}`);
+    }
+
+    previewLines.push(
         ...(addressLabel ? [`Dirección: ${addressLabel}`] : []),
         '--------------------------------',
         'DETALLE'
-    ];
+    );
 
     const emisor = dteMetadata?.emisor || null;
 
@@ -2728,6 +2907,9 @@ function buildReceiptRecord({
     );
     if (payload.descuento > 0) {
         previewLines.push(`Descuento: -$${formatCurrency(payload.descuento)}`);
+    }
+    if (snapshot.extraCharge > 0) {
+        previewLines.push(`Recargo (2%): +$${formatCurrency(snapshot.extraCharge)}`);
     }
     if (dteMetadata?.trackId) {
         previewLines.push(`Track ID SII: ${dteMetadata.trackId}`);
@@ -2762,6 +2944,7 @@ function buildReceiptRecord({
         paymentMethod: resolvedPaymentLabel,
         subtotal: Number(payload.subtotal || 0),
         descuento: Number(payload.descuento || 0),
+        extraCharge: Number(snapshot.extraCharge || 0),
         iva: Number(payload.iva || 0),
         total: Number(payload.total || 0),
         items: Number(snapshot.items || 0),
@@ -2799,22 +2982,53 @@ function buildFallbackReceiptRecord(sale) {
 
     const saleDate = sale.rawDate || sale.dateLabel || new Date().toISOString();
     const folioDocumento = sale.folioDocumento || sale.folio || null;
+    const resolvedPaymentLabel = sale.paymentMethod || 'No disponible';
     const previewLines = [
         'VALMU CAJERO',
+        sale.document === 'Vale interno'
+            ? 'COMPROBANTE INTERNO REFERENCIAL'
+            : `${(sale.document || 'Venta').toUpperCase()}${folioDocumento ? ` ELECTRONICA ${folioDocumento}` : ' ELECTRONICA'}`,
         `Venta #${sale.id}`,
         `Fecha: ${sale.dateLabel || formatDateTime(saleDate)}`,
-        `Documento: ${sale.document}`,
-        `Tipo: ${sale.isFiscal ? 'Fiscal' : 'No fiscal'}`,
-        `Pago: ${sale.paymentMethod}`,
-        `Total: $${formatCurrency(sale.total)}`,
-        '',
-        'Detalle extendido no disponible en esta sesion.',
-        'La base de reimpresion completa se genera al cobrar desde esta caja.'
+        `Cliente: ${sale.customerLabel || 'No disponible'}`,
+        `Pago: ${resolvedPaymentLabel}`,
     ];
 
-    if (folioDocumento) {
-        previewLines.splice(2, 0, `Folio: ${folioDocumento}`);
+    if (String(resolvedPaymentLabel).toUpperCase() === 'MIXTO') {
+        if (Number(sale.paymentCash || 0) > 0) previewLines.push(` > EFECTIVO: $${formatCurrency(sale.paymentCash)}`);
+        if (Number(sale.paymentCard || 0) > 0) previewLines.push(` > TARJETA: $${formatCurrency(sale.paymentCard)}`);
+        if (Number(sale.paymentTransfer || 0) > 0) previewLines.push(` > TRANSF: $${formatCurrency(sale.paymentTransfer)}`);
     }
+
+    previewLines.push('--------------------------------');
+
+    const hasItems = Array.isArray(sale.lineItems) && sale.lineItems.length > 0;
+
+    if (hasItems) {
+        previewLines.push('DETALLE');
+        sale.lineItems.forEach((item) => {
+            previewLines.push(item.name);
+            previewLines.push(`${item.quantityLabel || item.quantity} x $${formatCurrency(item.unitPrice)} = $${formatCurrency(item.subtotal)}`);
+        });
+    } else {
+        previewLines.push(
+            'DETALLE',
+            'Detalle extendido no disponible en esta sesion.',
+            'La base de reimpresion completa se genera al cobrar desde esta caja.'
+        );
+    }
+
+    previewLines.push('--------------------------------');
+    if (hasItems) {
+        previewLines.push(`Items: ${sale.lineItems.length}`);
+    }
+    const subtotal = Math.round(Number(sale.total || 0) / 1.19);
+    const iva = Number(sale.total || 0) - subtotal;
+    previewLines.push(
+        `Neto: $${formatCurrency(subtotal)}`,
+        `IVA: $${formatCurrency(iva)}`,
+        `Total: $${formatCurrency(sale.total)}`
+    );
 
     return {
         saleId: sale.id,
@@ -2828,12 +3042,16 @@ function buildFallbackReceiptRecord(sale) {
         date: saleDate,
         documentType: sale.document,
         isFiscal: Boolean(sale.isFiscal),
-        customerLabel: 'No disponible',
+        customerLabel: sale.customerLabel || 'No disponible',
         paymentMethod: sale.paymentMethod,
-        subtotal: Math.round(Number(sale.total || 0) / 1.19),
-        iva: Number(sale.total || 0) - Math.round(Number(sale.total || 0) / 1.19),
+        paymentCash: Number(sale.paymentCash || 0),
+        paymentCard: Number(sale.paymentCard || 0),
+        paymentTransfer: Number(sale.paymentTransfer || 0),
+        subtotal,
+        iva,
         total: Number(sale.total || 0),
-        items: 0,
+        items: hasItems ? sale.lineItems.length : 0,
+        lineItems: sale.lineItems || [],
         preview: previewLines.join('\n')
     };
 }
@@ -2870,6 +3088,14 @@ async function openSaleReceiptModal(saleId) {
                     unitPrice: Number(item.precioVenta),
                     subtotal: Number(item.subtotalLinea || (item.cantidad * item.precioVenta))
                 }));
+
+                const updatedFallback = buildFallbackReceiptRecord({
+                    ...sale,
+                    lineItems: record.lineItems
+                });
+                if (updatedFallback) {
+                    record.preview = updatedFallback.preview;
+                }
 
                 // Actualizamos el cache local del Cajero para futuras vistas
                 saveReceiptRecord(record);
@@ -2969,7 +3195,7 @@ async function prepareReceiptReprint() {
     }
 }
 
-function buildDispatchReceiptRecord({ dispatchId, saleId, carrier, snapshot, branchName, addressLabel = '', paymentLabel = 'En ruta' }) {
+function buildDispatchReceiptRecord({ dispatchId, saleId, carrier, snapshot, branchName, addressLabel = '', paymentLabel = 'En ruta', stockPlan = null }) {
     const createdAt = new Date().toISOString();
     const lineItems = snapshot.lines.map((line) => ({
         name: line.productName,
@@ -2977,6 +3203,44 @@ function buildDispatchReceiptRecord({ dispatchId, saleId, carrier, snapshot, bra
         unitPrice: Number(line.unitPrice || 0),
         subtotal: Number(line.lineTotal || 0)
     }));
+
+    const stockGroups = [];
+    if (stockPlan && Array.isArray(stockPlan.allocations)) {
+        const primaryLines = [];
+        const secondaryLines = [];
+        
+        for (const line of snapshot.lines) {
+            const allocation = stockPlan.allocations.find((alloc) => String(alloc.id_producto) === String(line.productId));
+            const primaryQty = allocation?.origenPrincipal?.cantidad || 0;
+            const secondaryQty = allocation?.origenSecundario?.cantidad || 0;
+            
+            if (primaryQty > 0) {
+                primaryLines.push({
+                    name: line.productName,
+                    quantityLabel: formatQuantity(primaryQty, line.isWeighted)
+                });
+            }
+            if (secondaryQty > 0) {
+                secondaryLines.push({
+                    name: line.productName,
+                    quantityLabel: formatQuantity(secondaryQty, line.isWeighted)
+                });
+            }
+        }
+        
+        if (primaryLines.length > 0) {
+            stockGroups.push({
+                name: 'Casa Matriz',
+                lines: primaryLines
+            });
+        }
+        if (secondaryLines.length > 0) {
+            stockGroups.push({
+                name: 'Bodega',
+                lines: secondaryLines
+            });
+        }
+    }
 
     const subtotal = Math.round(Number(snapshot.total || 0) / 1.19);
     const iva = Number(snapshot.total || 0) - subtotal;
@@ -3027,6 +3291,7 @@ function buildDispatchReceiptRecord({ dispatchId, saleId, carrier, snapshot, bra
         total: Number(snapshot.total || 0),
         items: Number(snapshot.items || 0),
         lineItems,
+        stockGroups,
         preview: previewLines.join('\n'),
         footerMessage: 'Mercaderia cargada a ruta. La rendicion se revisa fuera del arqueo de caja.',
         branchName,
@@ -3096,7 +3361,7 @@ function buildFallbackDispatchReceiptRecord(record) {
 
     return {
         dispatchId: String(record.id),
-        saleId: 0,
+        saleId: Number(record.id_venta || 0),
         date: saleDate,
         referenceLabel: `Despacho #DSP-${record.id}`,
         documentType: record.documentType || 'Vale de despacho',
@@ -3114,9 +3379,9 @@ function buildFallbackDispatchReceiptRecord(record) {
     };
 }
 
-function openDispatchReceiptModal(dispatchId) {
+async function openDispatchReceiptModal(dispatchId) {
     const historyRecord = dispatchState.records.find((record) => String(record.id) === String(dispatchId));
-    const record = getDispatchReceiptRecord(dispatchId) || buildFallbackDispatchReceiptRecord(historyRecord);
+    let record = getDispatchReceiptRecord(dispatchId) || buildFallbackDispatchReceiptRecord(historyRecord);
 
     if (!record) {
         setBackendStatus('No se pudo cargar el vale del despacho seleccionado.');
@@ -3124,30 +3389,35 @@ function openDispatchReceiptModal(dispatchId) {
     }
 
     dispatchReceiptState.dispatchId = String(dispatchId);
-    document.getElementById('dispatch-receipt-id-label').textContent = `#DSP-${record.dispatchId}`;
-    document.getElementById('dispatch-receipt-document-label').textContent = record.documentType;
-    document.getElementById('dispatch-receipt-date-label').textContent = `Fecha: ${formatDateTime(record.date || new Date().toISOString())}`;
-    document.getElementById('dispatch-receipt-carrier-label').textContent = `Transportista: ${record.customerLabel || 'Transportista'}`;
-    document.getElementById('dispatch-receipt-branch-label').textContent = `Sucursal: ${record.branchName || 'Sucursal'}`;
-    document.getElementById('dispatch-receipt-total-label').textContent = `$${formatCurrency(record.total)}`;
-    document.getElementById('dispatch-receipt-preview-output').value = record.preview;
 
-    const itemsBody = document.getElementById('dispatch-receipt-items-body');
-    if (itemsBody) {
-        if (record.lineItems && record.lineItems.length > 0) {
-            itemsBody.innerHTML = record.lineItems.map(item => `
-                <div style="display: flex; justify-content: space-between; align-items: flex-start; padding: 0.2rem 0;">
-                    <div style="max-width: 70%;">
-                        <div style="font-weight: 600;">${item.name}</div>
-                        <div style="font-size: 0.75rem; color: #666;">${item.quantityLabel} x $${formatCurrency(item.unitPrice)}</div>
+    const updateModalUI = (rec) => {
+        document.getElementById('dispatch-receipt-id-label').textContent = `#DSP-${rec.dispatchId}`;
+        document.getElementById('dispatch-receipt-document-label').textContent = rec.documentType;
+        document.getElementById('dispatch-receipt-date-label').textContent = `Fecha: ${formatDateTime(rec.date || new Date().toISOString())}`;
+        document.getElementById('dispatch-receipt-carrier-label').textContent = `Transportista: ${rec.customerLabel || 'Transportista'}`;
+        document.getElementById('dispatch-receipt-branch-label').textContent = `Sucursal: ${rec.branchName || 'Sucursal'}`;
+        document.getElementById('dispatch-receipt-total-label').textContent = `$${formatCurrency(rec.total)}`;
+        document.getElementById('dispatch-receipt-preview-output').value = rec.preview;
+
+        const itemsBody = document.getElementById('dispatch-receipt-items-body');
+        if (itemsBody) {
+            if (rec.lineItems && rec.lineItems.length > 0) {
+                itemsBody.innerHTML = rec.lineItems.map(item => `
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; padding: 0.2rem 0;">
+                        <div style="max-width: 70%;">
+                            <div style="font-weight: 600;">${item.name}</div>
+                            <div style="font-size: 0.75rem; color: #666;">${item.quantityLabel} x $${formatCurrency(item.unitPrice)}</div>
+                        </div>
+                        <strong>$${formatCurrency(item.subtotal)}</strong>
                     </div>
-                    <strong>$${formatCurrency(item.subtotal)}</strong>
-                </div>
-            `).join('');
-        } else {
-            itemsBody.innerHTML = '<div style="text-align: center; color: #999; padding: 1rem;">No hay detalles de productos disponibles</div>';
+                `).join('');
+            } else {
+                itemsBody.innerHTML = '<div style="text-align: center; color: #999; padding: 1rem;">No hay detalles de productos disponibles</div>';
+            }
         }
-    }
+    };
+
+    updateModalUI(record);
 
     const status = document.getElementById('dispatch-receipt-status');
     if (status) {
@@ -3155,6 +3425,50 @@ function openDispatchReceiptModal(dispatchId) {
         status.classList.add('hidden');
     }
     document.getElementById('dispatch-receipt-modal-backdrop')?.classList.remove('hidden');
+
+    // If it has no line items, try to fetch them from the server using the saleId
+    if ((!record.lineItems || record.lineItems.length === 0) && record.saleId) {
+        const itemsBody = document.getElementById('dispatch-receipt-items-body');
+        if (itemsBody) {
+            itemsBody.innerHTML = '<div style="text-align: center; color: #999; padding: 1rem;">Buscando productos en el servidor...</div>';
+        }
+
+        try {
+            const apiBaseUrl = normalizeApiBaseUrl(getApiBaseUrl());
+            const token = getAuthToken();
+            const detail = await fetchSaleDetail({ apiBaseUrl, token, saleId: record.saleId });
+
+            if (detail && detail.productos) {
+                // Map products to the format expected by the receipt
+                record.lineItems = detail.productos.map(item => ({
+                    name: item.nombreProducto,
+                    quantity: Number(item.cantidadVenta || item.cantidad),
+                    quantityLabel: formatQuantity(item.cantidadVenta || item.cantidad, false),
+                    unitPrice: Number(item.precioVenta),
+                    subtotal: Number(item.subtotalLinea || (item.cantidad * item.precioVenta))
+                }));
+
+                const updatedFallback = buildFallbackDispatchReceiptRecord({
+                    ...historyRecord,
+                    lineItems: record.lineItems
+                });
+                if (updatedFallback) {
+                    record = updatedFallback;
+                }
+
+                // Update local cache
+                saveDispatchReceiptRecord(record);
+
+                // Update UI again with loaded data
+                updateModalUI(record);
+            }
+        } catch (error) {
+            console.warn('No se pudo obtener el detalle del despacho desde el servidor:', error);
+            if (itemsBody) {
+                itemsBody.innerHTML = '<div style="text-align: center; color: #f43f5e; padding: 1rem;">Error al cargar detalles del servidor</div>';
+            }
+        }
+    }
 }
 
 function closeDispatchReceiptModal() {
@@ -3253,6 +3567,77 @@ async function confirmDispatchCarrier() {
     }
 }
 
+function buildStockPickingPreviewText(dispatchId, carrierLabel, stockGroups) {
+    const previewLines = [
+        'VALMU CAJERO',
+        'DETALLE DE STOCK DESPACHO',
+        `Despacho #DSP-${dispatchId}`,
+        `Transportista: ${carrierLabel}`,
+        '--------------------------------'
+    ];
+    
+    for (const group of stockGroups) {
+        previewLines.push(group.name);
+        for (const line of group.lines) {
+            previewLines.push(`- ${line.quantityLabel} ${line.name}`);
+        }
+        previewLines.push('');
+    }
+    
+    previewLines.push('NO HACER TRASLADO EN ADMIN');
+    return previewLines.join('\n');
+}
+
+function buildStockPickingRecordFromPlan({ dispatchId, carrier, snapshot, stockPlan }) {
+    const stockGroups = [];
+    if (stockPlan && Array.isArray(stockPlan.allocations)) {
+        const primaryLines = [];
+        const secondaryLines = [];
+        
+        for (const line of snapshot.lines) {
+            const allocation = stockPlan.allocations.find((alloc) => String(alloc.id_producto) === String(line.productId));
+            const primaryQty = allocation?.origenPrincipal?.cantidad || 0;
+            const secondaryQty = allocation?.origenSecundario?.cantidad || 0;
+            
+            if (primaryQty > 0) {
+                primaryLines.push({
+                    name: line.productName,
+                    quantityLabel: formatQuantity(primaryQty, line.isWeighted)
+                });
+            }
+            if (secondaryQty > 0) {
+                secondaryLines.push({
+                    name: line.productName,
+                    quantityLabel: formatQuantity(secondaryQty, line.isWeighted)
+                });
+            }
+        }
+        
+        if (primaryLines.length > 0) {
+            stockGroups.push({
+                name: 'Casa Matriz',
+                lines: primaryLines
+            });
+        }
+        if (secondaryLines.length > 0) {
+            stockGroups.push({
+                name: 'Bodega',
+                lines: secondaryLines
+            });
+        }
+    }
+    
+    const carrierLabel = `${carrier.name} · ${carrier.plate}`;
+    return {
+        saleId: null,
+        dispatchId: String(dispatchId),
+        isStockPicking: true,
+        stockGroups,
+        preview: buildStockPickingPreviewText(dispatchId, carrierLabel, stockGroups),
+        documentType: 'Detalle de stock despacho'
+    };
+}
+
 async function prepareDispatchReceiptPrint() {
     const dispatchId = dispatchReceiptState.dispatchId;
     const historyRecord = dispatchState.records.find((record) => String(record.id) === String(dispatchId));
@@ -3275,6 +3660,28 @@ async function prepareDispatchReceiptPrint() {
             printerPaper,
             printReceipt: window.cajeroAPI?.printReceipt
         });
+
+        if (record.stockGroups && record.stockGroups.length > 0) {
+            const stockPickingRecord = {
+                saleId: null,
+                dispatchId: String(dispatchId),
+                isStockPicking: true,
+                stockGroups: record.stockGroups,
+                preview: buildStockPickingPreviewText(dispatchId, record.customerLabel, record.stockGroups),
+                documentType: 'Detalle de stock despacho'
+            };
+            
+            try {
+                await printReceiptRecord({
+                    record: stockPickingRecord,
+                    printerName,
+                    printerPaper,
+                    printReceipt: window.cajeroAPI?.printReceipt
+                });
+            } catch (pickingError) {
+                console.error('Stock picking reprint error:', pickingError);
+            }
+        }
 
         status.textContent = `Vale enviado a ${printerName} en formato ${printerPaper}.`;
     } catch (error) {
@@ -3854,6 +4261,7 @@ function confirmPayment() {
     saleState.cart = [];
     saleState.documentType = 'Boleta';
     saleState.collaboratorDiscountEnabled = false;
+    saleState.extraChargeEnabled = false;
     renderDocumentType();
     renderSearchResults([]);
     renderCart();
@@ -3958,6 +4366,11 @@ async function confirmPaymentFlow() {
                     detail: dteSaveError?.message || 'No se pudo guardar el XML del DTE en backend.'
                 });
             }
+        } else if (dteResult?.isOffline && dteResult.queuePayload) {
+            queuePendingDte({
+                ...dteResult.queuePayload,
+                saleId: result.saleId
+            });
         }
 
         const receiptRecord = buildReceiptRecord({
@@ -4046,6 +4459,7 @@ async function confirmPaymentFlow() {
         saleState.cart = [];
         saleState.customer = null;
         saleState.collaboratorDiscountEnabled = false;
+        saleState.extraChargeEnabled = false;
         renderCustomerSummary();
         renderCart();
         closePaymentModal();
@@ -4086,7 +4500,8 @@ function buildSalePayload(method, received) {
         documentTypeIds: DOCUMENT_TYPE_IDS,
         paymentMethodMap: PAYMENT_METHOD_MAP,
         getPricingForProduct,
-        collaboratorDiscountEnabled: saleState.collaboratorDiscountEnabled
+        collaboratorDiscountEnabled: saleState.collaboratorDiscountEnabled,
+        extraChargeEnabled: saleState.extraChargeEnabled
     });
 }
 
@@ -4110,7 +4525,8 @@ async function submitSaleToBackend({ method, received, folioDocumento = null }) 
         paymentMethodMap: PAYMENT_METHOD_MAP,
         getPricingForProduct,
         branchId: getSelectedBranchId(),
-        collaboratorDiscountEnabled: saleState.collaboratorDiscountEnabled
+        collaboratorDiscountEnabled: saleState.collaboratorDiscountEnabled,
+        extraChargeEnabled: saleState.extraChargeEnabled
     });
     const result = await submitSaleRequest({ apiBaseUrl, token, payload });
 
@@ -4686,6 +5102,24 @@ async function hydrateSiiSettingsCard() {
             rutEnviaInput.value = config?.rutEnvia || DEFAULT_SII_EMISOR.rutEnvia;
         }
 
+        const boletaEnvModeSelect = document.getElementById('sii-boleta-env-mode');
+        if (boletaEnvModeSelect) {
+            boletaEnvModeSelect.value = config?.boletaEnvMode || 'both';
+        }
+        const boletaEnvMinutesInput = document.getElementById('sii-boleta-env-minutes');
+        if (boletaEnvMinutesInput) {
+            boletaEnvMinutesInput.value = config?.boletaEnvMinutes !== undefined ? config.boletaEnvMinutes : 60;
+        }
+        const boletaEnvLimitInput = document.getElementById('sii-boleta-env-limit');
+        if (boletaEnvLimitInput) {
+            boletaEnvLimitInput.value = config?.boletaEnvLimit !== undefined ? config.boletaEnvLimit : 50;
+        }
+
+        // Update the global variables as well
+        boletaEnvelopeMode = config?.boletaEnvMode || 'both';
+        boletaEnvelopeWindowMs = Number(config?.boletaEnvMinutes !== undefined ? config.boletaEnvMinutes : 60) * 60 * 1000;
+        boletaEnvelopeLimit = Number(config?.boletaEnvLimit !== undefined ? config.boletaEnvLimit : 50);
+
         updateSiiCredentialsStatus(config);
         setSiiSettingsStatus('Archivos SII listos para boleta y factura.');
     } catch (error) {
@@ -4770,6 +5204,47 @@ async function saveSiiCredentials() {
     } catch (error) {
         console.error('SII credentials save error:', error);
         setSiiSettingsStatus(error?.message || 'No se pudieron guardar las credenciales SII.');
+    }
+}
+
+async function saveBoletaEnvelopeSettings() {
+    if (typeof window.cajeroAPI?.getSiiConfig !== 'function' || typeof window.cajeroAPI?.saveSiiConfig !== 'function') {
+        setSiiSettingsStatus('No se pudo guardar la configuración del sobre.');
+        return;
+    }
+
+    try {
+        const currentConfig = await window.cajeroAPI.getSiiConfig();
+        const mode = document.getElementById('sii-boleta-env-mode')?.value || 'both';
+        const minutes = Number(document.getElementById('sii-boleta-env-minutes')?.value || 60);
+        const limit = Number(document.getElementById('sii-boleta-env-limit')?.value || 50);
+
+        const nextConfig = {
+            ...(currentConfig || {}),
+            boletaEnvMode: mode,
+            boletaEnvMinutes: minutes,
+            boletaEnvLimit: limit
+        };
+
+        const saveResult = await window.cajeroAPI.saveSiiConfig(nextConfig);
+        if (!saveResult?.success) {
+            throw new Error(saveResult?.error || 'No se pudo guardar la configuración.');
+        }
+
+        // Update global variables
+        boletaEnvelopeMode = mode;
+        boletaEnvelopeWindowMs = minutes * 60 * 1000;
+        boletaEnvelopeLimit = limit;
+
+        // Reschedule flush using new window
+        schedulePendingBoletaEnvelopeFlush();
+
+        setSiiSettingsStatus('Configuración del sobre de boletas guardada.');
+        openInfoModal('Configuración Guardada', 'La configuración del sobre de boletas se ha guardado correctamente.');
+    } catch (error) {
+        console.error('Boleta envelope settings save error:', error);
+        setSiiSettingsStatus(error?.message || 'No se pudo guardar la configuración del sobre.');
+        openInfoModal('Error al Guardar', error?.message || 'No se pudo guardar la configuración del sobre de boletas.');
     }
 }
 
@@ -5088,6 +5563,8 @@ async function forceSendPendingBoletaEnvelope({ reason = 'manual', notifyUser = 
             ...(await window.cajeroAPI.getSiiConfig())
         };
         const payload = await sendBoletaEnvelopeBatch({ batch: snapshot, config, reason });
+        lastSimpleApiSuccess = true;
+        void checkSimpleApiStatus();
 
         // Limpiar estado local persistente tras envío exitoso
         boletaEnvelopeState.items = [];
@@ -5099,6 +5576,8 @@ async function forceSendPendingBoletaEnvelope({ reason = 'manual', notifyUser = 
         }
         return payload;
     } catch (error) {
+        lastSimpleApiSuccess = false;
+        void checkSimpleApiStatus();
         restorePendingBoletaEnvelopeSnapshot(snapshot);
         console.error('Boleta envelope send error:', error);
         addAuditEntry({
@@ -5277,7 +5756,6 @@ async function generateAndSendDte({ cart, customer, documentType, snapshot }) {
     const cafText = await window.cajeroAPI.readLocalText(cafFilename);
     if (!cafText) throw new Error(`No se encontro ${cafFilename} en Ajustes > SII.`);
 
-    // setBackendStatus(`Reservando folio SII...`);
     const folio = await requestNextDteFolio(tipoDte);
     if (!folio) {
         throw new Error('No se pudo reservar folio en CONTROL_FOLIO.');
@@ -5370,64 +5848,162 @@ async function generateAndSendDte({ cart, customer, documentType, snapshot }) {
     formData.append('caf', cafBlob, cafFilename);
     formData.append('input', JSON.stringify(inputPayload));
 
-    // setBackendStatus(`Obteniendo token de firma...`);
-    const token = await getSimpleApiToken(config.apiKey);
+    try {
+        const token = await getSimpleApiToken(config.apiKey);
+        const generateResponse = await fetchWithTimeout('https://api.simpleapi.cl/api/v1/dte/generar', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: formData,
+            timeout: 20000
+        });
 
-    // setBackendStatus(`Firmando y generando XML...`);
-    const generateResponse = await fetchWithTimeout('https://api.simpleapi.cl/api/v1/dte/generar', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: formData,
-        timeout: 20000
-    });
-
-    const generateClone = generateResponse.clone();
-    const generateText = await generateResponse.text();
-    if (!generateResponse.ok) {
-        throw new Error(`Error generando DTE (${generateResponse.status}): ${generateText}`);
-    }
-
-    const bufferDte = await generateClone.arrayBuffer();
-    const xmlContentString = new TextDecoder('utf-8').decode(bufferDte);
-
-    await window.cajeroAPI.saveXml({
-        filename: `DTE_${tipoDte}_Folio_${folio}.xml`,
-        data: xmlContentString,
-        folder: tipoDte === 39 ? 'boletas' : 'facturas'
-    });
-
-    if (isBoleta) {
-        const shouldFlushPreviousBatch = boletaEnvelopeState.items.length
-            && getPendingBoletaEnvelopeAgeMs() >= BOLETA_ENVELOPE_WINDOW_MS;
-
-        if (shouldFlushPreviousBatch) {
-            void forceSendPendingBoletaEnvelope({
-                reason: 'Cierre automatico de ventana de 45 minutos',
-                notifyUser: false
-            });
+        const generateClone = generateResponse.clone();
+        const generateText = await generateResponse.text();
+        if (!generateResponse.ok) {
+            throw new Error(`Error generando DTE (${generateResponse.status}): ${generateText}`);
         }
 
-        appendBoletaToPendingEnvelope({
-            folio,
-            tipoDte,
-            xmlContent: xmlContentString
+        const bufferDte = await generateClone.arrayBuffer();
+        const xmlContentString = new TextDecoder('utf-8').decode(bufferDte);
+
+        await window.cajeroAPI.saveXml({
+            filename: `DTE_${tipoDte}_Folio_${folio}.xml`,
+            data: xmlContentString,
+            folder: tipoDte === 39 ? 'boletas' : 'facturas'
         });
 
-        addAuditEntry({
-            type: 'info',
-            title: 'Boleta pendiente de sobre',
-            detail: `Boleta 39-${folio} agregada a la cola del sobre SII. Pendientes actuales: ${boletaEnvelopeState.items.length}.`
+        if (isBoleta) {
+            const shouldFlushPreviousBatch = boletaEnvelopeMode !== 'count'
+                && boletaEnvelopeState.items.length
+                && getPendingBoletaEnvelopeAgeMs() >= boletaEnvelopeWindowMs;
+
+            if (shouldFlushPreviousBatch) {
+                void forceSendPendingBoletaEnvelope({
+                    reason: `Cierre automatico de ventana de ${Math.round(boletaEnvelopeWindowMs / 60000)} minutos`,
+                    notifyUser: false
+                });
+            }
+
+            appendBoletaToPendingEnvelope({
+                folio,
+                tipoDte,
+                xmlContent: xmlContentString
+            });
+
+            addAuditEntry({
+                type: 'info',
+                title: 'Boleta pendiente de sobre',
+                detail: `Boleta 39-${folio} agregada a la cola del sobre SII. Pendientes actuales: ${boletaEnvelopeState.items.length}.`
+            });
+
+            lastSimpleApiSuccess = true;
+            void checkSimpleApiStatus();
+            return {
+                folio,
+                tipoDte,
+                fechaDte: new Date().toISOString().slice(0, 10),
+                rutReceptor: receiver.rut,
+                xmlContent: xmlContentString,
+                trackId: null,
+                estadoSii: 'PENDIENTE_SOBRE',
+                estadoDetalle: 'Boleta agregada al sobre pendiente de envio.',
+                reparos: null,
+                emisor: {
+                    rut: config.rutEmisor,
+                    razonSocial: config.razonSocial,
+                    giro: config.giro,
+                    direccion: config.direccion,
+                    comuna: config.comuna,
+                    ciudad: config.ciudad,
+                    acteco: config.acteco,
+                    resolucionNumero: config.numeroResolucion || 80,
+                    resolucionFecha: config.fechaResolucion || '2014-08-22'
+                }
+            };
+        }
+
+        const rutEnvia = config.rutEnvia || config.rutEmisor;
+        const wrapPayload = {
+            Certificado: {
+                Rut: rutEnvia,
+                Password: config.certPassword
+            },
+            Caratula: {
+                RutEnvia: rutEnvia,
+                RutEmisor: config.rutEmisor,
+                RutReceptor: '60803000-K',
+                NumeroResolucion: Number(config.resolucionNumero || DEFAULT_SII_EMISOR.resolucionNumero),
+                FechaResolucion: config.resolucionFecha || DEFAULT_SII_EMISOR.resolucionFecha
+            }
+        };
+
+        const wrapFormData = new FormData();
+        wrapFormData.append('input', JSON.stringify(wrapPayload));
+        wrapFormData.append('files', certBlob, 'certificado.pfx');
+        wrapFormData.append('files', new Blob([bufferDte], { type: 'text/xml' }), 'dte.xml');
+
+        const wrapResponse = await fetch('https://api.simpleapi.cl/api/v1/envio/generar', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: wrapFormData
         });
 
+        const wrapBuffer = await wrapResponse.arrayBuffer();
+        if (!wrapResponse.ok) {
+            throw new Error(`Error generando sobre SII: ${new TextDecoder('utf-8').decode(wrapBuffer)}`);
+        }
+
+        try {
+            await window.cajeroAPI.saveXml({
+                filename: `DEBUG_ENVELOPE_FOLIO_${folio}.xml`,
+                data: new TextDecoder('utf-8').decode(wrapBuffer),
+                folder: 'boletas'
+            });
+        } catch (e) {
+            console.log("Error saving debug", e);
+        }
+
+        const sendFormData = new FormData();
+        sendFormData.append('input', JSON.stringify({
+            Tipo: Number(tipoDte) === 39 || Number(tipoDte) === 41 ? 2 : 1,
+            Ambiente: config.siiAmbiente === '2' ? 1 : 0,
+            Certificado: {
+                Rut: rutEnvia,
+                Password: config.certPassword
+            }
+        }));
+        sendFormData.append('files', certBlob, 'certificado.pfx');
+        sendFormData.append('files', new Blob([wrapBuffer], { type: 'text/xml' }), 'envio.xml');
+
+        const sendResponse = await fetch('https://api.simpleapi.cl/api/v1/envio/enviar', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: sendFormData
+        });
+
+        const sendText = await sendResponse.text();
+        if (!sendResponse.ok) {
+            throw new Error(`Error enviando al SII: ${sendText}`);
+        }
+
+        let sendPayload = null;
+        try {
+            sendPayload = JSON.parse(sendText);
+        } catch (_) {
+            sendPayload = null;
+        }
+
+        lastSimpleApiSuccess = true;
+        void checkSimpleApiStatus();
         return {
             folio,
             tipoDte,
             fechaDte: new Date().toISOString().slice(0, 10),
             rutReceptor: receiver.rut,
             xmlContent: xmlContentString,
-            trackId: null,
-            estadoSii: 'PENDIENTE_SOBRE',
-            estadoDetalle: 'Boleta agregada al sobre pendiente de envio.',
+            trackId: sendPayload?.TrackId || sendPayload?.trackId || null,
+            estadoSii: sendPayload?.TrackId || sendPayload?.trackId ? 'ENVIADO_SII' : 'GENERADO',
+            estadoDetalle: sendPayload?.glosa || sendPayload?.GLOSA || null,
             reparos: null,
             emisor: {
                 rut: config.rutEmisor,
@@ -5441,103 +6017,50 @@ async function generateAndSendDte({ cart, customer, documentType, snapshot }) {
                 resolucionFecha: config.fechaResolucion || '2014-08-22'
             }
         };
-    }
 
-    const rutEnvia = config.rutEnvia || config.rutEmisor;
-
-    const wrapPayload = {
-        Certificado: {
-            Rut: rutEnvia,
-            Password: config.certPassword
-        },
-        Caratula: {
-            RutEnvia: rutEnvia,
-            RutEmisor: config.rutEmisor,
-            RutReceptor: '60803000-K',
-            NumeroResolucion: Number(config.resolucionNumero || DEFAULT_SII_EMISOR.resolucionNumero),
-            FechaResolucion: config.resolucionFecha || DEFAULT_SII_EMISOR.resolucionFecha
-        }
-    };
-
-    const wrapFormData = new FormData();
-    wrapFormData.append('input', JSON.stringify(wrapPayload));
-    wrapFormData.append('files', certBlob, 'certificado.pfx');
-    wrapFormData.append('files', new Blob([bufferDte], { type: 'text/xml' }), 'dte.xml');
-
-    const wrapResponse = await fetch('https://api.simpleapi.cl/api/v1/envio/generar', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: wrapFormData
-    });
-
-    const wrapBuffer = await wrapResponse.arrayBuffer();
-    if (!wrapResponse.ok) {
-        throw new Error(`Error generando sobre SII: ${new TextDecoder('utf-8').decode(wrapBuffer)}`);
-    }
-
-    try {
-        await window.cajeroAPI.saveXml({
-            filename: `DEBUG_ENVELOPE_FOLIO_${folio}.xml`,
-            data: new TextDecoder('utf-8').decode(wrapBuffer),
-            folder: 'boletas'
+    } catch (apiError) {
+        lastSimpleApiSuccess = false;
+        void checkSimpleApiStatus();
+        console.error('SimpleAPI failed. Conmuting to offline queue.', apiError);
+        
+        addAuditEntry({
+            type: 'warning',
+            title: `Conmutación Offline Folio ${folio}`,
+            detail: `SimpleAPI inaccesible. Boleta en cola para envío posterior. Error: ${apiError.message}`
         });
-        console.log("DEBUG ENVELOPE SAVED.");
-    } catch (e) {
-        console.log("Error saving debug", e);
+
+        return {
+            folio,
+            tipoDte,
+            fechaDte: new Date().toISOString().slice(0, 10),
+            rutReceptor: receiver.rut,
+            xmlContent: null,
+            isOffline: true,
+            queuePayload: {
+                tipoDte,
+                folio,
+                cart,
+                customer,
+                documentType,
+                snapshot,
+                items,
+                receiver,
+                subtotal,
+                iva
+            },
+            emisor: {
+                rut: config.rutEmisor,
+                razonSocial: config.razonSocial,
+                giro: config.giro,
+                direccion: config.direccion,
+                comuna: config.comuna,
+                ciudad: config.ciudad,
+                acteco: config.acteco,
+                resolucionNumero: config.numeroResolucion || 80,
+                resolucionFecha: config.fechaResolucion || '2014-08-22'
+            }
+        };
     }
-
-    const sendFormData = new FormData();
-    sendFormData.append('input', JSON.stringify({
-        Tipo: Number(tipoDte) === 39 || Number(tipoDte) === 41 ? 2 : 1,
-        Ambiente: config.siiAmbiente === '2' ? 1 : 0,
-        Certificado: {
-            Rut: rutEnvia,
-            Password: config.certPassword
-        }
-    }));
-    sendFormData.append('files', certBlob, 'certificado.pfx');
-    sendFormData.append('files', new Blob([wrapBuffer], { type: 'text/xml' }), 'envio.xml');
-
-    const sendResponse = await fetch('https://api.simpleapi.cl/api/v1/envio/enviar', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}` },
-        body: sendFormData
-    });
-
-    const sendText = await sendResponse.text();
-    if (!sendResponse.ok) {
-        throw new Error(`Error enviando al SII: ${sendText}`);
-    }
-
-    let sendPayload = null;
-    try {
-        sendPayload = JSON.parse(sendText);
-    } catch (_) {
-        sendPayload = null;
-    }
-
-    return {
-        folio,
-        tipoDte,
-        fechaDte: new Date().toISOString().slice(0, 10),
-        rutReceptor: receiver.rut,
-        xmlContent: xmlContentString,
-        trackId: sendPayload?.TrackId || sendPayload?.trackId || null,
-        estadoSii: sendPayload?.TrackId || sendPayload?.trackId ? 'ENVIADO_SII' : 'GENERADO',
-        estadoDetalle: sendPayload?.glosa || sendPayload?.GLOSA || null,
-        reparos: null,
-        emisor: {
-            rut: config.rutEmisor,
-            razonSocial: config.razonSocial,
-            giro: config.giro,
-            direccion: config.direccion,
-            comuna: config.comuna,
-            ciudad: config.ciudad,
-            acteco: config.acteco,
-            resolucionNumero: config.numeroResolucion || 80,
-            resolucionFecha: config.fechaResolucion || '2014-08-22'
-        }
-    };
 }
 
 async function loadPrinterOptions() {
@@ -6167,6 +6690,12 @@ function selectProductForSale(productId) {
         return;
     }
 
+    const saleSearchInput = document.getElementById('product-search-input');
+    if (saleSearchInput) {
+        saleSearchInput.value = '';
+    }
+    renderSearchResults([]);
+
     if (product.isWeighted) {
         openWeightedModal(product, 'add');
         return;
@@ -6250,11 +6779,13 @@ function renderCart() {
         if (dispatchTotal) {
             dispatchTotal.textContent = `$${formatCurrency(snapshot.total)}`;
         }
+        persistDispatchDraft();
     } else {
         renderCartView({
             cart: saleState.cart,
             products: catalogState.products,
-            collaboratorDiscountEnabled: saleState.collaboratorDiscountEnabled
+            collaboratorDiscountEnabled: saleState.collaboratorDiscountEnabled,
+            extraChargeEnabled: saleState.extraChargeEnabled
         });
         persistSaleDraft();
     }
@@ -6380,6 +6911,10 @@ function clearDispatchDraft() {
     dispatchState.cart = [];
     dispatchState.searchQuery = '';
     dispatchState.manualAddress = '';
+    dispatchState.selectedCarrierId = null;
+    dispatchState.selectedCustomerId = null;
+    dispatchState.manualPayment = 'en_ruta';
+    dispatchState.selectedDocumentTypeId = 3;
     const dispatchSearchInput = document.getElementById('dispatch-search-input');
     if (dispatchSearchInput) {
         dispatchSearchInput.value = '';
@@ -6394,6 +6929,7 @@ function clearDispatchDraft() {
     }
     renderSearchResults([]);
     renderDispatchSection();
+    persistDispatchDraft();
     setBackendStatus('Carga de despacho vaciada.');
 }
 
@@ -6555,7 +7091,8 @@ async function generateDispatchRecord() {
             customerId: customerId,
             folioDocumento: dteResult?.folio || null,
             manualPayment: dispatchState.manualPayment,
-            stockPlan
+            stockPlan,
+            branchId: getSelectedBranchId()
         });
 
         const result = await generateDispatchRequest({
@@ -6586,6 +7123,12 @@ async function generateDispatchRecord() {
                     detail: dteSaveError?.message || 'No se pudo guardar el XML del DTE en backend.'
                 });
             }
+        } else if (dteResult?.isOffline && dteResult.queuePayload) {
+            queuePendingDte({
+                ...dteResult.queuePayload,
+                saleId: result.id_venta || null,
+                dispatchId: result.id_despacho || null
+            });
         }
 
         let saleReceiptRecord = null;
@@ -6629,7 +7172,8 @@ async function generateDispatchRecord() {
             snapshot,
             branchName: getSelectedBranchName(),
             addressLabel: dispatchAddress,
-            paymentLabel: dispatchState.manualPayment === 'en_ruta' ? 'En ruta' : capitalizePaymentMethod(dispatchState.manualPayment)
+            paymentLabel: dispatchState.manualPayment === 'en_ruta' ? 'En ruta' : capitalizePaymentMethod(dispatchState.manualPayment),
+            stockPlan
         });
 
         dispatchState.records.unshift(record);
@@ -6696,6 +7240,30 @@ async function generateDispatchRecord() {
                     type: 'warning',
                     title: 'Vale pendiente de impresion',
                     detail: printError?.message || `El despacho DSP-${record.id} se genero, pero no se pudo imprimir el vale.`
+                });
+            }
+        }
+
+        if (stockPlan) {
+            const stockPickingRecord = buildStockPickingRecordFromPlan({
+                dispatchId: record.id,
+                carrier,
+                snapshot,
+                stockPlan
+            });
+            try {
+                await printReceiptRecord({
+                    record: stockPickingRecord,
+                    printerName: getSessionValue(SESSION_KEYS.printerName) || 'Predeterminada del sistema',
+                    printerPaper: getSessionValue(SESSION_KEYS.printerPaper) || '80mm',
+                    printReceipt: window.cajeroAPI?.printReceipt
+                });
+            } catch (pickingError) {
+                console.error('Stock picking auto print error:', pickingError);
+                addAuditEntry({
+                    type: 'warning',
+                    title: 'Ticket stock pendiente de impresion',
+                    detail: pickingError?.message || `El ticket de stock para DSP-${record.id} no se pudo imprimir.`
                 });
             }
         }
@@ -6952,3 +7520,511 @@ window.openCartQuantityEditModal = openCartQuantityEditModal;
 window.openDispatchQuantityEditModal = openDispatchQuantityEditModal;
 window.openSaleCancellationModal = openSaleCancellationModal;
 window.openDispatchReceiptModal = openDispatchReceiptModal;
+
+// DTE Offline Queue Storage & Logic
+let lastSimpleApiSuccess = true;
+
+function showNotification({ type, message }) {
+    const title = type === 'error' ? 'Error' : type === 'success' ? 'Éxito' : 'Información';
+    openInfoModal(title, message);
+}
+
+function getDteQueue() {
+    try {
+        const queueStr = localStorage.getItem('cajero_dte_queue');
+        return queueStr ? JSON.parse(queueStr) : [];
+    } catch (e) {
+        console.error('Error reading DTE queue:', e);
+        return [];
+    }
+}
+
+function saveDteQueue(queue) {
+    try {
+        localStorage.setItem('cajero_dte_queue', JSON.stringify(queue));
+    } catch (e) {
+        console.error('Error saving DTE queue:', e);
+    }
+}
+
+function queuePendingDte(item) {
+    const queue = getDteQueue();
+    const queueItem = {
+        id: 'dte_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+        tipoDte: item.tipoDte,
+        folio: item.folio,
+        createdAt: new Date().toISOString(),
+        saleId: item.saleId || null,
+        dispatchId: item.dispatchId || null,
+        payload: item
+    };
+    queue.push(queueItem);
+    saveDteQueue(queue);
+    
+    if (document.getElementById('settings-tab-pending-dtes')?.classList.contains('active')) {
+        renderDteQueueView();
+    }
+}
+
+function removeDteFromQueue(id) {
+    let queue = getDteQueue();
+    queue = queue.filter(item => item.id !== id);
+    saveDteQueue(queue);
+    renderDteQueueView();
+}
+
+async function processQueuedDte(queueItem) {
+    const config = {
+        ...DEFAULT_SII_EMISOR,
+        ...(await window.cajeroAPI.getSiiConfig())
+    };
+
+    const isBoleta = Number(queueItem.tipoDte) === 39 || Number(queueItem.tipoDte) === 41;
+    const payload = queueItem.payload;
+    const certBase64 = await window.cajeroAPI.readLocalCert(config.certFilename || 'certificado.pfx');
+    const cafFilename = Number(queueItem.tipoDte) === 33 ? 'CAF_33.xml' : 'CAF_39.xml';
+    const cafText = await window.cajeroAPI.readLocalText(cafFilename);
+
+    if (!certBase64 || !cafText) {
+        throw new Error('Certificado o CAF no encontrado para procesar en cola.');
+    }
+
+    let items = payload.items || buildDteItems(payload.cart || [], { isBoleta });
+    if (!items || items.length === 0) {
+        const totalVal = payload.snapshot?.total || 0;
+        const grossUnitPrice = totalVal;
+        const unitPrice = isBoleta
+            ? grossUnitPrice
+            : Number((grossUnitPrice / 1.19).toFixed(4));
+        const lineTotal = Math.round(unitPrice * 1);
+        
+        items = [{
+            name: 'VENTA GENERAL POS',
+            quantity: 1,
+            unitPrice: Number(unitPrice),
+            lineTotal: Number(lineTotal)
+        }];
+    }
+
+    const subtotal = payload.subtotal !== undefined ? payload.subtotal : Math.round(payload.snapshot.total / 1.19);
+    const iva = payload.iva !== undefined ? payload.iva : (payload.snapshot.total - subtotal);
+    const receiver = payload.receiver || resolveReceiverForDte(queueItem.tipoDte, config, payload.customer);
+    const certBlob = b64toBlob(certBase64, 'application/x-pkcs12');
+    const cafBlob = new Blob([cafText], { type: 'text/xml' });
+
+    const identificacionDte = {
+        TipoDTE: queueItem.tipoDte,
+        Folio: queueItem.folio,
+        FechaEmision: new Date(queueItem.createdAt).toISOString().slice(0, 10),
+        ...(isBoleta ? {
+            IndicadorServicio: Number(config.indicadorServicio || DEFAULT_SII_EMISOR.indicadorServicio)
+        } : {
+            FormaPago: 1,
+            FechaVencimiento: new Date(queueItem.createdAt).toISOString().slice(0, 10)
+        })
+    };
+
+    const inputPayload = {
+        Documento: {
+            Encabezado: {
+                IdentificacionDTE: identificacionDte,
+                Emisor: {
+                    Rut: config.rutEmisor,
+                    ...(isBoleta ? {
+                        RazonSocialBoleta: normalizeSiiString(config.razonSocial),
+                        GiroBoleta: normalizeSiiString(config.giro).substring(0, 80)
+                    } : {
+                        RazonSocial: normalizeSiiString(config.razonSocial),
+                        Giro: normalizeSiiString(config.giro).substring(0, 80),
+                        ActividadEconomica: [Number(config.acteco || 0)]
+                    }),
+                    DireccionOrigen: normalizeSiiString(config.direccion),
+                    ComunaOrigen: normalizeSiiString(config.comuna),
+                    CiudadOrigen: normalizeSiiString(config.ciudad)
+                },
+                Receptor: {
+                    Rut: receiver.rut,
+                    RazonSocial: normalizeSiiString(receiver.razonSocial),
+                    Direccion: normalizeSiiString(receiver.direccion),
+                    Comuna: normalizeSiiString(receiver.comuna),
+                    Ciudad: normalizeSiiString(receiver.ciudad || receiver.comuna),
+                    ...(!isBoleta ? {
+                        Giro: normalizeSiiString(receiver.giro || 'PARTICULAR').substring(0, 40)
+                    } : {})
+                },
+                Totales: {
+                    MontoNeto: subtotal,
+                    ...(!isBoleta ? { TasaIVA: 19 } : {}),
+                    IVA: iva,
+                    MontoTotal: payload.snapshot.total
+                }
+            },
+            Detalles: items.map((item) => ({
+                IndicadorExento: 0,
+                Nombre: item.name,
+                Descripcion: item.name,
+                Cantidad: item.quantity,
+                UnidadMedida: 'un',
+                Precio: Number(item.unitPrice.toFixed(4)),
+                Descuento: 0,
+                Recargo: 0,
+                MontoItem: item.lineTotal
+            })),
+            Referencias: [],
+            DescuentosRecargos: []
+        },
+        Certificado: {
+            Rut: config.rutEmisor,
+            Password: config.certPassword
+        },
+        Ambiente: config.siiAmbiente === '2' ? 1 : 0,
+        Tipo: 1
+    };
+
+    const formData = new FormData();
+    formData.append('file', certBlob, 'certificado.pfx');
+    formData.append('password', config.certPassword);
+    formData.append('caf', cafBlob, cafFilename);
+    formData.append('input', JSON.stringify(inputPayload));
+
+    const token = await getSimpleApiToken(config.apiKey);
+    const generateResponse = await fetchWithTimeout('https://api.simpleapi.cl/api/v1/dte/generar', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+        timeout: 20000
+    });
+
+    const generateClone = generateResponse.clone();
+    const generateText = await generateResponse.text();
+    if (!generateResponse.ok) {
+        throw new Error(`Error generando DTE (${generateResponse.status}): ${generateText}`);
+    }
+
+    const bufferDte = await generateClone.arrayBuffer();
+    const xmlContentString = new TextDecoder('utf-8').decode(bufferDte);
+
+    await window.cajeroAPI.saveXml({
+        filename: `DTE_${queueItem.tipoDte}_Folio_${queueItem.folio}.xml`,
+        data: xmlContentString,
+        folder: queueItem.tipoDte === 39 ? 'boletas' : 'facturas'
+    });
+
+    if (queueItem.saleId) {
+        await requestBackendJson({
+            endpoint: '/dte/guardar',
+            method: 'POST',
+            body: {
+                id_venta: queueItem.saleId,
+                tipoDte: Number(queueItem.tipoDte),
+                folio: Number(queueItem.folio),
+                xmlContenido: xmlContentString,
+                trackId: null,
+                estadoSii: 'GENERADO'
+            }
+        });
+    }
+
+    if (isBoleta) {
+        appendBoletaToPendingEnvelope({
+            folio: queueItem.folio,
+            tipoDte: queueItem.tipoDte,
+            xmlContent: xmlContentString
+        });
+    } else {
+        const rutEnvia = config.rutEnvia || config.rutEmisor;
+        const wrapPayload = {
+            Certificado: {
+                Rut: rutEnvia,
+                Password: config.certPassword
+            },
+            Caratula: {
+                RutEnvia: rutEnvia,
+                RutEmisor: config.rutEmisor,
+                RutReceptor: '60803000-K',
+                NumeroResolucion: Number(config.resolucionNumero || DEFAULT_SII_EMISOR.resolucionNumero),
+                FechaResolucion: config.resolucionFecha || DEFAULT_SII_EMISOR.resolucionFecha
+            }
+        };
+
+        const wrapFormData = new FormData();
+        wrapFormData.append('input', JSON.stringify(wrapPayload));
+        wrapFormData.append('files', certBlob, 'certificado.pfx');
+        wrapFormData.append('files', new Blob([bufferDte], { type: 'text/xml' }), 'dte.xml');
+
+        const wrapResponse = await fetch('https://api.simpleapi.cl/api/v1/envio/generar', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: wrapFormData
+        });
+
+        const wrapBuffer = await wrapResponse.arrayBuffer();
+        if (wrapResponse.ok) {
+            const sendFormData = new FormData();
+            sendFormData.append('input', JSON.stringify({
+                Tipo: 1,
+                Ambiente: config.siiAmbiente === '2' ? 1 : 0,
+                Certificado: {
+                    Rut: rutEnvia,
+                    Password: config.certPassword
+                }
+            }));
+            sendFormData.append('files', certBlob, 'certificado.pfx');
+            sendFormData.append('files', new Blob([wrapBuffer], { type: 'text/xml' }), 'envio.xml');
+
+            const sendResponse = await fetch('https://api.simpleapi.cl/api/v1/envio/enviar', {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+                body: sendFormData
+            });
+
+            const sendText = await sendResponse.text();
+            if (sendResponse.ok) {
+                let sendPayload = JSON.parse(sendText);
+                if (queueItem.saleId && (sendPayload?.TrackId || sendPayload?.trackId)) {
+                    await requestBackendJson({
+                        endpoint: '/dte/guardar',
+                        method: 'POST',
+                        body: {
+                            id_venta: queueItem.saleId,
+                            tipoDte: Number(queueItem.tipoDte),
+                            folio: Number(queueItem.folio),
+                            xmlContenido: xmlContentString,
+                            trackId: sendPayload?.TrackId || sendPayload?.trackId || null,
+                            estadoSii: 'ENVIADO_SII'
+                        }
+                    });
+                }
+            }
+        }
+    }
+}
+
+async function checkSimpleApiStatus() {
+    const dot = document.getElementById('simpleapi-status-dot');
+    const text = document.getElementById('simpleapi-status-text');
+    const card = document.getElementById('simpleapi-status-card');
+    if (!dot || !text) return;
+
+    dot.style.backgroundColor = '#9ca3af';
+    dot.style.boxShadow = '0 0 8px #9ca3af';
+    text.textContent = 'Verificando...';
+    text.style.color = '#9ca3af';
+    if (card) {
+        card.className = 'api-status-card';
+    }
+
+    try {
+        const config = {
+            ...DEFAULT_SII_EMISOR,
+            ...(await window.cajeroAPI.getSiiConfig())
+        };
+        if (!config.apiKey) {
+            throw new Error('Sin API Key');
+        }
+
+        // Live connection probe to verify connectivity to SimpleAPI bypassing JWT cache
+        const response = await fetchWithTimeout('https://api.simpleapi.cl/api/auth/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ api_key: config.apiKey }),
+            timeout: 5000
+        });
+        if (!response.ok) {
+            throw new Error(`Token service responded with status ${response.status}`);
+        }
+        
+        // If network probe succeeds, check if there was a recent operational failure
+        if (!lastSimpleApiSuccess) {
+            if (card) {
+                card.className = 'api-status-card status-warning';
+            }
+            dot.style.backgroundColor = '#fdb022';
+            dot.style.boxShadow = '0 0 8px #fdb022';
+            text.textContent = 'SimpleAPI Con Problemas';
+            text.style.color = '#fdb022';
+            return false;
+        }
+
+        if (card) {
+            card.className = 'api-status-card status-online';
+        }
+        dot.style.backgroundColor = '#12b76a';
+        dot.style.boxShadow = '0 0 8px #12b76a';
+        text.textContent = 'SimpleAPI En Servicio';
+        text.style.color = '#12b76a';
+        return true;
+    } catch (e) {
+        if (card) {
+            card.className = 'api-status-card status-offline';
+        }
+        dot.style.backgroundColor = '#f04438';
+        dot.style.boxShadow = '0 0 8px #f04438';
+        text.textContent = 'SimpleAPI Fuera de Servicio';
+        text.style.color = '#f04438';
+        return false;
+    }
+}
+
+function renderDteQueueView() {
+    const body = document.getElementById('dte-queue-table-body');
+    if (!body) return;
+
+    const queue = getDteQueue();
+
+    if (!queue.length) {
+        body.innerHTML = `
+            <tr>
+                <td colspan="6" style="padding: 2.5rem; text-align: center; color: var(--text-soft); font-weight: 500;">
+                    No hay boletas pendientes de envío.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    body.innerHTML = queue.map(item => {
+        const isBoleta = Number(item.tipoDte) === 39 || Number(item.tipoDte) === 41;
+        const tipoLabel = isBoleta
+            ? `<span class="dte-type-badge type-boleta"><i class="bi bi-receipt"></i> Boleta</span>`
+            : `<span class="dte-type-badge type-factura"><i class="bi bi-file-earmark-text"></i> Factura</span>`;
+        const formattedTotal = item.payload?.snapshot?.total 
+            ? `$${formatCurrency(item.payload.snapshot.total)}`
+            : 'N/A';
+        const dateLabel = formatDateTime(item.createdAt);
+
+        return `
+            <tr>
+                <td><span class="sale-id-badge">#${item.saleId || 'Sin ID'}</span></td>
+                <td>${tipoLabel}</td>
+                <td><strong>${item.folio}</strong></td>
+                <td><span class="dte-amount">${formattedTotal}</span></td>
+                <td style="color: var(--text-soft); font-weight: 500;">${dateLabel}</td>
+                <td style="text-align: right;">
+                    <button class="btn-action-retry" onclick="processQueueItemManual('${item.id}')">
+                        <i class="bi bi-play-fill"></i> Reintentar
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+window.processQueueItemManual = async function(id) {
+    const queue = getDteQueue();
+    const item = queue.find(x => x.id === id);
+    if (!item) return;
+
+    showNotification({
+        type: 'info',
+        message: `Reintentando firma del Folio ${item.folio}...`
+    });
+
+    try {
+        await processQueuedDte(item);
+        lastSimpleApiSuccess = true;
+        void checkSimpleApiStatus();
+        removeDteFromQueue(id);
+        showNotification({
+            type: 'success',
+            message: `Folio ${item.folio} firmado y enviado exitosamente.`
+        });
+    } catch (error) {
+        lastSimpleApiSuccess = false;
+        void checkSimpleApiStatus();
+        console.error('Error re-processing DTE:', error);
+        showNotification({
+            type: 'error',
+            message: `Error al firmar Folio ${item.folio}: ${error.message}`
+        });
+    }
+};
+
+function startDteQueueWorker() {
+    const INTERVAL_MS = 30 * 60 * 1000;
+    setTimeout(processDteQueueBackground, 30 * 1000);
+    setInterval(processDteQueueBackground, INTERVAL_MS);
+}
+
+async function processDteQueueBackground() {
+    const queue = getDteQueue();
+    if (!queue.length) return;
+
+    console.log(`[DTE Queue Worker] Starting processing of ${queue.length} pending DTEs.`);
+    
+    const isOnline = await checkSimpleApiStatus();
+    if (!isOnline) {
+        console.log('[DTE Queue Worker] SimpleAPI is offline. Postponing queue processing.');
+        return;
+    }
+
+    for (const item of queue) {
+        try {
+            console.log(`[DTE Queue Worker] Processing Folio ${item.folio} (Sale #${item.saleId}).`);
+            await processQueuedDte(item);
+            lastSimpleApiSuccess = true;
+            void checkSimpleApiStatus();
+            
+            let currentQueue = getDteQueue();
+            currentQueue = currentQueue.filter(x => x.id !== item.id);
+            saveDteQueue(currentQueue);
+            
+            console.log(`[DTE Queue Worker] Folio ${item.folio} processed successfully.`);
+        } catch (error) {
+            lastSimpleApiSuccess = false;
+            void checkSimpleApiStatus();
+            console.error(`[DTE Queue Worker] Error processing Folio ${item.folio}:`, error);
+            break;
+        }
+    }
+    
+    if (document.getElementById('settings-tab-pending-dtes')?.classList.contains('active')) {
+        renderDteQueueView();
+    }
+}
+
+function bindDteQueueSettings() {
+    const checkBtn = document.getElementById('simpleapi-check-status-btn');
+    const retryAllBtn = document.getElementById('dte-queue-retry-all-btn');
+    const clearBtn = document.getElementById('dte-queue-clear-btn');
+
+    if (checkBtn) {
+        checkBtn.addEventListener('click', async () => {
+            showNotification({ type: 'info', message: 'Verificando estado de SimpleAPI...' });
+            lastSimpleApiSuccess = true;
+            await checkSimpleApiStatus();
+        });
+    }
+
+    if (retryAllBtn) {
+        retryAllBtn.addEventListener('click', async () => {
+            const queue = getDteQueue();
+            if (!queue.length) {
+                showNotification({ type: 'info', message: 'No hay boletas en cola.' });
+                return;
+            }
+            showNotification({ type: 'info', message: 'Reintentando enviar todas las boletas de la cola...' });
+            retryAllBtn.disabled = true;
+            retryAllBtn.textContent = 'Procesando...';
+            try {
+                await processDteQueueBackground();
+                showNotification({ type: 'success', message: 'Procesamiento de cola finalizado.' });
+            } catch (err) {
+                showNotification({ type: 'error', message: 'Hubo un error al reintentar: ' + err.message });
+            } finally {
+                retryAllBtn.disabled = false;
+                retryAllBtn.textContent = 'Reintentar Envío de Todo';
+            }
+        });
+    }
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            if (confirm('¿Está seguro de que desea limpiar la cola de DTEs pendientes? Esto eliminará los registros de reenvío automático.')) {
+                saveDteQueue([]);
+                renderDteQueueView();
+                showNotification({ type: 'info', message: 'Cola de DTEs limpiada.' });
+            }
+        });
+    }
+}

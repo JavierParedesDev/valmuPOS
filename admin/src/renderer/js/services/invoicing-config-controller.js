@@ -64,7 +64,8 @@ window.ValmuInvoicingConfigController = {
                 const nextFolio = (parseInt(row.ultimoFolioUsado, 10) || 0) + 1;
                 const maxFolio = parseInt(row.folioDisponibleHasta, 10) || 0;
 
-                if (parseInt(nextConfig[`folio_${tipo}`], 10) !== nextFolio) {
+                const localNextFolio = parseInt(nextConfig[`folio_${tipo}`], 10) || 0;
+                if (nextFolio > localNextFolio) {
                     nextConfig[`folio_${tipo}`] = nextFolio;
                     updated = true;
                 }
@@ -157,7 +158,7 @@ window.ValmuInvoicingConfigController = {
         });
     },
 
-    async installFile({ type, electronAPI, onConfigUpdated, SwalRef } = {}) {
+    async installFile({ type, electronAPI, api, onConfigUpdated, SwalRef } = {}) {
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = type === 'cert' ? '.p12,.pfx' : '.xml';
@@ -203,12 +204,24 @@ window.ValmuInvoicingConfigController = {
                                         currentConfig[`folio_final_${type}`] = folioFinal;
                                         await electronAPI.saveSiiConfig(currentConfig);
                                         localStorage.setItem('sii_config', JSON.stringify(currentConfig));
-                                        // --- Sync with backend/database ---
-                                        if (typeof api?.saveSiiSettings === 'function') {
+                                        if (typeof api?.syncCafFolios === 'function') {
                                             try {
-                                                await api.saveSiiSettings(currentConfig);
+                                                await api.syncCafFolios({
+                                                    tipoDte: type,
+                                                    folioInicial,
+                                                    folioFinal
+                                                });
                                             } catch (err) {
                                                 console.warn('No se pudo sincronizar folios con backend:', err);
+                                                this.applyFoliosToDom(currentConfig);
+                                                onConfigUpdated?.(currentConfig);
+                                                SwalRef?.fire(
+                                                    'CAF guardado',
+                                                    `El rango quedo actualizado en este equipo (${folioInicial} - ${folioFinal}). La base de datos no respondio la sincronizacion: ${err.message}`,
+                                                    'success'
+                                                );
+                                                await this.refreshStatuses({ electronAPI });
+                                                return;
                                             }
                                         }
                                         this.applyFoliosToDom(currentConfig);

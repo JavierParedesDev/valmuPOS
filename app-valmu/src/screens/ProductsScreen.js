@@ -62,6 +62,11 @@ function mapProductToForm(product) {
     };
 }
 
+function resolveProductId(product) {
+    const numericValue = Number(product?.id_producto ?? product?.id ?? product?.idProducto);
+    return Number.isInteger(numericValue) && numericValue > 0 ? numericValue : null;
+}
+
 function emptyMovementForm() {
     return {
         id_producto: '',
@@ -155,6 +160,10 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
 
     const [detailsVisible, setDetailsVisible] = useState(false);
     const [selectedProduct, setSelectedProduct] = useState(null);
+    const [deleteVisible, setDeleteVisible] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState(null);
+    const [deleteSubmitting, setDeleteSubmitting] = useState(false);
+    const [deleteError, setDeleteError] = useState('');
     const [visibleCount, setVisibleCount] = useState(PRODUCT_PAGE_SIZE);
     const [supplierPickerOpen, setSupplierPickerOpen] = useState(false);
     const [supplierFilter, setSupplierFilter] = useState('');
@@ -258,7 +267,7 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
 
     const submitProduct = async () => {
         if (!productForm.nombreProducto.trim() || !productForm.codigoBarras.trim()) {
-            Alert.alert('Validación', 'Nombre y código son obligatorios');
+            Alert.alert('Validacion', 'Nombre y codigo son obligatorios');
             return;
         }
 
@@ -295,29 +304,62 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
         loadProducts(searchText);
     };
 
-    const removeProduct = (product) => {
-        Alert.alert('Eliminar producto', `¿Quieres eliminar ${product.nombreProducto}?`, [
-            { text: 'Cancelar', style: 'cancel' },
-            {
-                text: 'Eliminar',
-                style: 'destructive',
-                onPress: async () => {
-                    const response = await apiRequest({
-                        endpoint: `/productos/${product.id_producto}`,
-                        method: 'DELETE',
-                        token
-                    });
+    const openDeleteProductModal = (product) => {
+        const productId = resolveProductId(product);
 
-                    if (!response.ok) {
-                        Alert.alert('Error', response.error || 'No se pudo eliminar');
-                        return;
-                    }
+        if (!productId) {
+            Alert.alert('Error', 'No se pudo identificar el producto para eliminar.');
+            return;
+        }
 
-                    setDetailsVisible(false);
-                    loadProducts(searchText);
-                }
+        setDeleteTarget(product);
+        setDeleteError('');
+        setDeleteVisible(true);
+    };
+
+    const closeDeleteProductModal = () => {
+        if (deleteSubmitting) return;
+        setDeleteVisible(false);
+        setDeleteTarget(null);
+        setDeleteError('');
+    };
+
+    const confirmDeleteProduct = async () => {
+        if (deleteSubmitting) return;
+
+        const productId = resolveProductId(deleteTarget);
+        if (!productId) {
+            setDeleteError('No se pudo identificar el producto para eliminar.');
+            return;
+        }
+
+        setDeleteSubmitting(true);
+        setDeleteError('');
+
+        try {
+            const response = await apiRequest({
+                endpoint: `/productos/${productId}`,
+                method: 'DELETE',
+                token
+            });
+
+            if (!response.ok) {
+                const detail = response.data?.detalle ? ` ${response.data.detalle}` : '';
+                setDeleteError(`${response.data?.error || response.error || 'No se pudo eliminar.'}${detail}`);
+                return;
             }
-        ]);
+
+            setDeleteVisible(false);
+            setDeleteTarget(null);
+            setDetailsVisible(false);
+            setSelectedProduct(null);
+            setProducts((current) => current.filter((item) => resolveProductId(item) !== productId));
+            loadProducts(searchText);
+        } catch (error) {
+            setDeleteError('No se pudo conectar con el servidor.');
+        } finally {
+            setDeleteSubmitting(false);
+        }
     };
 
     const openMovementModal = (type) => {
@@ -334,7 +376,7 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
         if (movementSubmitting) return;
 
         if (!movementForm.id_producto || !movementForm.cantidad) {
-            Alert.alert('Validación', 'Debes seleccionar producto y cantidad');
+            Alert.alert('Validacion', 'Debes seleccionar producto y cantidad');
             return;
         }
 
@@ -365,7 +407,8 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
                     id_usuario: currentUserId,
                     id_sucursal: Number(movementForm.id_sucursal),
                     cantidadIngreso: toNumber(movementForm.cantidad),
-                    numeroFactura: movementForm.numeroFactura.trim()
+                    numeroFactura: movementForm.numeroFactura.trim(),
+                    comprobanteMov: `${movementRequestId}-${movementForm.id_producto}`
                 },
             token
             });
@@ -430,8 +473,8 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
     return (
         <Screen>
             <SectionHeader
-                title="Catálogo"
-                subtitle="Gestión de productos e inventario"
+                title="Catalogo"
+                subtitle="Gestion de productos e inventario"
                 actions={
                     <View style={styles.headerActions}>
                         <TouchableOpacity style={styles.actionCircle} onPress={() => openMovementModal('inbound')}>
@@ -451,7 +494,7 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
                     <TextInput
                         value={searchText}
                         onChangeText={setSearchText}
-                        placeholder="Nombre o código de barras..."
+                        placeholder="Nombre o codigo de barras..."
                         placeholderTextColor={brandColors.textMuted}
                         selectionColor={brandColors.accent}
                         style={styles.searchInput}
@@ -480,7 +523,7 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
                             <Card style={styles.productCard}>
                                 <View style={styles.productTop}>
                                     <View style={styles.productInfo}>
-                                        <Text style={styles.categoryLabel}>{item.nombreCategoria || 'Sin categoría'}</Text>
+                                        <Text style={styles.categoryLabel}>{item.nombreCategoria || 'Sin categoria'}</Text>
                                         <Text style={styles.productTitle} numberOfLines={2}>{item.nombreProducto}</Text>
                                         <View style={styles.codeRow}>
                                             <Ionicons name="barcode-outline" size={14} color={brandColors.textMuted} />
@@ -537,7 +580,7 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
 
                 <View style={styles.scannerInputRow}>
                     <View style={styles.flexOne}>
-                        <Field label="Código de barras" value={productForm.codigoBarras} onChangeText={(value) => setProductForm((prev) => ({ ...prev, codigoBarras: value }))} />
+                        <Field label="Codigo de barras" value={productForm.codigoBarras} onChangeText={(value) => setProductForm((prev) => ({ ...prev, codigoBarras: value }))} />
                     </View>
                     <TouchableOpacity style={styles.inputScanButton} onPress={() => openScanner('form')}>
                         <Ionicons name="barcode-outline" size={24} color={brandColors.accent} />
@@ -580,11 +623,11 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
                 />
 
                 <PickerField
-                    label="Categoría"
+                    label="Categoria"
                     value={productForm.id_categoria}
                     onChange={(value) => setProductForm((prev) => ({ ...prev, id_categoria: value }))}
                     options={categories.map((item) => ({ label: item.nombreCategoria, value: String(item.id_categoria) }))}
-                    emptyLabel="Sin categoría"
+                    emptyLabel="Sin categoria"
                 />
                 <View style={styles.inlineSelectBlock}>
                     <Text style={styles.inlineSelectLabel}>Proveedor</Text>
@@ -679,7 +722,7 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
                     ) : null}
                 </View>
                 <SwitchField
-                    label="¿Es un producto pesable?"
+                    label="Es un producto pesablea"
                     value={productForm.esPesable}
                     onValueChange={(value) => setProductForm((prev) => ({ ...prev, esPesable: value }))}
                 />
@@ -699,7 +742,7 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
                             label="Buscar o escanear"
                             value={productPickerQuery}
                             onChangeText={searchMovementProducts}
-                            placeholder="Nombre o código..."
+                            placeholder="Nombre o codigo..."
                         />
                     </View>
                     <TouchableOpacity style={styles.inputScanButton} onPress={() => openScanner('movement')}>
@@ -710,7 +753,7 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
                 {selectedMovementProduct ? (
                     <View style={styles.selectedProductCard}>
                         <Text style={styles.selectedProductTitle}>{selectedMovementProduct.nombreProducto}</Text>
-                        <Text style={styles.selectedProductMeta}>Código {selectedMovementProduct.codigoBarras}</Text>
+                        <Text style={styles.selectedProductMeta}>Codigo {selectedMovementProduct.codigoBarras}</Text>
                     </View>
                 ) : null}
 
@@ -750,7 +793,7 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
                             options={branches.map((item) => ({ label: item.nombreSucursal, value: String(item.id_sucursal) }))}
                         />
                         <Field
-                            label="N° Factura / Guía"
+                            label="Nro Factura / Guia"
                             value={movementForm.numeroFactura}
                             onChangeText={(value) => setMovementForm((prev) => ({ ...prev, numeroFactura: value }))}
                         />
@@ -777,7 +820,7 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
                         <View style={styles.detailsSheet}>
                             <View style={styles.detailsSheetHeader}>
                                 <View style={styles.sheetHandle} />
-                                <Text style={styles.modalTitle}>Detalles del Producto</Text>
+                                <Text style={styles.modalTitle} allowFontScaling={false}>Detalles del Producto</Text>
                                 <TouchableOpacity style={styles.detailsCloseIcon} onPress={closeDetailsModal}>
                                     <Ionicons name="close" size={22} color={brandColors.textMuted} />
                                 </TouchableOpacity>
@@ -785,11 +828,11 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
 
                             <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
                                 <View style={styles.detailsHeader}>
-                                    <Text style={styles.categoryLabel}>{selectedProduct.nombreCategoria || 'Sin categoría'}</Text>
-                                    <Text style={styles.detailsTitle}>{selectedProduct.nombreProducto}</Text>
+                                    <Text style={styles.categoryLabel} allowFontScaling={false}>{selectedProduct.nombreCategoria || 'Sin categoria'}</Text>
+                                    <Text style={styles.detailsTitle} allowFontScaling={false}>{selectedProduct.nombreProducto}</Text>
                                     <View style={styles.codeRow}>
                                         <Ionicons name="barcode-outline" size={18} color={brandColors.textMuted} />
-                                        <Text style={styles.detailsCode}>{selectedProduct.codigoBarras}</Text>
+                                        <Text style={styles.detailsCode} allowFontScaling={false}>{selectedProduct.codigoBarras}</Text>
                                     </View>
                                 </View>
 
@@ -809,33 +852,89 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
                                 </View>
 
                                 <View style={styles.infoSection}>
-                                    <Text style={styles.infoLabel}>Familia promocional</Text>
-                                    <Text style={styles.infoValue}>{selectedProduct.familiaPromo || 'Sin familia'}</Text>
+                                    <Text style={styles.infoLabel} allowFontScaling={false}>Familia promocional</Text>
+                                    <Text style={styles.infoValue} allowFontScaling={false}>{selectedProduct.familiaPromo || 'Sin familia'}</Text>
                                 </View>
 
                                 <View style={styles.infoSection}>
-                                    <Text style={styles.infoLabel}>Proveedor</Text>
-                                    <Text style={styles.infoValue}>{selectedProduct.nombreProveedor || 'No especificado'}</Text>
+                                    <Text style={styles.infoLabel} allowFontScaling={false}>Proveedor</Text>
+                                    <Text style={styles.infoValue} allowFontScaling={false}>{selectedProduct.nombreProveedor || 'No especificado'}</Text>
                                 </View>
 
                                 {Boolean(selectedProduct.esPesable) && (
                                     <View style={styles.pesableInfo}>
                                         <Ionicons name="scale-outline" size={20} color={brandColors.danger} />
-                                        <Text style={styles.pesableTextLarge}>Producto sujeto a pesaje (Kg)</Text>
+                                        <Text style={styles.pesableTextLarge} allowFontScaling={false}>Producto sujeto a pesaje (Kg)</Text>
                                     </View>
                                 )}
                             </ScrollView>
 
-                            <View style={styles.modalActions}>
-                                <SecondaryButton title="Editar" onPress={() => openProductModal(selectedProduct)} style={styles.flexOne} />
-                                <DangerButton title="Eliminar" onPress={() => removeProduct(selectedProduct)} style={styles.flexOne} />
+                            <View style={styles.detailsActions}>
+                                <TouchableOpacity
+                                    style={styles.detailsActionButton}
+                                    onPress={() => openProductModal(selectedProduct)}
+                                    activeOpacity={0.75}
+                                >
+                                    <View style={styles.detailsActionIcon}>
+                                        <Ionicons name="create-outline" size={24} color={brandColors.accent} />
+                                    </View>
+                                    <Text style={styles.detailsActionText} allowFontScaling={false}>Editar</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={styles.detailsActionButton}
+                                    onPress={() => openDeleteProductModal(selectedProduct)}
+                                    activeOpacity={0.75}
+                                >
+                                    <View style={[styles.detailsActionIcon, styles.detailsActionIconDanger]}>
+                                        <Ionicons name="trash-outline" size={24} color={brandColors.danger} />
+                                    </View>
+                                    <Text style={[styles.detailsActionText, styles.detailsActionTextDanger]} allowFontScaling={false}>Eliminar</Text>
+                                </TouchableOpacity>
                             </View>
                             <TouchableOpacity style={styles.closeFullButton} onPress={closeDetailsModal}>
-                                <Text style={styles.closeFullButtonText}>Cerrar</Text>
+                                <Text style={styles.closeFullButtonText} allowFontScaling={false}>Cerrar</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
                 ) : null}
+            </Modal>
+
+            <Modal
+                visible={deleteVisible}
+                transparent
+                animationType="fade"
+                onRequestClose={closeDeleteProductModal}
+                statusBarTranslucent
+            >
+                <View style={styles.confirmOverlay}>
+                    <Pressable style={StyleSheet.absoluteFill} onPress={closeDeleteProductModal} />
+                    <View style={styles.confirmCard}>
+                        <View style={styles.confirmIcon}>
+                            <Ionicons name="trash-outline" size={28} color={brandColors.danger} />
+                        </View>
+                        <Text style={styles.confirmTitle} allowFontScaling={false}>Eliminar producto</Text>
+                        <Text style={styles.confirmText} allowFontScaling={false}>
+                            {deleteTarget?.nombreProducto || deleteTarget?.nombre || 'Este producto'} se eliminara junto a su stock, movimientos y detalle historico asociado.
+                        </Text>
+                        {deleteError ? (
+                            <View style={styles.confirmErrorBox}>
+                                <Text style={styles.confirmErrorText} allowFontScaling={false}>{deleteError}</Text>
+                            </View>
+                        ) : null}
+                        <View style={styles.confirmActions}>
+                            <SecondaryButton
+                                title="Cancelar"
+                                onPress={closeDeleteProductModal}
+                                style={styles.flexOne}
+                            />
+                            <DangerButton
+                                title={deleteSubmitting ? 'Eliminando...' : 'Eliminar'}
+                                onPress={confirmDeleteProduct}
+                                style={styles.flexOne}
+                            />
+                        </View>
+                    </View>
+                </View>
             </Modal>
 
             <Modal visible={scannerVisible} transparent animationType="slide" onRequestClose={() => setScannerVisible(false)}>
@@ -844,8 +943,8 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
                         <View style={styles.sheetHandle} />
                         <View style={styles.scannerHeader}>
                             <View>
-                                <Text style={styles.scannerTitle}>Escáner Valmu</Text>
-                                <Text style={styles.scannerSubtitle}>Detectando código de barras o QR</Text>
+                                <Text style={styles.scannerTitle}>Escaner Valmu</Text>
+                                <Text style={styles.scannerSubtitle}>Detectando codigo de barras o QR</Text>
                             </View>
                             <TouchableOpacity style={styles.scannerClose} onPress={() => setScannerVisible(false)}>
                                 <Ionicons name="close" size={24} color="#ffffff" />
@@ -861,7 +960,7 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
                             <View style={styles.scanGuide} />
                         </View>
 
-                        <Text style={styles.scannerHelp}>Centra el código en el recuadro para escanear.</Text>
+                        <Text style={styles.scannerHelp}>Centra el codigo en el recuadro para escanear.</Text>
                     </View>
                 </View>
             </Modal>
@@ -872,8 +971,14 @@ export default function ProductsScreen({ token, user, onSummaryChange }) {
 function DetailBlock({ label, value, highlight = false }) {
     return (
         <View style={styles.detailBlock}>
-            <Text style={styles.detailLabel}>{label}</Text>
-            <Text style={[styles.detailValue, highlight && styles.detailValueHighlight]}>{value}</Text>
+            <Text style={styles.detailLabel} allowFontScaling={false}>{label}</Text>
+            <Text
+                style={[styles.detailValue, highlight && styles.detailValueHighlight]}
+                allowFontScaling={false}
+                numberOfLines={2}
+            >
+                {value}
+            </Text>
         </View>
     );
 }
@@ -955,10 +1060,11 @@ const styles = StyleSheet.create({
     },
     categoryLabel: {
         color: brandColors.accentStrong,
-        fontSize: 10,
+        fontSize: 11,
+        lineHeight: 15,
         fontWeight: '800',
         textTransform: 'uppercase',
-        letterSpacing: 0.5,
+        letterSpacing: 0,
         marginBottom: 4
     },
     productTitle: {
@@ -1171,7 +1277,7 @@ const styles = StyleSheet.create({
         backgroundColor: brandColors.surface,
         borderTopLeftRadius: 32,
         borderTopRightRadius: 32,
-        paddingHorizontal: 24,
+        paddingHorizontal: 20,
         paddingBottom: Platform.OS === 'ios' ? 40 : 24,
         maxHeight: '90%'
     },
@@ -1213,9 +1319,10 @@ const styles = StyleSheet.create({
         marginBottom: 16
     },
     modalTitle: {
-        fontSize: 22,
+        fontSize: 24,
         fontWeight: '900',
-        color: brandColors.text
+        color: brandColors.text,
+        textAlign: 'center'
     },
     modalBody: {
         marginBottom: 20
@@ -1225,17 +1332,55 @@ const styles = StyleSheet.create({
         gap: 12,
         marginTop: 10
     },
+    detailsActions: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
+        gap: 28,
+        marginTop: 8,
+        marginBottom: 4
+    },
+    detailsActionButton: {
+        width: 92,
+        minHeight: 88,
+        alignItems: 'center',
+        justifyContent: 'center'
+    },
+    detailsActionIcon: {
+        width: 58,
+        height: 58,
+        borderRadius: 29,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: brandColors.accentSoft,
+        marginBottom: 8
+    },
+    detailsActionIconDanger: {
+        backgroundColor: '#FEE2E2'
+    },
+    detailsActionText: {
+        fontSize: 13,
+        lineHeight: 17,
+        fontWeight: '900',
+        color: brandColors.accent,
+        textAlign: 'center'
+    },
+    detailsActionTextDanger: {
+        color: brandColors.danger
+    },
     detailsHeader: {
-        marginBottom: 24
+        marginBottom: 22
     },
     detailsTitle: {
-        fontSize: 24,
+        fontSize: 25,
+        lineHeight: 30,
         fontWeight: '900',
         color: brandColors.text,
         marginTop: 4
     },
     detailsCode: {
-        fontSize: 16,
+        fontSize: 17,
+        lineHeight: 22,
         color: brandColors.textMuted,
         fontWeight: '600'
     },
@@ -1247,40 +1392,51 @@ const styles = StyleSheet.create({
     detailBlock: {
         flex: 1,
         backgroundColor: brandColors.backgroundAlt,
-        padding: 16,
-        borderRadius: 18
+        paddingVertical: 17,
+        paddingHorizontal: 16,
+        borderRadius: 18,
+        minHeight: 78,
+        justifyContent: 'center'
     },
     detailLabel: {
-        fontSize: 10,
+        fontSize: 11,
+        lineHeight: 14,
         fontWeight: '800',
         color: brandColors.textMuted,
         textTransform: 'uppercase',
-        marginBottom: 4
+        marginBottom: 6
     },
     detailValue: {
-        fontSize: 16,
+        fontSize: 18,
+        lineHeight: 23,
         fontWeight: '900',
         color: brandColors.text
     },
     detailValueHighlight: {
         color: brandColors.accentStrong,
-        fontSize: 20
+        fontSize: 22,
+        lineHeight: 27
     },
     infoSection: {
         backgroundColor: brandColors.backgroundAlt,
-        padding: 16,
+        paddingVertical: 17,
+        paddingHorizontal: 16,
         borderRadius: 18,
-        marginBottom: 16
+        marginBottom: 16,
+        minHeight: 74,
+        justifyContent: 'center'
     },
     infoLabel: {
-        fontSize: 10,
+        fontSize: 11,
+        lineHeight: 14,
         fontWeight: '800',
         color: brandColors.textMuted,
         textTransform: 'uppercase',
-        marginBottom: 4
+        marginBottom: 6
     },
     infoValue: {
-        fontSize: 16,
+        fontSize: 18,
+        lineHeight: 23,
         fontWeight: '700',
         color: brandColors.text
     },
@@ -1296,7 +1452,8 @@ const styles = StyleSheet.create({
     pesableTextLarge: {
         color: brandColors.danger,
         fontWeight: '800',
-        fontSize: 14
+        fontSize: 16,
+        lineHeight: 21
     },
     closeFullButton: {
         marginTop: 12,
@@ -1306,7 +1463,63 @@ const styles = StyleSheet.create({
     closeFullButtonText: {
         color: brandColors.textMuted,
         fontWeight: '700',
-        fontSize: 15
+        fontSize: 16
+    },
+    confirmOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(15, 23, 42, 0.72)',
+        justifyContent: 'center',
+        padding: 22
+    },
+    confirmCard: {
+        backgroundColor: brandColors.surface,
+        borderRadius: 28,
+        padding: 22,
+        alignItems: 'stretch'
+    },
+    confirmIcon: {
+        width: 58,
+        height: 58,
+        borderRadius: 29,
+        backgroundColor: '#FEE2E2',
+        alignItems: 'center',
+        justifyContent: 'center',
+        alignSelf: 'center',
+        marginBottom: 14
+    },
+    confirmTitle: {
+        fontSize: 22,
+        lineHeight: 27,
+        fontWeight: '900',
+        color: brandColors.text,
+        textAlign: 'center',
+        marginBottom: 8
+    },
+    confirmText: {
+        fontSize: 14,
+        lineHeight: 20,
+        fontWeight: '600',
+        color: brandColors.textMuted,
+        textAlign: 'center'
+    },
+    confirmErrorBox: {
+        marginTop: 14,
+        padding: 12,
+        borderRadius: 14,
+        backgroundColor: '#FEF2F2',
+        borderWidth: 1,
+        borderColor: '#FECACA'
+    },
+    confirmErrorText: {
+        color: '#991B1B',
+        fontSize: 12,
+        lineHeight: 17,
+        fontWeight: '700'
+    },
+    confirmActions: {
+        flexDirection: 'row',
+        gap: 12,
+        marginTop: 18
     },
     scannerBackdrop: {
         flex: 1,
@@ -1372,5 +1585,3 @@ const styles = StyleSheet.create({
         fontWeight: '600'
     }
 });
-
-

@@ -7,7 +7,9 @@ let adminExpandedProductId = null;
 let adminInboundRowSequence = 0;
 let adminTransferRowSequence = 0;
 let adminProductLookupCatalogPromise = null;
+let adminInboundSubmitInFlight = false;
 let adminTransferSubmitInFlight = false;
+
 const adminProductPagination = {
     page: 1,
     hasMore: false,
@@ -855,6 +857,7 @@ async function openStockInboundForm(initialProduct = null) {
 
     const selectedBranchId = activeBranchId || Number(branches[0]?.id_sucursal) || null;
     const selectedBranchName = activeBranchName || branches.find((branch) => Number(branch.id_sucursal) === Number(selectedBranchId))?.nombreSucursal || branches[0]?.nombreSucursal || 'Sucursal seleccionada';
+    const inboundBatchId = createMovementRequestId('INGRESO');
 
     const content = `
         <div class="form-group">
@@ -879,12 +882,31 @@ async function openStockInboundForm(initialProduct = null) {
     `;
 
     showModal('Ingreso de Mercaderia (Compras)', content, async () => {
+        if (adminInboundSubmitInFlight) {
+            return;
+        }
+
         const targetBranchId = Number(selectedBranchId);
         const invoiceNumber = document.getElementById('mov-invoice').value.trim();
         const lineRows = Array.from(document.querySelectorAll('.mov-line-row'));
+        const saveButton = document.getElementById('modal-save-btn');
+        const releaseInboundSubmit = () => {
+            adminInboundSubmitInFlight = false;
+            if (saveButton) {
+                saveButton.disabled = false;
+                saveButton.textContent = 'Registrar ingreso';
+            }
+        };
+
+        adminInboundSubmitInFlight = true;
+        if (saveButton) {
+            saveButton.disabled = true;
+            saveButton.textContent = 'Registrando ingreso...';
+        }
 
         if (Number.isNaN(targetBranchId)) {
             Swal.fire('Error', 'Debes seleccionar una sucursal valida.', 'error');
+            releaseInboundSubmit();
             return;
         }
 
@@ -897,12 +919,14 @@ async function openStockInboundForm(initialProduct = null) {
 
         if (!parsedLines.length) {
             Swal.fire('Error', 'Debes agregar al menos un producto al ingreso.', 'error');
+            releaseInboundSubmit();
             return;
         }
 
         const invalidLine = parsedLines.find((line) => Number.isNaN(line.productId) || Number.isNaN(line.quantity) || line.quantity <= 0);
         if (invalidLine) {
             Swal.fire('Error', 'Todas las lineas deben tener producto y cantidad valida.', 'error');
+            releaseInboundSubmit();
             return;
         }
 
@@ -914,24 +938,29 @@ async function openStockInboundForm(initialProduct = null) {
         }, new Map()).values());
 
         const currentUserId = getCurrentUserId();
-        for (const line of aggregatedLines) {
-            const response = await apiRequest({
-                endpoint: '/productos/ingreso',
-                method: 'POST',
-                body: {
-                    id_producto: line.productId,
-                    id_usuario: currentUserId,
-                    id_sucursal: targetBranchId,
-                    cantidadIngreso: line.quantity,
-                    numeroFactura: invoiceNumber
-                },
-                token
-            });
+        try {
+            for (const line of aggregatedLines) {
+                const response = await apiRequest({
+                    endpoint: '/productos/ingreso',
+                    method: 'POST',
+                    body: {
+                        id_producto: line.productId,
+                        id_usuario: currentUserId,
+                        id_sucursal: targetBranchId,
+                        cantidadIngreso: line.quantity,
+                        numeroFactura: invoiceNumber,
+                        comprobanteMov: `${inboundBatchId}-${line.productId}`
+                    },
+                    token
+                });
 
-            if (!response.ok) {
-                showMovementError(`${line.productName}: ${getMovementResponseError(response, 'Error al registrar el ingreso')}`);
-                return;
+                if (!response.ok) {
+                    showMovementError(`${line.productName}: ${getMovementResponseError(response, 'Error al registrar el ingreso')}`);
+                    return;
+                }
             }
+        } finally {
+            releaseInboundSubmit();
         }
 
         Toast.fire({ icon: 'success', title: `Ingreso registrado con ${aggregatedLines.length} producto(s)` });
@@ -971,13 +1000,20 @@ async function openTransferForm() {
 
     const defaultSourceId = activeBranchId || Number(branches[0]?.id_sucursal) || null;
     const defaultSourceName = activeBranchName || branches.find((branch) => Number(branch.id_sucursal) === defaultSourceId)?.nombreSucursal || 'Sucursal origen';
-    const inventoryMapPromise = fetchTransferInventoryMap(Number(defaultSourceId), token);
+    let selectedSourceId = Number(defaultSourceId);
+    let inventoryMapPromise = fetchTransferInventoryMap(selectedSourceId, token);
     const transferBatchId = createMovementRequestId('TRASLADO');
 
     const content = `
         <div class="form-group">
             <label>Sucursal de Origen</label>
-            <input type="text" class="form-control" value="${defaultSourceName}" disabled>
+            <select id="tra-origin" class="form-control">
+                ${branches.map((branch) => `
+                    <option value="${branch.id_sucursal}" ${Number(branch.id_sucursal) === selectedSourceId ? 'selected' : ''}>
+                        ${branch.nombreSucursal}
+                    </option>
+                `).join('')}
+            </select>
         </div>
         <div class="form-group">
             <label>Sucursal de Destino</label>
@@ -1002,16 +1038,34 @@ async function openTransferForm() {
         }
 
         const currentUserId = getCurrentUserId();
+        const currentUser = getCurrentUser();
+        const sourceId = parseInt(document.getElementById('tra-origin')?.value || '', 10);
         const destinationId = parseInt(document.getElementById('tra-dest').value, 10);
         const saveButton = document.getElementById('modal-save-btn');
+        const sourceLabel = document.getElementById('tra-origin')?.selectedOptions?.[0]?.textContent?.trim() || `Sucursal #${sourceId}`;
+        const releaseTransferSubmit = () => {
+            adminTransferSubmitInFlight = false;
+            if (saveButton) {
+                saveButton.disabled = false;
+                saveButton.textContent = 'Registrar traslados';
+            }
+        };
 
-        if (isNaN(Number(defaultSourceId)) || isNaN(destinationId)) {
+        adminTransferSubmitInFlight = true;
+        if (saveButton) {
+            saveButton.disabled = true;
+            saveButton.textContent = 'Registrando traslados...';
+        }
+
+        if (isNaN(sourceId) || isNaN(destinationId)) {
             Swal.fire('Error', 'Debes seleccionar sucursal origen y sucursal destino.', 'error');
+            releaseTransferSubmit();
             return;
         }
 
-        if (Number(defaultSourceId) === destinationId) {
+        if (sourceId === destinationId) {
             Swal.fire('Error', 'La sucursal de origen y destino deben ser distintas.', 'error');
+            releaseTransferSubmit();
             return;
         }
 
@@ -1026,6 +1080,7 @@ async function openTransferForm() {
         const validLines = rawLines.filter((line) => Number.isFinite(line.productId) && Number.isFinite(line.quantity) && line.quantity > 0);
         if (!validLines.length) {
             Swal.fire('Error', 'Agrega al menos un producto con cantidad valida para trasladar.', 'error');
+            releaseTransferSubmit();
             return;
         }
 
@@ -1041,7 +1096,16 @@ async function openTransferForm() {
             return map;
         }, new Map()).values());
 
-        const sourceInventoryMap = await inventoryMapPromise;
+        let sourceInventoryMap;
+        try {
+            sourceInventoryMap = await fetchTransferInventoryMap(sourceId, token);
+        } catch (error) {
+            console.error('Error fetching transfer inventory:', error);
+            Swal.fire('Error', 'No se pudo validar el stock actualizado del origen.', 'error');
+            releaseTransferSubmit();
+            return;
+        }
+
         const stockIssues = aggregatedLines
             .map((line) => {
                 const stockItem = sourceInventoryMap.get(line.productId);
@@ -1058,28 +1122,34 @@ async function openTransferForm() {
 
         if (stockIssues.length) {
             Swal.fire('Stock insuficiente', stockIssues.join('<br>'), 'error');
+            releaseTransferSubmit();
             return;
         }
 
         const transferredProductIds = [];
         const destinationLabel = document.getElementById('tra-dest')?.selectedOptions?.[0]?.textContent || `Sucursal #${destinationId}`;
 
-        adminTransferSubmitInFlight = true;
-        if (saveButton) {
-            saveButton.disabled = true;
-            saveButton.textContent = 'Registrando traslados...';
+        const resolvedUserId = currentUser?.id_usuario || currentUserId || null;
+        if (!resolvedUserId) {
+            Swal.fire('Usuario requerido', 'No se pudo obtener el ID del usuario para registrar el traslado. Vuelve a iniciar sesión.', 'error');
+            releaseTransferSubmit();
+            return;
         }
 
         try {
             for (const line of aggregatedLines) {
                 const data = {
                     id_producto: line.productId,
-                    id_usuario: currentUserId,
-                    id_sucursalOrigen: Number(defaultSourceId),
+                    id_usuario: resolvedUserId,
+                    idUsuario: resolvedUserId,
+                    usuario_id: resolvedUserId,
+                    id_sucursalOrigen: sourceId,
                     id_sucursalDestino: destinationId,
                     cantidadMov: line.quantity,
                     comprobanteMov: `${transferBatchId}-${line.productId}`
                 };
+
+                console.log('[Traslado] Payload enviado', data);
 
                 const response = await apiRequest({
                     endpoint: '/productos/traslado',
@@ -1098,7 +1168,7 @@ async function openTransferForm() {
                         `${backendMessage}${partialMessage}\n\n` +
                         `Operacion: ${data.comprobanteMov}\n` +
                         `Usuario enviado: ${data.id_usuario || 'No disponible'}\n` +
-                        `Origen validado: #${data.id_sucursalOrigen} (${defaultSourceName})\n` +
+                        `Origen validado: #${data.id_sucursalOrigen} (${sourceLabel})\n` +
                         `Destino seleccionado: #${data.id_sucursalDestino} (${destinationLabel})\n` +
                         `Producto: ${line.label}\n` +
                         `Cantidad: ${line.quantity}`
@@ -1120,7 +1190,7 @@ async function openTransferForm() {
         window.adminProductLookupCatalog = null;
         emitInventoryChanged({
             type: 'traslado',
-            branchIds: [Number(defaultSourceId), destinationId],
+            branchIds: [sourceId, destinationId],
             productIds: transferredProductIds
         });
         closeModal();
@@ -1128,13 +1198,26 @@ async function openTransferForm() {
     });
 
     document.getElementById('modal-save-btn').textContent = 'Registrar traslados';
-    syncTransferDestinationOptions(branches, Number(defaultSourceId));
+    syncTransferDestinationOptions(branches, selectedSourceId);
 
-    document.getElementById('tra-add-line-btn')?.addEventListener('click', () => {
-        appendTransferLineRow(Number(defaultSourceId), inventoryMapPromise);
+    document.getElementById('tra-origin')?.addEventListener('change', (event) => {
+        selectedSourceId = Number(event.target.value);
+        inventoryMapPromise = fetchTransferInventoryMap(selectedSourceId, token);
+        syncTransferDestinationOptions(branches, selectedSourceId);
+
+        const linesContainer = document.getElementById('tra-lines');
+        if (linesContainer) {
+            linesContainer.innerHTML = '';
+        }
+
+        appendTransferLineRow(selectedSourceId, () => inventoryMapPromise);
     });
 
-    appendTransferLineRow(Number(defaultSourceId), inventoryMapPromise);
+    document.getElementById('tra-add-line-btn')?.addEventListener('click', () => {
+        appendTransferLineRow(selectedSourceId, () => inventoryMapPromise);
+    });
+
+    appendTransferLineRow(selectedSourceId, () => inventoryMapPromise);
 }
 
 function initAdminProductPicker({ searchInputId, resultsId, hiddenId, selectedLabelId, quantityInputId, stockInfoId, stockQtyId, sourceBranchId }) {
@@ -1283,7 +1366,15 @@ function formatTransferStockLabel(quantity, isPesable) {
         : `${Math.round(numericValue).toLocaleString('es-CL')} un.`;
 }
 
-function appendTransferLineRow(sourceBranchId, inventoryMapPromise, product = null) {
+async function resolveTransferInventoryMap(inventorySource) {
+    if (typeof inventorySource === 'function') {
+        return await inventorySource();
+    }
+
+    return await inventorySource;
+}
+
+function appendTransferLineRow(sourceBranchId, inventorySource, product = null) {
     const linesContainer = document.getElementById('tra-lines');
     if (!linesContainer) return;
 
@@ -1317,10 +1408,10 @@ function appendTransferLineRow(sourceBranchId, inventoryMapPromise, product = nu
     `;
 
     linesContainer.appendChild(row);
-    bindTransferLineRow(row, sourceBranchId, inventoryMapPromise, product);
+    bindTransferLineRow(row, sourceBranchId, inventorySource, product);
 }
 
-function bindTransferLineRow(row, sourceBranchId, inventoryMapPromise, product = null) {
+function bindTransferLineRow(row, sourceBranchId, inventorySource, product = null) {
     const searchInput = row.querySelector('.tra-line-search');
     const hiddenInput = row.querySelector('.tra-line-product-id');
     const results = row.querySelector('.tra-line-results');
@@ -1335,7 +1426,7 @@ function bindTransferLineRow(row, sourceBranchId, inventoryMapPromise, product =
     const paintStock = async (productId, isPesable) => {
         if (!stockInfoDiv || !stockQtySpan || !sourceBranchId) return;
 
-        const inventoryMap = await inventoryMapPromise;
+        const inventoryMap = await resolveTransferInventoryMap(inventorySource);
         const inventoryItem = inventoryMap.get(Number(productId));
         const stock = Number(inventoryItem?.stock || 0);
         const weighted = inventoryItem?.esPesable ?? isPesable;

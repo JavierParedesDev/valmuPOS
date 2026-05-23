@@ -1,9 +1,10 @@
 const { app, BrowserWindow, Menu, ipcMain, screen } = require('electron');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const fs = require('fs/promises');
 const fsSync = require('fs');
 const os = require('os');
 const path = require('path');
+const crypto = require('crypto');
 const { createUpdateManager } = require('./updater/update-manager');
 
 let mainWindow = null;
@@ -68,6 +69,7 @@ function buildAppMenu() {
 
 let siiDataDir = '';
 let localAuditDir = '';
+let printDebugDir = '';
 
 function ensureSiiDataDir() {
     if (!siiDataDir) {
@@ -85,6 +87,22 @@ function ensureLocalAuditDir() {
     if (!fsSync.existsSync(localAuditDir)) {
         fsSync.mkdirSync(localAuditDir, { recursive: true });
     }
+}
+
+function ensurePrintDebugDir() {
+    if (!printDebugDir) {
+        printDebugDir = path.join(app.getPath('userData'), 'print-debug');
+    }
+    if (!fsSync.existsSync(printDebugDir)) {
+        fsSync.mkdirSync(printDebugDir, { recursive: true });
+    }
+}
+
+async function writePrintDebugFile(filename, data) {
+    ensurePrintDebugDir();
+    const targetPath = path.join(printDebugDir, filename);
+    await fs.writeFile(targetPath, JSON.stringify(data, null, 2), 'utf8');
+    return targetPath;
 }
 
 function getLocalAuditPath() {
@@ -137,6 +155,197 @@ function getSiiConfigPath() {
     return path.join(siiDataDir, 'config.json');
 }
 
+function maskSecret(value) {
+    const text = String(value || '').trim();
+    if (!text) {
+        return '';
+    }
+    if (text.length <= 8) {
+        return '*'.repeat(text.length);
+    }
+    return `${text.slice(0, 4)}${'*'.repeat(Math.max(0, text.length - 8))}${text.slice(-4)}`;
+}
+
+async function sha256File(filePath) {
+    try {
+        if (!fsSync.existsSync(filePath)) {
+            return null;
+        }
+
+        const hash = crypto.createHash('sha256');
+        const buffer = await fs.readFile(filePath);
+        hash.update(buffer);
+        return hash.digest('hex').toUpperCase();
+    } catch (error) {
+        console.error('SII hash error:', error);
+        return null;
+    }
+}
+
+function getFileDiagnostic(filePath) {
+    try {
+        if (!fsSync.existsSync(filePath)) {
+            return {
+                exists: false,
+                path: filePath,
+                filename: path.basename(filePath || ''),
+                length: null,
+                lastWriteTime: null,
+                sha256: null
+            };
+        }
+
+        const stats = fsSync.statSync(filePath);
+        return {
+            exists: true,
+            path: filePath,
+            filename: path.basename(filePath),
+            length: stats.size,
+            lastWriteTime: stats.mtime.toISOString(),
+            sha256: null
+        };
+    } catch (error) {
+        return {
+            exists: false,
+            path: filePath,
+            filename: path.basename(filePath || ''),
+            length: null,
+            lastWriteTime: null,
+            sha256: null,
+            error: error?.message || 'file_diagnostic_failed'
+        };
+    }
+}
+
+async function getCertificateDiagnostic({ configPath, certPath }) {
+    if (!fsSync.existsSync(configPath) || !fsSync.existsSync(certPath)) {
+        return {
+            ok: false,
+            error: 'Falta config.json o certificado.pfx para validar el certificado.'
+        };
+    }
+
+    const psScript = `
+$ErrorActionPreference = "Stop"
+$config = Get-Content -LiteralPath '${configPath.replace(/'/g, "''")}' -Raw | ConvertFrom-Json
+$password = ConvertTo-SecureString ([string]$config.certPassword) -AsPlainText -Force
+$cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2(
+    '${certPath.replace(/'/g, "''")}',
+    $password,
+    [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
+)
+[pscustomobject]@{
+    ok = $true
+    subject = $cert.Subject
+    issuer = $cert.Issuer
+    notBefore = $cert.NotBefore.ToString("o")
+    notAfter = $cert.NotAfter.ToString("o")
+    hasPrivateKey = $cert.HasPrivateKey
+    thumbprint = $cert.Thumbprint
+    serialNumber = $cert.SerialNumber
+} | ConvertTo-Json -Compress
+`;
+
+    return await new Promise((resolve) => {
+        const child = spawn('powershell.exe', [
+            '-NoProfile',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-Command',
+            psScript
+        ], {
+            windowsHide: true
+        });
+
+        let stdout = '';
+        let stderr = '';
+        child.stdout.on('data', (chunk) => {
+            stdout += String(chunk || '');
+        });
+        child.stderr.on('data', (chunk) => {
+            stderr += String(chunk || '');
+        });
+        child.on('error', (error) => {
+            resolve({
+                ok: false,
+                error: error?.message || 'No se pudo abrir PowerShell para validar el certificado.'
+            });
+        });
+        child.on('close', (code) => {
+            if (code !== 0) {
+                resolve({
+                    ok: false,
+                    error: stderr.trim() || stdout.trim() || `PowerShell termino con codigo ${code}.`
+                });
+                return;
+            }
+
+            try {
+                resolve(JSON.parse(stdout.trim()));
+            } catch (error) {
+                resolve({
+                    ok: false,
+                    error: error?.message || 'No se pudo interpretar el diagnostico del certificado.'
+                });
+            }
+        });
+    });
+}
+
+async function buildSiiDiagnostic() {
+    ensureSiiDataDir();
+
+    const configPath = getSiiConfigPath();
+    let config = {};
+    if (fsSync.existsSync(configPath)) {
+        try {
+            config = JSON.parse(await fs.readFile(configPath, 'utf8'));
+        } catch (error) {
+            config = {};
+        }
+    }
+
+    const certFilename = String(config.certFilename || 'certificado.pfx').trim();
+    const caf39Filename = String(config.caf_39_filename || 'CAF_39.xml').trim();
+    const caf33Filename = String(config.caf_33_filename || 'CAF_33.xml').trim();
+
+    const files = {
+        config: getFileDiagnostic(configPath),
+        certificado: getFileDiagnostic(path.join(siiDataDir, certFilename)),
+        caf39: getFileDiagnostic(path.join(siiDataDir, caf39Filename)),
+        caf33: getFileDiagnostic(path.join(siiDataDir, caf33Filename))
+    };
+
+    await Promise.all(Object.values(files).map(async (fileInfo) => {
+        if (fileInfo.exists) {
+            fileInfo.sha256 = await sha256File(fileInfo.path);
+        }
+    }));
+
+    const certificate = await getCertificateDiagnostic({
+        configPath,
+        certPath: files.certificado.path
+    });
+
+    return {
+        generatedAt: new Date().toISOString(),
+        userDataPath: app.getPath('userData'),
+        siiDataDir,
+        config: {
+            rutEmisor: String(config.rutEmisor || ''),
+            rutEnvia: String(config.rutEnvia || ''),
+            siiAmbiente: String(config.siiAmbiente || ''),
+            certFilename,
+            caf39Filename,
+            caf33Filename,
+            apiKeyMasked: maskSecret(config.apiKey),
+            certPasswordMasked: maskSecret(config.certPassword)
+        },
+        files,
+        certificate
+    };
+}
+
 function ensureInvoiceFolder(folder = '') {
     ensureSiiDataDir();
     const safeFolder = invoiceFolders.includes(String(folder || '').trim()) ? String(folder || '').trim() : 'facturas';
@@ -176,12 +385,15 @@ function getReceiptLogoPath() {
 async function runPythonReceiptPrint(payload) {
     const scriptPath = getReceiptPrinterScriptPath();
     const tempPath = path.join(os.tmpdir(), `valmu-receipt-${Date.now()}.json`);
+    const debugStamp = new Date().toISOString().replace(/[:.]/g, '-');
     const bridgePayload = {
         ...payload,
         logoPath: getReceiptLogoPath()
     };
 
     await fs.writeFile(tempPath, JSON.stringify(bridgePayload), 'utf8');
+    await writePrintDebugFile('latest-payload.json', bridgePayload).catch(() => { });
+    await writePrintDebugFile(`payload-${debugStamp}.json`, bridgePayload).catch(() => { });
 
     try {
         return await new Promise((resolve) => {
@@ -195,22 +407,40 @@ async function runPythonReceiptPrint(payload) {
                 {
                     windowsHide: true
                 },
-                (error, stdout, stderr) => {
+                async (error, stdout, stderr) => {
+                    const rawResult = {
+                        at: new Date().toISOString(),
+                        scriptPath,
+                        command,
+                        args,
+                        error: error ? {
+                            message: error.message,
+                            code: error.code,
+                            signal: error.signal
+                        } : null,
+                        stdout: String(stdout || ''),
+                        stderr: String(stderr || '')
+                    };
+                    await writePrintDebugFile('latest-result.json', rawResult).catch(() => { });
+                    await writePrintDebugFile(`result-${debugStamp}.json`, rawResult).catch(() => { });
+
                     if (error) {
                         resolve({
                             ok: false,
-                            error: stderr?.trim() || stdout?.trim() || error.message
+                            error: stderr?.trim() || stdout?.trim() || error.message,
+                            debugDir: printDebugDir
                         });
                         return;
                     }
 
                     try {
                         const parsed = JSON.parse(String(stdout || '').trim() || '{}');
-                        resolve(parsed);
+                        resolve(parsed?.ok === false ? { ...parsed, debugDir: printDebugDir } : parsed);
                     } catch (_parseError) {
                         resolve({
                             ok: false,
-                            error: stderr?.trim() || 'Python no devolvio una respuesta valida.'
+                            error: stderr?.trim() || 'Python no devolvio una respuesta valida.',
+                            debugDir: printDebugDir
                         });
                     }
                 }
@@ -237,7 +467,7 @@ function createMainWindow() {
             nodeIntegration: false,
             spellcheck: false,
             backgroundThrottling: true,
-            devTools: !app.isPackaged
+            devTools: true
         },
         show: false,
         fullscreen: true
@@ -245,6 +475,22 @@ function createMainWindow() {
 
     mainWindow.setAlwaysOnTop(true, 'screen-saver');
     mainWindow.loadFile(path.join(__dirname, '../renderer/index.html'));
+
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+        const key = String(input.key || '').toLowerCase();
+        const shouldToggleDevTools = key === 'f12' || ((input.control || input.meta) && input.shift && key === 'i');
+        if (!shouldToggleDevTools) {
+            return;
+        }
+
+        event.preventDefault();
+        if (mainWindow.webContents.isDevToolsOpened()) {
+            mainWindow.webContents.closeDevTools();
+        } else {
+            mainWindow.setAlwaysOnTop(false);
+            mainWindow.webContents.openDevTools({ mode: 'detach' });
+        }
+    });
 
     mainWindow.once('ready-to-show', () => {
         mainWindow.show();
@@ -426,7 +672,7 @@ function createSingleCustomerDisplayWindow(display, index) {
             nodeIntegration: false,
             spellcheck: false,
             backgroundThrottling: true,
-            devTools: !app.isPackaged
+            devTools: true
         },
         show: false,
         fullscreen: true,
@@ -736,6 +982,21 @@ function registerIpcHandlers() {
         } catch (error) {
             console.error('SII config read error:', error);
             return {};
+        }
+    });
+
+    ipcMain.handle('sii:get-diagnostics', async () => {
+        try {
+            return {
+                success: true,
+                diagnostic: await buildSiiDiagnostic()
+            };
+        } catch (error) {
+            console.error('SII diagnostics error:', error);
+            return {
+                success: false,
+                error: error?.message || 'sii_diagnostics_failed'
+            };
         }
     });
 

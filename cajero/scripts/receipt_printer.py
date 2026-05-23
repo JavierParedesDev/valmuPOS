@@ -1,7 +1,9 @@
 import hashlib
 import json
+import math
 import os
 import sys
+import unicodedata
 
 import win32con
 import win32print
@@ -12,6 +14,29 @@ from PIL import Image, ImageDraw, ImageFont, ImageWin
 def load_payload(payload_path):
     with open(payload_path, 'r', encoding='utf-8') as handle:
         return json.load(handle)
+
+
+def safe_text(value, fallback=''):
+    text = str(value if value is not None else fallback)
+    text = unicodedata.normalize('NFKD', text)
+    text = ''.join(ch for ch in text if unicodedata.category(ch)[0] != 'C')
+    return text.encode('cp1252', errors='replace').decode('cp1252').strip()
+
+
+def safe_number(value, fallback=0):
+    try:
+        numeric_value = float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+    if not math.isfinite(numeric_value):
+        return fallback
+
+    return numeric_value
+
+
+def format_money(value):
+    return f"${int(round(safe_number(value, 0))):,}".replace(',', '.')
 
 
 def load_font(size, bold=False):
@@ -31,7 +56,7 @@ def load_font(size, bold=False):
 
 
 def wrap_text(draw, text, font, max_width):
-    clean_text = ' '.join(str(text or '').split())
+    clean_text = ' '.join(safe_text(text).split())
     if not clean_text:
         return []
 
@@ -56,12 +81,12 @@ def wrap_text(draw, text, font, max_width):
 
 
 def measure_text_height(draw, text, font):
-    bbox = draw.textbbox((0, 0), str(text or ''), font=font)
+    bbox = draw.textbbox((0, 0), safe_text(text), font=font)
     return bbox[3] - bbox[1]
 
 
 def draw_centered_lines(draw, left, y, width, lines, font, fill='black', line_gap=4):
-    visible_lines = [str(line).strip() for line in lines if str(line or '').strip()]
+    visible_lines = [safe_text(line) for line in lines if safe_text(line)]
     if not visible_lines:
         return y
 
@@ -130,6 +155,123 @@ def draw_fake_pdf417(draw, left, top, width, height, seed):
                 draw.rectangle([x0, y0, x1, y1], fill='black')
 
 
+def build_stock_picking_image(payload):
+    receipt = payload.get('receipt') or {}
+    printer_paper = str(payload.get('printerPaper') or '80mm').strip().lower()
+    width_px = 464 if printer_paper == '58mm' else 640
+    is_small_paper = printer_paper == '58mm'
+    padding = 16 if is_small_paper else 22
+    gap = 10 if is_small_paper else 14
+    content_width = width_px - (padding * 2)
+
+    font_title = load_font(31 if is_small_paper else 39, bold=True)
+    font_group = load_font(30 if is_small_paper else 38, bold=True)
+    font_item = load_font(28 if is_small_paper else 35, bold=False)
+    font_warning = load_font(31 if is_small_paper else 39, bold=True)
+
+    # Estimate required height dynamically to prevent clipping / black block issues
+    est_height = padding * 2 + 500  # title and footer warning
+    groups = receipt.get('stockGroups') or []
+    if isinstance(groups, list):
+        for group in groups:
+            est_height += 120  # group header
+            lines = group.get('lines') or []
+            if isinstance(lines, list):
+                est_height += len(lines) * 100
+    
+    preview = receipt.get('preview') or ''
+    if isinstance(preview, str):
+        est_height += len(preview.splitlines()) * 60
+
+    canvas_height = max(15000, est_height)
+    image = Image.new('RGB', (width_px, canvas_height), 'white')
+    draw = ImageDraw.Draw(image)
+    cursor_y = padding
+
+    cursor_y = draw_wrapped_text(
+        draw,
+        padding,
+        cursor_y,
+        'DETALLE DE STOCK DESPACHO',
+        font_title,
+        content_width,
+        align='center',
+        line_gap=5
+    )
+    cursor_y += gap
+    draw.line((padding, cursor_y, width_px - padding, cursor_y), fill='black', width=2)
+    cursor_y += gap + 4
+
+    groups = receipt.get('stockGroups') or []
+    if not isinstance(groups, list) or not groups:
+        groups = []
+        current_group = None
+        for line in str(receipt.get('preview') or '').splitlines():
+            clean_line = safe_text(line)
+            if not clean_line:
+                continue
+            if not clean_line.startswith('-') and not clean_line[:1].isdigit():
+                current_group = {'name': clean_line, 'lines': []}
+                groups.append(current_group)
+                continue
+            if current_group:
+                current_group['lines'].append({'quantityLabel': '', 'name': clean_line.lstrip('- ')})
+
+    for group in groups:
+        group_name = safe_text(group.get('name'), '')
+        if not group_name:
+            continue
+
+        cursor_y = draw_wrapped_text(
+            draw,
+            padding,
+            cursor_y,
+            group_name.lower(),
+            font_group,
+            content_width,
+            line_gap=5
+        )
+        cursor_y += 6
+
+        lines = group.get('lines') if isinstance(group.get('lines'), list) else []
+        for item in lines:
+            quantity = safe_text(item.get('quantityLabel'), '')
+            name = safe_text(item.get('name'), 'Producto')
+            item_text = f"- {quantity} {name}".strip()
+            cursor_y = draw_wrapped_text(
+                draw,
+                padding,
+                cursor_y,
+                item_text,
+                font_item,
+                content_width,
+                line_gap=5
+            )
+            cursor_y += 5
+
+        cursor_y += gap
+
+    cursor_y += gap
+    draw.line((padding, cursor_y, width_px - padding, cursor_y), fill='black', width=2)
+    cursor_y += gap + 4
+    cursor_y = draw_wrapped_text(
+        draw,
+        padding,
+        cursor_y,
+        'NO HACER TRASLADO EN ADMIN',
+        font_warning,
+        content_width,
+        align='center',
+        line_gap=6
+    )
+
+    cursor_y += padding + (28 if is_small_paper else 42)
+    final_image = image.crop((0, 0, width_px, max(cursor_y, 220)))
+    final_image = final_image.convert('L')
+    final_image = final_image.point(lambda pixel: 0 if pixel < 190 else 255, mode='1')
+    return final_image
+
+
 def build_receipt_image(payload):
     receipt = payload.get('receipt') or {}
     emisor = receipt.get('emisor') or {}
@@ -160,8 +302,36 @@ def build_receipt_image(payload):
     is_dispatch_origin = origin == 'dispatch'
     is_withdrawal = 'retiro' in document_type.lower()
     is_arqueo = 'cierre de caja' in document_type.lower()
+    is_stock_picking = bool(receipt.get('isStockPicking'))
 
-    image = Image.new('RGB', (width_px, 4200), 'white')
+    # Estimate required height dynamically to prevent clipping / black block issues
+    est_height = padding * 2 + 1000  # header and margins
+    
+    # Items
+    line_items = receipt.get('lineItems') or []
+    if isinstance(line_items, list):
+        est_height += len(line_items) * 150  # each item block takes some height
+    
+    # Preview text (like in Arqueo)
+    preview = receipt.get('preview') or ''
+    if isinstance(preview, str):
+        est_height += len(preview.splitlines()) * 60
+        
+    # Stock Picking items
+    stock_groups = receipt.get('stockGroups') or []
+    if isinstance(stock_groups, list):
+        for g in stock_groups:
+            est_height += 100
+            lines = g.get('lines') or []
+            if isinstance(lines, list):
+                est_height += len(lines) * 100
+        
+    # Totals
+    est_height += 800
+    
+    # Large safety buffer
+    canvas_height = max(30000, est_height)
+    image = Image.new('RGB', (width_px, canvas_height), 'white')
     draw = ImageDraw.Draw(image)
     cursor_y = padding
     content_width = width_px - (padding * 2)
@@ -264,9 +434,9 @@ def build_receipt_image(payload):
             p_cash = receipt.get('paymentCash')
             p_card = receipt.get('paymentCard')
             p_transfer = receipt.get('paymentTransfer')
-            if p_cash: meta_lines.append(f" > EFECTIVO: ${int(p_cash):,}".replace(',', '.'))
-            if p_card: meta_lines.append(f" > TARJETA: ${int(p_card):,}".replace(',', '.'))
-            if p_transfer: meta_lines.append(f" > TRANSF: ${int(p_transfer):,}".replace(',', '.'))
+            if p_cash: meta_lines.append(f" > EFECTIVO: {format_money(p_cash)}")
+            if p_card: meta_lines.append(f" > TARJETA: {format_money(p_card)}")
+            if p_transfer: meta_lines.append(f" > TRANSF: {format_money(p_transfer)}")
 
     address_label = str(receipt.get('addressLabel') or receipt.get('address_label') or '').strip()
     if address_label:
@@ -295,8 +465,8 @@ def build_receipt_image(payload):
 
     if is_withdrawal:
         # Specialized Withdrawal Section
-        amount = receipt.get('withdrawalAmount', 0)
-        formatted_amount = f"${amount:,}".replace(',', '.')
+        amount = safe_number(receipt.get('withdrawalAmount', 0), 0)
+        formatted_amount = format_money(amount)
         reason = str(receipt.get('withdrawalReason') or 'Sin motivo especificado')
         cashier = str(receipt.get('cashierName') or 'No especificado')
 
@@ -326,8 +496,8 @@ def build_receipt_image(payload):
         cursor_y += 15
         
         flow_lines = [
-            f"Disponible antes: ${receipt.get('beforeCash', 0):,}".replace(',', '.'),
-            f"Disponible luego: ${receipt.get('afterCash', 0):,}".replace(',', '.')
+            f"Disponible antes: {format_money(receipt.get('beforeCash', 0))}",
+            f"Disponible luego: {format_money(receipt.get('afterCash', 0))}"
         ]
         for fline in flow_lines:
             cursor_y = draw_wrapped_text(draw, padding, cursor_y, fline, font_body, content_width)
@@ -340,7 +510,7 @@ def build_receipt_image(payload):
         cursor_y += 40
 
     if not is_withdrawal and not is_arqueo:
-        detail_title = 'DETALLE DE PRODUCTOS'
+        detail_title = 'RETIRO DE PRODUCTOS' if is_stock_picking else 'DETALLE DE PRODUCTOS'
         draw.text((padding, cursor_y), detail_title, fill='black', font=font_title)
         detail_title_box = draw.textbbox((padding, cursor_y), detail_title, font=font_title)
         cursor_y += (detail_title_box[3] - detail_title_box[1]) + 8
@@ -350,10 +520,10 @@ def build_receipt_image(payload):
     detail_lines = receipt.get('lineItems') or []
     if detail_lines:
         for item in detail_lines:
-            name = str(item.get('name') or 'Producto').upper()
-            qty = str(item.get('quantityLabel') or '1')
-            unit_price = f"${item.get('unitPrice', 0):,}".replace(',', '.')
-            subtotal = f"${item.get('subtotal', 0):,}".replace(',', '.')
+            name = safe_text(item.get('name'), 'Producto').upper() or 'PRODUCTO'
+            qty = safe_text(item.get('quantityLabel'), '1') or '1'
+            unit_price = format_money(item.get('unitPrice', 0))
+            subtotal = format_money(item.get('subtotal', 0))
 
             cursor_y = draw_wrapped_text(
                 draw,
@@ -399,15 +569,26 @@ def build_receipt_image(payload):
             )
             cursor_y += p_gap
 
-    if not is_withdrawal and not is_arqueo:
+    if not is_withdrawal and not is_arqueo and not is_stock_picking:
         draw.line((padding, cursor_y, width_px - padding, cursor_y), fill='black', width=2)
         cursor_y += gap
 
         totals = [
-            ('SUBTOTAL', f"${receipt.get('subtotal', 0):,}".replace(',', '.')),
-            ('IVA (19%)', f"${receipt.get('iva', 0):,}".replace(',', '.')),
-            ('TOTAL', f"${receipt.get('total', 0):,}".replace(',', '.')),
+            ('SUBTOTAL', format_money(safe_number(receipt.get('subtotal', 0)))),
         ]
+
+        descuento = safe_number(receipt.get('descuento', 0))
+        if descuento > 0:
+            totals.append(('DESCUENTO', f"-{format_money(descuento)}"))
+
+        extra_charge = safe_number(receipt.get('extraCharge', 0))
+        if extra_charge > 0:
+            totals.append(('RECARGO (2%)', f"+{format_money(extra_charge)}"))
+
+        totals.extend([
+            ('IVA (19%)', format_money(safe_number(receipt.get('iva', 0)))),
+            ('TOTAL', format_money(safe_number(receipt.get('total', 0)))),
+        ])
 
         for label, value in totals:
             label_font = font_title if label == 'TOTAL' else font_body_bold
@@ -477,23 +658,80 @@ def build_receipt_image(payload):
 def print_image(printer_name, image):
     hdc = win32ui.CreateDC()
     hdc.CreatePrinterDC(printer_name)
+    
+    # Get paper capabilities
     printable_width = hdc.GetDeviceCaps(win32con.HORZRES)
     printable_height = hdc.GetDeviceCaps(win32con.VERTRES)
-
+    
+    # Calculate global scale (ratio to fit width)
     scale_ratio = printable_width / image.width
-    scaled_height = int(image.height * scale_ratio)
-    if scaled_height > printable_height:
-        scaled_height = printable_height
-
-    resized_image = image.resize((printable_width, scaled_height), Image.Resampling.NEAREST)
-    dib = ImageWin.Dib(resized_image)
-
+    
+    # Start Document
     hdc.StartDoc('Valmu Cajero Receipt')
-    hdc.StartPage()
-    dib.draw(hdc.GetHandleOutput(), (0, 0, printable_width, scaled_height))
-    hdc.EndPage()
+    
+    # We print in chunks to avoid GDI/buffer limits and the "black block" issue
+    # We use printable_height as our chunk reference to stay within driver limits per page
+    y_offset = 0
+    while y_offset < image.height:
+        # Calculate source chunk height
+        # We want the chunk to be exactly printable_height high when scaled
+        source_chunk_height = int(printable_height / scale_ratio)
+        
+        # Ensure we don't go out of bounds
+        if y_offset + source_chunk_height > image.height:
+            source_chunk_height = image.height - y_offset
+            
+        current_scaled_height = int(source_chunk_height * scale_ratio)
+        
+        if source_chunk_height <= 0 or current_scaled_height <= 0:
+            break
+            
+        # Extract and resize chunk
+        chunk = image.crop((0, y_offset, image.width, y_offset + source_chunk_height))
+        resized_chunk = chunk.resize((printable_width, current_scaled_height), Image.Resampling.NEAREST)
+        
+        # Convert to DIB for drawing
+        dib = ImageWin.Dib(resized_chunk)
+        
+        # Print page chunk
+        hdc.StartPage()
+        dib.draw(hdc.GetHandleOutput(), (0, 0, printable_width, current_scaled_height))
+        hdc.EndPage()
+        
+        y_offset += source_chunk_height
+
     hdc.EndDoc()
     hdc.DeleteDC()
+
+
+def list_installed_printers():
+    try:
+        printers = win32print.EnumPrinters(
+            win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+        )
+    except Exception:
+        return []
+
+    return [str(printer[2] or '').strip() for printer in printers if len(printer) > 2 and printer[2]]
+
+
+def resolve_printer_name(requested_name):
+    installed_printers = list_installed_printers()
+    requested_name = str(requested_name or '').strip()
+
+    try:
+        default_printer = win32print.GetDefaultPrinter()
+    except Exception:
+        default_printer = ''
+
+    if not requested_name or requested_name == 'Predeterminada del sistema':
+        return default_printer, installed_printers
+
+    for installed_name in installed_printers:
+        if installed_name.lower() == requested_name.lower():
+            return installed_name, installed_printers
+
+    return default_printer, installed_printers
 
 
 def main():
@@ -503,18 +741,26 @@ def main():
         return 1
 
     payload = load_payload(payload_path)
-    printer_name = str(payload.get('printerName') or '').strip()
-    if not printer_name or printer_name == 'Predeterminada del sistema':
-        printer_name = win32print.GetDefaultPrinter()
+    requested_printer = str(payload.get('printerName') or '').strip()
+    printer_name, installed_printers = resolve_printer_name(requested_printer)
 
     if not printer_name:
-        print(json.dumps({'ok': False, 'error': 'No hay una impresora configurada.'}))
+        printers_label = ', '.join(installed_printers) if installed_printers else 'ninguna'
+        print(json.dumps({
+            'ok': False,
+            'error': f'No hay una impresora configurada. Impresoras detectadas: {printers_label}.'
+        }))
         return 1
 
     try:
-        image = build_receipt_image(payload)
+        receipt = payload.get('receipt') or {}
+        image = build_stock_picking_image(payload) if receipt.get('isStockPicking') else build_receipt_image(payload)
         print_image(printer_name, image)
-        print(json.dumps({'ok': True, 'printerName': printer_name}))
+        print(json.dumps({
+            'ok': True,
+            'printerName': printer_name,
+            'requestedPrinterName': requested_printer
+        }))
         return 0
     except Exception as error:
         print(json.dumps({'ok': False, 'error': str(error)}))

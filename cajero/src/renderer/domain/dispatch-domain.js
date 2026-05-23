@@ -219,7 +219,8 @@ export function buildDispatchPayload({
     customerId,
     folioDocumento,
     manualPayment,
-    stockPlan = null
+    stockPlan = null,
+    branchId = null
 }) {
     const subtotal = Math.round(snapshot.total / 1.19);
     const iva = snapshot.total - subtotal;
@@ -228,6 +229,7 @@ export function buildDispatchPayload({
         id_transporte: Number(carrierId),
         id_tipoDoc: Number(documentTypeId),
         id_cliente: customerId ? Number(customerId) : null,
+        id_sucursal: branchId ? Number(branchId) : null,
         origenVenta: 'DESPACHO',
         origen_venta: 'DESPACHO',
         folio_documento: folioDocumento || null,
@@ -237,12 +239,19 @@ export function buildDispatchPayload({
         total: snapshot.total,
         stock_origen_prioridad: stockPlan ? stockPlan.summary : null,
         stock_asignaciones: stockPlan ? stockPlan.allocations : [],
-        carrito: snapshot.lines.map((line) => ({
-            id_producto: Number(line.productId),
-            cantidad: Number(line.quantity),
-            precioVenta: Number(line.unitPrice),
-            subtotalLinea: Number(line.lineTotal)
-        }))
+        carrito: snapshot.lines.map((line) => {
+            const allocation = stockPlan?.allocations?.find((alloc) => String(alloc.id_producto) === String(line.productId));
+            return {
+                id_producto: Number(line.productId),
+                cantidad: Number(line.quantity),
+                precioVenta: Number(line.unitPrice),
+                subtotalLinea: Number(line.lineTotal),
+                cantidad_casa_matriz: allocation ? Number(allocation.origenPrincipal.cantidad || 0) : 0,
+                cantidad_bodega: allocation ? Number(allocation.origenSecundario.cantidad || 0) : 0,
+                id_sucursal_casa_matriz: allocation ? Number(allocation.origenPrincipal.id_sucursal) : null,
+                id_sucursal_bodega: allocation ? Number(allocation.origenSecundario.id_sucursal) : null
+            };
+        })
     };
 }
 
@@ -392,6 +401,7 @@ export function normalizeDispatchHistory(history, formatDateTime) {
 
     return (Array.isArray(history) ? history : []).map((dispatch) => ({
         id: String(dispatch.id_despacho || dispatch.id || ''),
+        id_venta: dispatch.id_venta || null,
         carrierName: dispatch.nombreTransporte || 'Transportista',
         carrierRut: dispatch.rutTransporte || dispatch.rut || '',
         plate: dispatch.patenteTransporte || '',
