@@ -20,5 +20,15 @@ window.ValmuInvoicingUtils = {
         }
 
         return new Blob([uInt8Array], { type });
+    },
+
+    iso88591ToBlob(str, type = 'application/xml') {
+        if (!str) return new Blob([], { type });
+        const len = str.length;
+        const bytes = new Uint8Array(len);
+        for (let i = 0; i < len; i++) {
+            bytes[i] = str.charCodeAt(i) & 0xFF;
+        }
+        return new Blob([bytes], { type });
     }
 };

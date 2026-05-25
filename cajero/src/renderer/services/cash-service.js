@@ -17,7 +17,7 @@ export async function fetchCashStatus({ apiBaseUrl, token }) {
     return payload;
 }
 
-export async function openCashTurn({ apiBaseUrl, token, openingAmount }) {
+export async function openCashTurn({ apiBaseUrl, token, branchId, openingAmount }) {
     const response = await fetch(`${normalizeApiBaseUrl(apiBaseUrl)}/caja/abrir`, {
         method: 'POST',
         headers: {
@@ -25,7 +25,8 @@ export async function openCashTurn({ apiBaseUrl, token, openingAmount }) {
             Authorization: `Bearer ${token}`
         },
         body: JSON.stringify({
-            montoInicial: Math.round(openingAmount)
+            montoInicial: Math.round(openingAmount),
+            id_sucursal: branchId || null
         })
     });
 

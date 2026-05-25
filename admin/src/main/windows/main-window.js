@@ -15,25 +15,32 @@ function createMainWindow() {
             devTools: true
         },
         title: 'Valmu Admin',
-        autoHideMenuBar: false,
+        autoHideMenuBar: true,
         show: false
     });
+
+    // Elimina el menú superior de Electron
+    mainWindow.setMenu(null);
 
     mainWindow.loadFile(path.join(__dirname, '../../renderer/login.html'));
 
     mainWindow.webContents.on('before-input-event', (event, input) => {
         const key = String(input.key || '').toLowerCase();
+        
         const shouldToggleDevTools = key === 'f12' || ((input.control || input.meta) && input.shift && key === 'i');
-        if (!shouldToggleDevTools) {
-            return;
-        }
+        const shouldReload = key === 'f5' || ((input.control || input.meta) && key === 'r');
 
-        event.preventDefault();
-        if (mainWindow.webContents.isDevToolsOpened()) {
-            mainWindow.webContents.closeDevTools();
-        } else {
-            mainWindow.setAlwaysOnTop(false);
-            mainWindow.webContents.openDevTools({ mode: 'detach' });
+        if (shouldToggleDevTools) {
+            event.preventDefault();
+            if (mainWindow.webContents.isDevToolsOpened()) {
+                mainWindow.webContents.closeDevTools();
+            } else {
+                mainWindow.setAlwaysOnTop(false);
+                mainWindow.webContents.openDevTools({ mode: 'detach' });
+            }
+        } else if (shouldReload) {
+            event.preventDefault();
+            mainWindow.webContents.reload();
         }
     });
 

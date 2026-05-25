@@ -316,36 +316,48 @@ window.ValmuInvoicingTransport = {
                 }
             };
 
-            const wrapFormData = new FormData();
-            wrapFormData.append('input', JSON.stringify(wrapPayload));
-            wrapFormData.append('files', certBlob, 'certificado.pfx');
 
             const dteBlobFinal = dteXmlContent instanceof Blob
                 ? dteXmlContent
-                : new Blob([dteXmlContent], { type: 'text/xml' });
-            wrapFormData.append('files2', dteBlobFinal, 'dte.xml');
+                : window.ValmuInvoicingUtils.iso88591ToBlob(dteXmlContent, 'text/xml');
+                
+            const dteBufferForIpc = await dteBlobFinal.arrayBuffer();
+            const certBufferForIpc = await certBlob.arrayBuffer();
+            
+            // Convert ArrayBuffer to Base64 in the browser safely
+            let binary = '';
+            const bytes = new Uint8Array(certBufferForIpc);
+            const len = bytes.byteLength;
+            for (let i = 0; i < len; i++) {
+                binary += String.fromCharCode(bytes[i]);
+            }
+            const certBase64 = window.btoa(binary);
 
+            showSiiLoadingDialog('Generando el sobre firmado localmente. Espera un momento...');
+            
             const apiKey = String(freshConfig.apiKey || '').trim();
             const headers = apiKey ? { Authorization: apiKey } : {};
-            showSiiLoadingDialog('Generando el sobre firmado. Espera un momento...');
-            const wrapRes = await fetch('https://api.simpleapi.cl/api/v1/envio/generar', {
-                method: 'POST',
-                headers,
-                body: wrapFormData
+
+            const wrapRes = await window.electronAPI.signEnvioDTE({
+                dteXmls: [dteBufferForIpc], // IPC handles ArrayBuffer directly
+                rutEmisor,
+                rutEnvia,
+                fechaResol: fchRes,
+                nroResol: nroRes,
+                certBase64Data: certBase64,
+                certPassword
             });
 
-            if (!wrapRes.ok) {
-                throw new Error('Fallo Generar Sobre: ' + await wrapRes.text());
+            if (!wrapRes || !wrapRes.success) {
+                throw new Error('Fallo Generar Sobre Local: ' + wrapRes?.error);
             }
 
-            const envelopeXml = await wrapRes.text();
-            console.log('-> Sobre Generado.');
+            const envelopeBuffer = wrapRes.envelopeBuffer;
+            console.log('-> Sobre Generado Localmente.');
 
             const sendPayload = {
                 Tipo: tipoDTE == 39 || tipoDTE == 41 ? 2 : 1,
                 Ambiente: ambienteSii,
-                RutCompany: rutEmisor,
-                RutEmpresa: rutEmisor,
                 RutEmisor: rutEmisor,
                 RutEnvia: rutEnvia,
                 rutCompany: rutEmisor,
@@ -366,7 +378,7 @@ window.ValmuInvoicingTransport = {
             sendFormData.append('input', JSON.stringify(sendPayload));
             sendFormData.append('files', certBlob, 'certificado.pfx');
 
-            const envelopeBlob = new Blob([envelopeXml], { type: 'text/xml' });
+            const envelopeBlob = new Blob([envelopeBuffer], { type: 'text/xml' });
             sendFormData.append('files2', envelopeBlob, 'envio.xml');
 
             updateSiiLoadingDialog('Subiendo el sobre firmado al SII. Esto puede tardar unos segundos...');

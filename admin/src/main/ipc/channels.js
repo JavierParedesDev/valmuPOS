@@ -21,7 +21,11 @@ const IPC_CHANNELS = {
     DELETE_INVOICE_FILES: 'delete-invoice-files',
     UPLOAD_PUBLICIDAD: 'upload-publicidad',
     PRINT_RECEIPT: 'printer:print-receipt',
-    GET_PRINTERS: 'settings:get-printers'
+    GET_PRINTERS: 'settings:get-printers',
+    QUERY_SII_STATUS: 'query-sii-status',
+    QUERY_SII_DTE_STATUS: 'query-sii-dte-status',
+    QUERY_SII_BOLETA_STATUS: 'query-sii-boleta-status',
+    QUERY_SII_BOLETA_DTE_STATUS: 'query-sii-boleta-dte-status'
 };
 
 module.exports = {

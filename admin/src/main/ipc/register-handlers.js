@@ -302,6 +302,29 @@ function registerIpcHandlers(mainWindow, updaterApi = null) {
         }
     });
 
+    ipcMain.handle('SIGN_ENVIO_DTE', async (_event, { dteXmls, rutEmisor, rutEnvia, fechaResol, nroResol, certBase64Data, certPassword }) => {
+        try {
+            const { parsePfxBuffer, buildEnvioDTE, signEnvioDTE } = require('../services/sii-envelope');
+            
+            const certBuffer = Buffer.from(certBase64Data, 'base64');
+            const { privateKeyPem, certBase64, modulusBase64, exponentBase64 } = parsePfxBuffer(certBuffer, certPassword);
+            
+            const dteBuffers = dteXmls.map(dte => {
+                if (dte?.type === 'Buffer' && Array.isArray(dte.data)) return Buffer.from(dte.data);
+                if (dte instanceof Uint8Array || dte instanceof ArrayBuffer) return Buffer.from(dte);
+                return Buffer.from(dte);
+            });
+
+            const { xml: unsignedEnvelope, setDteId } = buildEnvioDTE(dteBuffers, rutEmisor, rutEnvia, fechaResol, nroResol);
+            const signedBuffer = signEnvioDTE(unsignedEnvelope, setDteId, privateKeyPem, certBase64, modulusBase64, exponentBase64);
+            
+            return { success: true, envelopeBuffer: signedBuffer };
+        } catch (error) {
+            console.error("Error signing EnvioDTE:", error);
+            return { success: false, error: error.message };
+        }
+    });
+
     ipcMain.handle(IPC_CHANNELS.READ_LOCAL_CERT, async (_event, filePath) => {
         try {
             const fullPath = path.join(getSiiDataDir(), filePath);
@@ -439,6 +462,176 @@ function registerIpcHandlers(mainWindow, updaterApi = null) {
                 ok: false,
                 error: error?.message || 'No se pudo imprimir el comprobante.'
             };
+        }
+    });
+
+    ipcMain.handle(IPC_CHANNELS.QUERY_SII_STATUS, async (_event, { rutEmpresa, rutFirma, trackId, token }) => {
+        try {
+            if (!trackId || !token || !rutEmpresa || !rutFirma) {
+                return { success: false, error: 'Faltan parámetros requeridos para la consulta SII' };
+            }
+
+            const parseRut = (rutStr) => {
+                const clean = String(rutStr).replace(/[^0-9kK]/g, '').toUpperCase();
+                return { rut: clean.slice(0, -1) || '0', dv: clean.slice(-1) || '0' };
+            };
+
+            const emp = parseRut(rutEmpresa);
+            const frm = parseRut(rutFirma);
+
+            const soapBody = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:def="http://DefaultNamespace">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <def:getEstUp soapenv:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+         <RutCompania xsi:type="xsd:string">${emp.rut}</RutCompania>
+         <DvCompania xsi:type="xsd:string">${emp.dv}</DvCompania>
+         <RutFirma xsi:type="xsd:string">${frm.rut}</RutFirma>
+         <DvFirma xsi:type="xsd:string">${frm.dv}</DvFirma>
+         <TrackId xsi:type="xsd:string">${trackId}</TrackId>
+         <Token xsi:type="xsd:string">${token}</Token>
+      </def:getEstUp>
+   </soapenv:Body>
+</soapenv:Envelope>`;
+
+            const response = await fetch('https://palena.sii.cl/DTEWS/QueryEstUp.jws', {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': '' },
+                body: soapBody
+            });
+
+            const text = await response.text();
+            
+            const match = text.match(/<getEstUpReturn[^>]*>([\s\S]*?)<\/getEstUpReturn>/i);
+            if (!match) return { success: false, error: 'El SII no devolvió un formato válido', raw: text };
+            
+            const decoded = match[1].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+            return { success: true, result: decoded };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle(IPC_CHANNELS.QUERY_SII_DTE_STATUS, async (_event, { rutEmpresa, rutFirma, token, tipoDte, folio, rutReceptor, monto, fecha }) => {
+        try {
+            if (!tipoDte || !folio || !monto || !fecha) {
+                return { success: false, error: 'Faltan parámetros del documento para la consulta por Folio' };
+            }
+
+            const parseRut = (rutStr) => {
+                const clean = String(rutStr).replace(/[^0-9kK]/g, '').toUpperCase();
+                return { rut: clean.slice(0, -1) || '0', dv: clean.slice(-1) || '0' };
+            };
+
+            const emp = parseRut(rutEmpresa);
+            const frm = parseRut(rutFirma);
+            const rec = parseRut(rutReceptor || '66666666-6');
+
+            // Fecha formato DD-MM-YYYY
+            const d = new Date(fecha);
+            const dateStr = `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+
+            const soapBody = `<?xml version="1.0" encoding="UTF-8"?>
+<soapenv:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:def="http://DefaultNamespace">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <def:getEstDte soapenv:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+         <RutConsultante xsi:type="xsd:string">${frm.rut}</RutConsultante>
+         <DvConsultante xsi:type="xsd:string">${frm.dv}</DvConsultante>
+         <RutCompania xsi:type="xsd:string">${emp.rut}</RutCompania>
+         <DvCompania xsi:type="xsd:string">${emp.dv}</DvCompania>
+         <RutReceptor xsi:type="xsd:string">${rec.rut}</RutReceptor>
+         <DvReceptor xsi:type="xsd:string">${rec.dv}</DvReceptor>
+         <TipoDte xsi:type="xsd:string">${tipoDte}</TipoDte>
+         <FolioDte xsi:type="xsd:string">${folio}</FolioDte>
+         <FechaEmisionDte xsi:type="xsd:string">${dateStr}</FechaEmisionDte>
+         <MontoDte xsi:type="xsd:string">${Math.round(monto)}</MontoDte>
+         <Token xsi:type="xsd:string">${token}</Token>
+      </def:getEstDte>
+   </soapenv:Body>
+</soapenv:Envelope>`;
+
+            const response = await fetch('https://palena.sii.cl/DTEWS/QueryEstDte.jws', {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': '' },
+                body: soapBody
+            });
+
+            const text = await response.text();
+            
+            const match = text.match(/<getEstDteReturn[^>]*>([\s\S]*?)<\/getEstDteReturn>/i);
+            if (!match) return { success: false, error: 'El SII no devolvió un formato válido', raw: text };
+            
+            const decoded = match[1].replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+            return { success: true, result: decoded };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle(IPC_CHANNELS.QUERY_SII_BOLETA_STATUS, async (_event, { rutEmpresa, trackId, token }) => {
+        try {
+            if (!trackId || !token || !rutEmpresa) {
+                return { success: false, error: 'Faltan parámetros requeridos' };
+            }
+            const cleanRut = String(rutEmpresa).replace(/[^0-9kK]/gi, '');
+            const rut = cleanRut.slice(0, -1);
+            const dv = cleanRut.slice(-1).toUpperCase();
+
+            const response = await fetch(`https://api.sii.cl/recursos/v1/boleta.electronica.envio/${rut}-${dv}-${trackId}`, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (!response.ok) {
+                const errTxt = await response.text();
+                return { success: false, error: `Error HTTP ${response.status}`, raw: errTxt };
+            }
+
+            const json = await response.json();
+            return { success: true, result: JSON.stringify(json, null, 2), json };
+        } catch (error) {
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle(IPC_CHANNELS.QUERY_SII_BOLETA_DTE_STATUS, async (_event, { rutEmpresa, rutReceptor, tipoDte, folio, token, monto, fecha }) => {
+        try {
+            if (!tipoDte || !folio || !token || !rutEmpresa) {
+                return { success: false, error: 'Faltan parámetros requeridos' };
+            }
+            const cleanRut = String(rutEmpresa).replace(/[^0-9kK]/gi, '');
+            const rut = cleanRut.slice(0, -1);
+            const dv = cleanRut.slice(-1).toUpperCase();
+
+            const recClean = String(rutReceptor || '66666666-6').replace(/[^0-9kK]/gi, '');
+            const rutRec = recClean.slice(0, -1);
+            const dvRec = recClean.slice(-1).toUpperCase();
+
+            // Format date for REST API (DD-MM-YYYY)
+            const d = new Date(fecha);
+            const dateStr = `${String(d.getDate()).padStart(2, '0')}-${String(d.getMonth() + 1).padStart(2, '0')}-${d.getFullYear()}`;
+
+            const response = await fetch(`https://api.sii.cl/recursos/v1/boleta.electronica/${rut}-${dv}-${tipoDte}-${folio}?rutReceptor=${rutRec}&dvReceptor=${dvRec}&fechaEmision=${dateStr}&montoTotal=${Math.round(monto)}`, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+
+            if (!response.ok) {
+                const errTxt = await response.text();
+                return { success: false, error: `Error HTTP ${response.status}`, raw: errTxt };
+            }
+
+            const json = await response.json();
+            return { success: true, result: JSON.stringify(json, null, 2), json };
+        } catch (error) {
+            return { success: false, error: error.message };
         }
     });
 

@@ -322,16 +322,7 @@ class InvoicesPage {
         });
     }
 
-    async handleDelete(filename) {
-        return invoicingDocuments.handleDelete({
-            filename,
-            api,
-            toast: Toast,
-            refreshHistory: async () => {
-                await this.fetchHistory();
-            }
-        });
-    }
+
 
     async downloadDteXml(filename, folder, idXml) {
         return invoicingDocuments.downloadAndSaveXml({
@@ -650,24 +641,220 @@ class InvoicesPage {
         return window.ValmuInvoicingHistoryController.handleSearch(this, value);
     }
 
-    async handleDelete(filename) {
-        if (!filename) return Toast.show('Nombre de archivo inválido', 'error');
+    async handleDelete(filename, idXml) {
+        if (!filename && !idXml) return Toast.show('Documento inválido', 'error');
+        
         const ok = await Swal?.fire?.({
             title: '¿Eliminar documento?',
-            text: `¿Seguro que deseas eliminar "${filename}"? Esta acción no se puede deshacer.`,
-            icon: 'warning',
+            text: '¿Seguro que deseas eliminar este documento del historial y servidor? Esta acción no se puede deshacer.',
             showCancelButton: true,
+            confirmButtonColor: '#ef4444',
+            cancelButtonColor: '#f3f4f6',
             confirmButtonText: 'Sí, eliminar',
-            cancelButtonText: 'Cancelar'
+            cancelButtonText: '<span style="color: #374151">Cancelar</span>',
+            customClass: {
+                popup: 'rounded-2xl',
+                confirmButton: 'rounded-xl px-6 py-2 font-semibold text-sm',
+                cancelButton: 'rounded-xl px-6 py-2 font-semibold text-sm border-0'
+            }
         });
+
         if (!ok?.isConfirmed) return;
 
         try {
-            await api.deleteXml(filename);
+            if (!idXml || idXml === 'null' || idXml === 'undefined' || idXml === '') {
+                await Swal?.fire?.({
+                    title: 'Error de Sincronización',
+                    text: 'El servidor remoto no entregó el ID numérico de este documento (id_xml). Asegúrate de haber subido la última versión de "api-valmu" al VPS.',
+                    icon: 'error',
+                    confirmButtonColor: '#ef4444'
+                });
+                return;
+            }
+
+            try {
+                await api.deleteXml(idXml);
+            } catch (apiErr) {
+                console.warn('Error al borrar en API:', apiErr);
+                await Swal?.fire?.({
+                    title: 'Error de servidor',
+                    text: `No se pudo borrar el registro remoto: ${apiErr.message}`,
+                    icon: 'warning',
+                    confirmButtonColor: '#ef4444'
+                });
+                return;
+            }
+            
+            if (filename && filename !== 'null' && filename !== 'undefined' && typeof window.electronAPI?.deleteInvoiceFiles === 'function') {
+                await window.electronAPI.deleteInvoiceFiles(filename);
+            }
+
             Toast.show('Documento eliminado', 'success');
             this.fetchHistory();
         } catch (error) {
             Toast.show('Error al eliminar: ' + error.message, 'error');
+        }
+    }
+
+    async querySiiStatus(trackId, idXml, docBase64) {
+        let docData = null;
+        try {
+            if (docBase64) {
+                docData = JSON.parse(atob(docBase64));
+            }
+        } catch (e) { console.error('Error parseando docBase64', e); }
+
+        let finalTrackId = trackId;
+        
+        if (!finalTrackId || finalTrackId === 'undefined' || finalTrackId === 'null') {
+            const { value: inputTrackId, isConfirmed } = await Swal.fire({
+                title: 'Consultar Estado',
+                html: `
+                    <p class="text-sm text-gray-500 mb-4">Esta factura no tiene un TrackID guardado. Si lo conoces, ingrésalo a continuación.</p>
+                    <p class="text-xs font-bold text-gray-400 mb-2">SI DEJAS ESTE CAMPO EN BLANCO Y PULSAS CONSULTAR:</p>
+                    <p class="text-xs text-gray-500 mb-4 bg-gray-50 p-2 rounded-lg">Se realizará una consulta "Por Folio" (QueryEstDte) para verificar directamente si la factura fue recibida comercialmente por el SII.</p>
+                `,
+                input: 'text',
+                inputPlaceholder: 'Ej: 12060061078 (Opcional)',
+                showCancelButton: true,
+                confirmButtonColor: '#3b82f6',
+                cancelButtonColor: '#f3f4f6',
+                confirmButtonText: 'Consultar al SII',
+                cancelButtonText: '<span style="color: #374151">Cancelar</span>',
+                customClass: {
+                    popup: 'rounded-2xl',
+                    confirmButton: 'rounded-xl px-6 py-2 font-semibold text-sm',
+                    cancelButton: 'rounded-xl px-6 py-2 font-semibold text-sm border-0'
+                }
+            });
+
+            if (!isConfirmed) return;
+            finalTrackId = inputTrackId ? inputTrackId.trim() : null;
+        }
+
+        if (!window.electronAPI?.querySiiStatus) return Toast.show('Tu versión no soporta consultas directas al SII. Actualiza el sistema.', 'error');
+
+        try {
+            const config = JSON.parse(localStorage.getItem('sii_config') || '{}');
+            const rutEmpresa = config.rut_empresa;
+            const rutFirma = config.rut_certificado;
+            
+            if (!rutEmpresa || !rutFirma) {
+                return Toast.show('Faltan datos de configuración SII (RUT Empresa o RUT Firma)', 'warning');
+            }
+
+            Swal.fire({
+                title: 'Consultando al SII...',
+                text: 'Conectando directamente con palena.sii.cl',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading()
+            });
+
+            const authHeader = 'Basic ' + btoa('api:' + config.apiKey);
+            const tokenRes = await fetch('https://api.simpleapi.cl/api/v1/sii/token', {
+                method: 'GET',
+                headers: { Authorization: authHeader }
+            });
+            const tokenData = await tokenRes.json();
+            const token = tokenData.token;
+
+            if (!token) throw new Error('No se pudo obtener el token del SII');
+
+            let result;
+            let isEnvioStatus = false;
+            let isBoleta = docData && (String(docData.type) === '39' || String(docData.type) === '41');
+
+            if (finalTrackId) {
+                isEnvioStatus = true;
+                if (isBoleta) {
+                    result = await window.electronAPI.querySiiBoletaStatus({
+                        trackId: finalTrackId,
+                        token,
+                        rutEmpresa
+                    });
+                } else {
+                    result = await window.electronAPI.querySiiStatus({
+                        trackId: finalTrackId,
+                        token,
+                        rutEmpresa,
+                        rutFirma
+                    });
+                }
+            } else {
+                if (!docData) throw new Error('No se puede consultar por folio: faltan datos del documento en la tabla.');
+                
+                if (isBoleta) {
+                    result = await window.electronAPI.querySiiBoletaDteStatus({
+                        rutEmpresa,
+                        rutReceptor: docData.customerRut,
+                        tipoDte: docData.type,
+                        folio: docData.folio,
+                        token,
+                        monto: docData.amount,
+                        fecha: docData.date
+                    });
+                } else {
+                    result = await window.electronAPI.querySiiDteStatus({
+                        rutEmpresa,
+                        rutFirma,
+                        token,
+                        tipoDte: docData.type,
+                        folio: docData.folio,
+                        rutReceptor: docData.customerRut,
+                        monto: docData.amount,
+                        fecha: docData.date
+                    });
+                }
+            }
+
+            if (!result.success) {
+                throw new Error(result.error || 'Error desconocido al consultar el SII');
+            }
+
+            let isAccepted = false;
+            let isRejected = false;
+
+            if (isBoleta) {
+                // REST API returns JSON. The IPC wrapper returns stringified JSON in result.result and parsed JSON in result.json
+                const json = result.json || {};
+                const estado = json.estado || '';
+                isAccepted = estado === 'REC' || estado === 'EPR' || estado === 'ACE' || estado === 'RSC';
+                isRejected = estado === 'RCH' || estado === 'RFR' || estado === 'RVA' || estado === 'RMD';
+            } else if (isEnvioStatus) {
+                isAccepted = result.result.includes('EPR - Envio Procesado');
+                isRejected = result.result.includes('RCH - ') || result.result.includes('RFR - ');
+            } else {
+                isAccepted = result.result.includes('DTE Recibido') || result.result.includes('DTE Aceptado');
+                isRejected = result.result.includes('DTE Rechazado') || result.result.includes('DTE No Recibido');
+            }
+
+            await Swal.fire({
+                title: isEnvioStatus ? 'Respuesta del Envío (TrackID)' : 'Respuesta del Documento (Folio)',
+                html: `<pre class="text-left text-xs bg-gray-50 p-4 rounded-xl overflow-x-auto whitespace-pre-wrap font-mono max-h-64 overflow-y-auto">${this.escapeHtml(result.result)}</pre>`,
+                icon: isAccepted ? 'success' : (isRejected ? 'error' : 'info'),
+                confirmButtonColor: isAccepted ? '#059669' : '#ef4444',
+                confirmButtonText: 'Aceptar',
+                customClass: { popup: 'rounded-2xl w-full max-w-2xl' }
+            });
+
+            if (isAccepted && idXml && typeof api.updateDteStatus === 'function') {
+                try {
+                    await api.updateDteStatus(idXml, 'ACEPTADO SII');
+                    this.fetchHistory();
+                } catch (e) { console.warn('No se auto-actualizo estado a ACEPTADO SII:', e); }
+            } else if (isRejected && idXml && typeof api.updateDteStatus === 'function') {
+                try {
+                    await api.updateDteStatus(idXml, 'RECHAZADO SII');
+                    this.fetchHistory();
+                } catch (e) { console.warn('No se auto-actualizo estado a RECHAZADO SII:', e); }
+            }
+        } catch (error) {
+            Swal.fire({
+                title: 'Error de Consulta',
+                text: error.message,
+                icon: 'error',
+                confirmButtonColor: '#ef4444'
+            });
         }
     }
 
@@ -682,6 +869,33 @@ class InvoicesPage {
             toast: Toast,
             createPdfFromXml: (xmlContent, targetFilename, targetFolder) => this.createPdfFromXml(xmlContent, targetFilename, targetFolder)
         });
+    }
+
+    async duplicateInvoice(type, folio, filename, idXml) {
+        if (!['33', '34', '39'].includes(String(type))) {
+            return Toast.show('Solo se pueden duplicar facturas o boletas.', 'warning');
+        }
+
+        this.activeTab = 'create';
+        await this.updateUI();
+
+        const success = await window.ValmuInvoicingDocuments.loadDteDataFromXml({
+            type,
+            folio,
+            activeTab: 'create',
+            electronAPI: window.electronAPI,
+            toast: Toast,
+            calcNCLine: this.calcLine,
+            calcNDLine: this.calcLine
+        });
+
+        if (success) {
+            const tipoSelect = document.getElementById('dte-tipo');
+            if (tipoSelect) {
+                tipoSelect.value = String(type);
+            }
+            Toast.show('Documento clonado. Listo para emitir de nuevo.', 'success');
+        }
     }
 
     // ── Subir DTE local al servidor ─────────────────────────────────────────
@@ -785,16 +999,7 @@ class InvoicesPage {
         return invoicingHistoryController.handleSearch(this, value);
     }
 
-    async handleDelete(filename) {
-        return invoicingDocuments.handleDelete({
-            filename,
-            api,
-            toast: Toast,
-            refreshHistory: async () => {
-                await this.fetchHistory();
-            }
-        });
-    }
+
 
     async createPdfFromXmlWrapper(type, folio, filename, idXml) {
         return invoicingDocuments.createPdfFromXmlWrapper({

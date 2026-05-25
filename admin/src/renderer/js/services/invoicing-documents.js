@@ -535,16 +535,18 @@ window.ValmuInvoicingDocuments = {
             const xmlDoc = parser.parseFromString(xmlContent, 'text/xml');
             const receptorEl = xmlDoc.getElementsByTagName('Receptor')[0];
 
+            let prefix = activeTab === 'note' ? 'nc' : 'nd';
+            if (activeTab === 'create') prefix = 'dte';
+
             if (receptorEl) {
                 const fields = {
                     'rut-recep': receptorEl.getElementsByTagName('RUTRecep')[0]?.textContent,
                     'rzn-recep': receptorEl.getElementsByTagName('RznSocRecep')[0]?.textContent,
                     'dir-recep': receptorEl.getElementsByTagName('DirRecep')[0]?.textContent,
                     'cmna-recep': receptorEl.getElementsByTagName('CmnaRecep')[0]?.textContent,
-                    'giro-recep': receptorEl.getElementsByTagName('GiroRecep')[0]?.textContent
+                    'giro-recep': receptorEl.getElementsByTagName('GiroRecep')[0]?.textContent,
+                    'ciudad-recep': receptorEl.getElementsByTagName('CiudadRecep')[0]?.textContent
                 };
-
-                const prefix = activeTab === 'note' ? 'nc' : 'nd';
 
                 for (const [suffix, value] of Object.entries(fields)) {
                     const el = document.getElementById(`${prefix}-${suffix}`);
@@ -558,24 +560,25 @@ window.ValmuInvoicingDocuments = {
 
             const detalles = xmlDoc.getElementsByTagName('Detalle');
             if (detalles.length > 0) {
-                const prefix = activeTab === 'note' ? 'nc' : 'nd';
-                const container = document.getElementById(`${prefix}-items-container`);
+                const containerId = activeTab === 'create' ? 'invoice-items-container' : `${prefix}-items-container`;
+                const container = document.getElementById(containerId);
 
-                // Normalizacion de Precios (Boleta 39, Factura Exenta 34 y Factura 33)
-                // En el creador de Valmu, el motor calcula Neto + 19%.
-                // Si el usuario quiere que el total coincida con el precio cargado del XML (sin duplicar IVA)
-                // debemos dividir por 1.19 para que el motor al recalcular llegue al total original.
-                const shouldNormalize = String(type) === '39' || String(type) === '34' || String(type) === '33';
+                // Normalizacion de Precios: El UI asume que el precio ingresado (.item-price) es NETO.
+                // Si el XML trae el precio en BRUTO (como en las Boletas 39), debemos dividir por 1.19.
+                // Si el XML trae el precio en NETO (como en Facturas 33 o Notas 61/56), NO dividimos.
+                const shouldNormalize = String(type) === '39';
 
                 if (container) {
-                    const firstRow = container.querySelector(`.${prefix}-item-row`);
-                    const isFirstEmpty = firstRow && !firstRow.querySelector(`.${prefix}-item-nombre`).value;
+                    const itemPrefix = activeTab === 'create' ? 'item' : `${prefix}-item`;
+                    const firstRow = container.querySelector(`.${itemPrefix}-row`) || container.querySelector('.item-row');
+                    const isFirstEmpty = firstRow && !firstRow.querySelector(`.${itemPrefix}-nombre`).value;
 
                     for (let i = 0; i < detalles.length; i += 1) {
                         const det = detalles[i];
                         const name = det.getElementsByTagName('NmbItem')[0]?.textContent;
                         const qty = det.getElementsByTagName('QtyItem')[0]?.textContent;
                         let prc = parseFloat(det.getElementsByTagName('PrcItem')[0]?.textContent || 0);
+                        const desc = parseFloat(det.getElementsByTagName('DescuentoPct')[0]?.textContent || 0);
 
                         if (shouldNormalize) {
                             prc = prc / 1.19;
@@ -585,7 +588,7 @@ window.ValmuInvoicingDocuments = {
                         if (i === 0 && isFirstEmpty) {
                             targetRow = firstRow;
                         } else {
-                            const btnAddId = prefix === 'nc' ? 'btn-nc-add-line' : 'btn-nd-add-line';
+                            const btnAddId = activeTab === 'create' ? 'btn-add-line' : `btn-${prefix}-add-line`;
                             const btnAdd = document.getElementById(btnAddId);
                             if (btnAdd) {
                                 btnAdd.click();
@@ -594,15 +597,20 @@ window.ValmuInvoicingDocuments = {
                         }
 
                         if (targetRow) {
-                            targetRow.querySelector(`.${prefix}-item-nombre`).value = name || '';
-                            targetRow.querySelector(`.${prefix}-item-qty`).value = qty || 1;
-                            targetRow.querySelector(`.${prefix}-item-price`).value = Math.round(prc);
+                            targetRow.querySelector(`.${itemPrefix}-nombre`).value = name || '';
+                            targetRow.querySelector(`.${itemPrefix}-qty`).value = qty || 1;
+                            targetRow.querySelector(`.${itemPrefix}-price`).value = Math.round(prc);
+                            
+                            const descEl = targetRow.querySelector(`.${itemPrefix}-pct-desc`);
+                            if (descEl && desc > 0) descEl.value = Math.round(desc);
 
-                            const qtyInput = targetRow.querySelector(`.${prefix}-item-qty`);
-                            if (activeTab === 'note') {
-                                calcNCLine?.(qtyInput);
-                            } else {
-                                calcNDLine?.(qtyInput);
+                            const qtyInput = targetRow.querySelector(`.${itemPrefix}-qty`);
+                            if (activeTab === 'note' && calcNCLine) {
+                                calcNCLine(qtyInput);
+                            } else if (activeTab === 'debit' && calcNDLine) {
+                                calcNDLine(qtyInput);
+                            } else if (activeTab === 'create' && window.invoicePage?.calcLine) {
+                                window.invoicePage.calcLine(qtyInput);
                             }
                         }
                     }

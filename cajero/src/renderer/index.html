@@ -13,12 +13,21 @@
 </head>
 
 <body>
+    <div class="custom-titlebar">
+        <div class="titlebar-drag-region"></div>
+        <div class="titlebar-title">Valmu Cajero</div>
+        <div class="titlebar-controls">
+            <button id="titlebar-minimize" class="titlebar-btn" tabindex="-1"><i class="bi bi-dash"></i></button>
+            <button id="titlebar-maximize" class="titlebar-btn" tabindex="-1"><i class="bi bi-square"></i></button>
+            <button id="titlebar-close" class="titlebar-btn close-btn" tabindex="-1"><i class="bi bi-x-lg"></i></button>
+        </div>
+    </div>
+
     <section class="login-screen" id="login-screen">
         <div class="login-card">
             <div class="login-brand">
-                <span class="brand-kicker">Valmu Ecosystem</span>
-                <h1>Valmu Cajero</h1>
-                <p>Ingreso rapido para empezar a vender.</p>
+                <img src="./assets/logo.png" alt="Valmu Logo" class="login-logo" style="max-height: 80px; margin-bottom: 1rem; object-fit: contain;">
+                <h1 style="color: #1e293b !important;">Valmu Cajero</h1>
             </div>
 
             <form class="login-form" id="login-form">
@@ -610,48 +619,17 @@
                                             <span>Archivo actual</span>
                                             <strong id="caf39-filename">No cargado</strong>
                                         </div>
+                                        <div class="settings-info-row compact-row" id="caf39-folio-info" style="display: none;">
+                                            <span>Próximo folio a usar</span>
+                                            <strong id="caf39-next-folio" style="color: #059669;">-</strong>
+                                        </div>
+                                        <div class="settings-info-row compact-row" id="caf39-remaining-info" style="display: none;">
+                                            <span>Folios restantes</span>
+                                            <strong id="caf39-remaining-folios" style="color: #ea580c;">-</strong>
+                                        </div>
                                         <button class="secondary-btn" id="upload-caf39-btn" type="button">Cargar
                                             CAF
                                             Boleta</button>
-                                    </div>
-
-                                    <div class="caf-settings-item">
-                                        <div class="caf-settings-head">
-                                            <div>
-                                                <strong>Sobre de Boletas</strong>
-                                                <span id="boleta-envelope-desc-label">Configuración del envío automático</span>
-                                            </div>
-                                            <div class="caf-status-badge" id="boleta-envelope-status">Sin pendientes</div>
-                                        </div>
-                                        <div class="settings-info-row compact-row">
-                                            <span>Pendientes en cola</span>
-                                            <strong id="boleta-envelope-count-label">0 boletas</strong>
-                                        </div>
-
-                                        <div style="margin-top: 0.8rem; border-top: 1px dashed rgba(0,0,0,0.05); padding-top: 0.8rem;">
-                                            <label class="input-label" for="sii-boleta-env-mode">Criterio de envío</label>
-                                            <select class="input-control" id="sii-boleta-env-mode">
-                                                <option value="both">Tiempo o Cantidad (Lo que ocurra primero)</option>
-                                                <option value="time">Solo Tiempo (Cada X minutos)</option>
-                                                <option value="count">Solo Cantidad (Cada Y boletas)</option>
-                                            </select>
-                                        </div>
-
-                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-top: 0.5rem;">
-                                            <div>
-                                                <label class="input-label" for="sii-boleta-env-minutes">Minutos (Tiempo)</label>
-                                                <input class="input-control" id="sii-boleta-env-minutes" type="number" min="1" placeholder="60">
-                                            </div>
-                                            <div>
-                                                <label class="input-label" for="sii-boleta-env-limit">Límite (Boletas)</label>
-                                                <input class="input-control" id="sii-boleta-env-limit" type="number" min="1" placeholder="50">
-                                            </div>
-                                        </div>
-
-                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-top: 0.8rem;">
-                                            <button class="secondary-btn" id="save-boleta-env-settings-btn" type="button">Guardar sobre</button>
-                                            <button class="secondary-btn" id="force-boleta-envelope-btn" type="button">Forzar envío</button>
-                                        </div>
                                     </div>
 
                                     <div class="caf-settings-item">
@@ -665,6 +643,14 @@
                                         <div class="settings-info-row compact-row">
                                             <span>Archivo actual</span>
                                             <strong id="caf33-filename">No cargado</strong>
+                                        </div>
+                                        <div class="settings-info-row compact-row" id="caf33-folio-info" style="display: none;">
+                                            <span>Próximo folio a usar</span>
+                                            <strong id="caf33-next-folio" style="color: #059669;">-</strong>
+                                        </div>
+                                        <div class="settings-info-row compact-row" id="caf33-remaining-info" style="display: none;">
+                                            <span>Folios restantes</span>
+                                            <strong id="caf33-remaining-folios" style="color: #ea580c;">-</strong>
                                         </div>
                                         <button class="secondary-btn" id="upload-caf33-btn" type="button">Cargar
                                             CAF
@@ -701,35 +687,55 @@
                                     font-weight: 800;
                                     text-transform: uppercase;
                                     letter-spacing: 0.05em;
-                                    color: #ef4444;
+                                    color: #059669;
                                     display: block;
                                     margin-bottom: 0.15rem;
                                 }
                                 #settings-tab-pending-dtes .api-status-card {
                                     display: flex;
                                     align-items: center;
-                                    gap: 0.5rem;
-                                    padding: 0.4rem 0.8rem;
+                                    gap: 0.6rem;
+                                    padding: 0.45rem 0.9rem;
                                     border-radius: 9999px;
                                     font-size: 0.75rem;
                                     font-weight: 700;
                                     transition: all 0.3s ease;
+                                    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
                                 }
                                 #settings-tab-pending-dtes .api-status-card.status-online {
                                     background: rgba(18, 183, 106, 0.08);
-                                    border: 1px solid rgba(18, 183, 106, 0.2);
+                                    border: 1px solid rgba(18, 183, 106, 0.25);
                                     color: #12b76a;
                                 }
                                 #settings-tab-pending-dtes .api-status-card.status-warning {
                                     background: rgba(253, 176, 34, 0.08);
-                                    border: 1px solid rgba(253, 176, 34, 0.2);
+                                    border: 1px solid rgba(253, 176, 34, 0.25);
                                     color: #fdb022;
                                 }
                                 #settings-tab-pending-dtes .api-status-card.status-offline {
                                     background: rgba(240, 68, 56, 0.08);
-                                    border: 1px solid rgba(240, 68, 56, 0.2);
+                                    border: 1px solid rgba(240, 68, 56, 0.25);
                                     color: #f04438;
                                 }
+                                
+                                @keyframes pulse-green {
+                                    0% { box-shadow: 0 0 0 0 rgba(18, 183, 106, 0.6); }
+                                    70% { box-shadow: 0 0 0 6px rgba(18, 183, 106, 0); }
+                                    100% { box-shadow: 0 0 0 0 rgba(18, 183, 106, 0); }
+                                }
+                                @keyframes pulse-red {
+                                    0% { box-shadow: 0 0 0 0 rgba(240, 68, 56, 0.6); }
+                                    70% { box-shadow: 0 0 0 6px rgba(240, 68, 56, 0); }
+                                    100% { box-shadow: 0 0 0 0 rgba(240, 68, 56, 0); }
+                                }
+                                
+                                #settings-tab-pending-dtes .api-status-card.status-online #simpleapi-status-dot {
+                                    animation: pulse-green 2s infinite;
+                                }
+                                #settings-tab-pending-dtes .api-status-card.status-offline #simpleapi-status-dot {
+                                    animation: pulse-red 2s infinite;
+                                }
+
                                 #settings-tab-pending-dtes .dte-queue-actions {
                                     display: flex;
                                     gap: 0.75rem;
@@ -741,7 +747,7 @@
                                     gap: 0.4rem;
                                     font-size: 0.8rem;
                                     font-weight: 700;
-                                    padding: 0.5rem 1rem;
+                                    padding: 0.5rem 1.1rem;
                                     border-radius: 8px;
                                     cursor: pointer;
                                     transition: all 0.2s ease;
@@ -749,17 +755,20 @@
                                     height: 38px;
                                 }
                                 #settings-tab-pending-dtes .btn-check-conn {
-                                    background-color: #ef4444;
+                                    background: linear-gradient(135deg, #10b981, #059669);
                                     color: white;
+                                    box-shadow: 0 2px 4px rgba(5, 150, 105, 0.2);
                                 }
                                 #settings-tab-pending-dtes .btn-check-conn:hover {
-                                    background-color: #dc2626;
+                                    background: linear-gradient(135deg, #059669, #047857);
                                     transform: translateY(-1px);
+                                    box-shadow: 0 4px 6px rgba(5, 150, 105, 0.3);
                                 }
                                 #settings-tab-pending-dtes .btn-retry-all {
                                     background-color: white;
                                     border-color: #cbd5e1 !important;
                                     color: #334155;
+                                    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
                                 }
                                 #settings-tab-pending-dtes .btn-retry-all:hover {
                                     background-color: #f8fafc;
@@ -770,6 +779,7 @@
                                     background-color: white;
                                     border-color: #fee2e2 !important;
                                     color: #ef4444;
+                                    box-shadow: 0 1px 2px rgba(239,68,68,0.05);
                                 }
                                 #settings-tab-pending-dtes .btn-clear-queue:hover {
                                     background-color: #fef2f2;
@@ -867,15 +877,73 @@
                                     transform: translateY(-1px);
                                 }
                             </style>
+                            <style>
+                                /* Envelope Settings Container */
+                                .envelope-settings-card {
+                                    padding: 1.5rem;
+                                    margin-bottom: 1.5rem;
+                                }
+                                .envelope-settings-header {
+                                    display: flex;
+                                    justify-content: space-between;
+                                    align-items: center;
+                                    margin-bottom: 1rem;
+                                    padding-bottom: 1rem;
+                                    border-bottom: 1px dashed rgba(0,0,0,0.05);
+                                }
+                                .envelope-stats-row {
+                                    display: flex;
+                                    justify-content: space-between;
+                                    background: #f8fafc;
+                                    padding: 0.75rem 1rem;
+                                    border-radius: 8px;
+                                    margin-bottom: 1.25rem;
+                                    font-size: 0.85rem;
+                                }
+                            </style>
+
+                            <article class="settings-card envelope-settings-card">
+                                <div class="envelope-settings-header">
+                                    <div>
+                                        <span class="header-kicker">Sobre de Boletas</span>
+                                        <h3>Configuración de Envío Automático</h3>
+                                    </div>
+                                    <div class="caf-status-badge" id="boleta-envelope-status">Sin pendientes</div>
+                                </div>
+                                
+                                <div class="envelope-stats-row">
+                                    <span>Boletas pendientes en el sobre:</span>
+                                    <strong id="boleta-envelope-count-label">0 boletas</strong>
+                                </div>
+
+                                <!-- Hidden fields to keep logic intact -->
+                                <div style="display: none;">
+                                    <select id="sii-boleta-env-mode">
+                                        <option value="time" selected>Solo Tiempo</option>
+                                    </select>
+                                    <input id="sii-boleta-env-limit" type="number" value="999">
+                                </div>
+
+                                <div style="margin-bottom: 1rem;">
+                                    <label class="input-label" for="sii-boleta-env-minutes">Enviar sobre automáticamente cada (Minutos)</label>
+                                    <input class="input-control" id="sii-boleta-env-minutes" type="number" min="1" placeholder="60">
+                                </div>
+
+                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-top: 1.5rem;">
+                                    <button class="primary-btn" id="save-boleta-env-settings-btn" type="button">Guardar configuración</button>
+                                    <button class="secondary-btn" id="force-boleta-envelope-btn" type="button">Forzar envío del sobre ahora</button>
+                                </div>
+                            </article>
+
                             <article class="settings-card" style="padding: 1.5rem;">
                                 <div class="dte-queue-header">
                                     <div class="dte-queue-title">
-                                        <span class="header-kicker">SimpleAPI</span>
+                                        <span class="header-kicker">Conexión Directa SII</span>
                                         <h3>Boletas Pendientes de Envío</h3>
                                     </div>
                                     <div id="simpleapi-status-card" class="api-status-card status-offline">
                                         <span id="simpleapi-status-dot" style="width: 8px; height: 8px; border-radius: 50%; display: inline-block; transition: all 0.3s ease;"></span>
-                                        <span id="simpleapi-status-text" style="transition: all 0.3s ease;">SimpleAPI Fuera de Servicio</span>
+                                        <span id="simpleapi-status-text" style="transition: all 0.3s ease;">Verificando SII...</span>
                                     </div>
                                 </div>
 

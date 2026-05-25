@@ -297,7 +297,7 @@ window.ValmuInvoicingCreateEmission = {
 
                 if (response.ok) {
                     const buffer = await resClone.arrayBuffer();
-                    const finalXml = new TextDecoder('utf-8').decode(buffer);
+                    const finalXml = new TextDecoder('iso-8859-1').decode(buffer);
                     let sendResult = null;
                     let sendError = null;
 

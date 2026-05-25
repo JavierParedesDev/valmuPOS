@@ -35,12 +35,25 @@ function isAllowedLoginRole(user) {
 }
 
 function applyLoginRoleTheme(roleClass = 'role-default') {
-    if (!loginShell || !loginPanel) return;
+    if (!loginShell) return;
 
     loginShell.classList.remove('role-admin', 'role-bodeguero', 'role-default');
-    loginPanel.classList.remove('role-admin', 'role-bodeguero', 'role-default');
     loginShell.classList.add(roleClass);
-    loginPanel.classList.add(roleClass);
+    
+    if (loginPanel) {
+        loginPanel.classList.remove('role-admin', 'role-bodeguero', 'role-default');
+        loginPanel.classList.add(roleClass);
+    }
+}
+
+function setBtnText(btn, text) {
+    if (!btn) return;
+    const span = btn.querySelector('span');
+    if (span) {
+        span.textContent = text;
+    } else {
+        btn.textContent = text;
+    }
 }
 
 applyLoginRoleTheme('role-default');
@@ -56,7 +69,7 @@ if (loginForm) {
 
         errorMsg.textContent = '';
         btnLogin.disabled = true;
-        btnLogin.textContent = 'Entrando...';
+        setBtnText(btnLogin, 'Entrando...');
         if (accessPreview && accessText) {
             accessPreview.classList.remove('success');
             accessText.textContent = 'Validando acceso...';
@@ -82,7 +95,7 @@ if (loginForm) {
                     accessText.textContent = `Acceso concedido · ${describeAccess(result.user)}`;
                 }
                 btnLogin.classList.add('is-success');
-                btnLogin.textContent = 'Acceso listo';
+                setBtnText(btnLogin, 'Acceso listo');
                 setTimeout(() => {
                     window.electronAPI.navigateToIndex();
                 }, 220);
@@ -106,7 +119,7 @@ if (loginForm) {
         } finally {
             if (!btnLogin.classList.contains('is-success')) {
                 btnLogin.disabled = false;
-                btnLogin.textContent = 'Entrar';
+                setBtnText(btnLogin, 'Entrar');
             }
         }
     });

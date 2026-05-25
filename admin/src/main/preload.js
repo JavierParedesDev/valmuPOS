@@ -50,6 +50,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     uploadPublicidad: (data) => ipcRenderer.invoke(IPC_CHANNELS.UPLOAD_PUBLICIDAD, data),
     getPrinters: () => ipcRenderer.invoke(IPC_CHANNELS.GET_PRINTERS),
     printReceipt: (payload) => ipcRenderer.invoke(IPC_CHANNELS.PRINT_RECEIPT, payload),
+    querySiiStatus: (payload) => ipcRenderer.invoke(IPC_CHANNELS.QUERY_SII_STATUS, payload),
+    querySiiDteStatus: (payload) => ipcRenderer.invoke(IPC_CHANNELS.QUERY_SII_DTE_STATUS, payload),
+    querySiiBoletaStatus: (payload) => ipcRenderer.invoke(IPC_CHANNELS.QUERY_SII_BOLETA_STATUS, payload),
+    querySiiBoletaDteStatus: (payload) => ipcRenderer.invoke(IPC_CHANNELS.QUERY_SII_BOLETA_DTE_STATUS, payload),
+    signEnvioDTE: (payload) => ipcRenderer.invoke('SIGN_ENVIO_DTE', payload),
     onUpdateStateChanged: (callback) => {
         const listener = (_event, payload) => callback(payload);
         ipcRenderer.on(IPC_CHANNELS.UPDATE_STATE_CHANGED, listener);

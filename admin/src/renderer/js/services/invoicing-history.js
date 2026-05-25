@@ -222,13 +222,21 @@ window.ValmuInvoicingHistory = {
                                     class="h-9 w-9 rounded-xl border border-gray-100 bg-white text-gray-500 hover:text-orange-600 transition-all" title="Descargar XML">
                                     <i class="bi bi-code-slash"></i>
                                 </button>
+                                <button onclick="invoicePage.duplicateInvoice('${this.escapeHtml(doc.type)}', '${this.escapeHtml(doc.folio)}', '${this.escapeHtml(doc.filename || '')}', '${this.escapeHtml(doc.id_xml || '')}')" 
+                                    class="h-9 w-9 rounded-xl border border-gray-100 bg-white text-gray-400 hover:bg-blue-50 hover:text-blue-500 transition-all" title="Duplicar / Repetir Factura">
+                                    <i class="bi bi-copy"></i>
+                                </button>
                                 ${isLocalOnly ? `
                                     <button onclick="invoicePage.uploadLocalDteToServer('${this.escapeHtml(doc.type)}', '${this.escapeHtml(doc.folio)}', this)" 
                                         class="h-9 w-9 rounded-xl bg-orange-600 text-white hover:bg-orange-700 transition-all" title="Sincronizar">
                                         <i class="bi bi-cloud-arrow-up-fill"></i>
                                     </button>
                                 ` : ''}
-                                <button onclick="invoicePage.handleDelete('${this.escapeHtml(doc.filename)}')" 
+                                <button onclick="invoicePage.querySiiStatus('${this.escapeHtml(doc.trackId || '')}', '${this.escapeHtml(doc.id_xml || '')}', '${btoa(JSON.stringify(doc).replace(/[\u007F-\uFFFF]/g, function(chr) { return '\\u' + ('0000' + chr.charCodeAt(0).toString(16)).substr(-4); }))}')" 
+                                    class="h-9 w-9 rounded-xl border border-blue-100 bg-blue-50 text-blue-500 hover:bg-blue-600 hover:text-white transition-all shadow-sm" title="Consultar Estado en el SII">
+                                    <i class="bi bi-search"></i>
+                                </button>
+                                <button onclick="invoicePage.handleDelete('${this.escapeHtml(doc.filename || '')}', '${this.escapeHtml(doc.id_xml || '')}')" 
                                     class="h-9 w-9 rounded-xl border border-gray-100 bg-white text-gray-400 hover:bg-red-50 hover:text-red-500 transition-all" title="Eliminar">
                                     <i class="bi bi-trash-fill"></i>
                                 </button>
@@ -401,7 +409,7 @@ window.ValmuInvoicingHistory = {
             const status = xmlRecord.estadoSii || (sale ? (sale.sii_status || sale.status) : 'GENERADO');
 
             processedMap.set(key, {
-                id_xml: xmlRecord.id_xml || null,
+                id_xml: xmlRecord.id_xml || null, trackId: xmlRecord.trackId || null,
                 filename: xmlRecord.filename || `DTE_${type}_Folio_${folio}.xml`,
                 pdfName: local?.pdf?.name || null,
                 pdfPath: local?.pdf?.path || null,
