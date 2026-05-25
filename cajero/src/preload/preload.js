@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld('cajeroAPI', {
     getUpdateState: () => ipcRenderer.invoke('update:get-state'),
     checkForUpdates: () => ipcRenderer.invoke('update:check'),
     downloadUpdate: () => ipcRenderer.invoke('update:download'),
-    installUpdate: () => ipcRenderer.invoke('update:install'),
+    installUpdate: () => ipcRenderer.invoke('update:install'), reloadDev: () => ipcRenderer.invoke('dev:reload'), windowMinimize: () => ipcRenderer.invoke('window:minimize'), windowMaximize: () => ipcRenderer.invoke('window:maximize'), windowClose: () => ipcRenderer.invoke('window:close'),
     getSiiConfig: () => ipcRenderer.invoke('sii:get-config'),
     getSiiDiagnostics: () => ipcRenderer.invoke('sii:get-diagnostics'),
     saveSiiConfig: (config) => ipcRenderer.invoke('sii:save-config', config),
@@ -18,6 +18,9 @@ contextBridge.exposeInMainWorld('cajeroAPI', {
     readLocalCert: (filename) => ipcRenderer.invoke('sii:read-local-cert', filename),
     readLocalText: (filename) => ipcRenderer.invoke('sii:read-local-text', filename),
     saveXml: ({ filename, data, folder }) => ipcRenderer.invoke('sii:save-xml', { filename, data, folder }),
+    directGenerateBoletaXml: (payload) => ipcRenderer.invoke('sii:direct-generate-boleta-xml', payload),
+    directSendBoletaEnvelope: (payload) => ipcRenderer.invoke('sii:direct-send-boleta-envelope', payload),
+    checkSiiConnection: (payload) => ipcRenderer.invoke('sii:check-connection', payload),
     getPrinters: () => ipcRenderer.invoke('settings:get-printers'),
     printReceipt: (payload) => ipcRenderer.invoke('printer:print-receipt', payload),
     openCustomerDisplay: (payload) => ipcRenderer.invoke('display:open-customer', payload),
@@ -46,5 +49,11 @@ contextBridge.exposeInMainWorld('cajeroAPI', {
         const listener = (_event, payload) => callback(payload);
         ipcRenderer.on('update:state-changed', listener);
         return () => ipcRenderer.removeListener('update:state-changed', listener);
+    },
+    onFullscreenChange: (callback) => {
+        if (typeof callback !== 'function') return () => { };
+        const listener = (_event, isFullscreen) => callback(isFullscreen);
+        ipcRenderer.on('window:fullscreen', listener);
+        return () => ipcRenderer.removeListener('window:fullscreen', listener);
     }
 });

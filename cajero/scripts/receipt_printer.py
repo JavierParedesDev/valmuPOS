@@ -9,7 +9,24 @@ import win32con
 import win32print
 import win32ui
 from PIL import Image, ImageDraw, ImageFont, ImageWin
+import pdf417gen
 
+def draw_real_pdf417(image, left, top, max_width, ted_string):
+    if not ted_string:
+        return 0
+    try:
+        codes = pdf417gen.encode(str(ted_string).strip(), columns=15)
+        barcode_img = pdf417gen.render_image(codes, scale=2, ratio=3).convert('L')
+        orig_w, orig_h = barcode_img.size
+        new_w = max_width
+        new_h = int(orig_h * (new_w / orig_w))
+        barcode_img = barcode_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+        barcode_img = barcode_img.point(lambda p: 0 if p < 128 else 255, mode='1')
+        image.paste(barcode_img, (left, top))
+        return new_h
+    except Exception as e:
+        print(f"Error drawing PDF417: {e}")
+        return 0
 
 def load_payload(payload_path):
     with open(payload_path, 'r', encoding='utf-8') as handle:
@@ -609,29 +626,27 @@ def build_receipt_image(payload):
     if not footer:
         footer = '' if is_fiscal else 'GRACIAS POR SU COMPRA'
 
-    # --- SII TIMBRE (REMOVED AS PER USER REQUEST) ---
-    # if is_fiscal:
-    #     stamp_title = 'TIMBRE ELECTRONICO SII'
-    #     draw.text((padding, cursor_y), stamp_title, fill='black', font=font_small_bold)
-    #     stamp_title_box = draw.textbbox((padding, cursor_y), stamp_title, font=font_small_bold)
-    #     cursor_y += (stamp_title_box[3] - stamp_title_box[1]) + 6
-    # 
-    #     stamp_height = 92 if is_small_paper else 108
-    #     draw_fake_pdf417(draw, padding, cursor_y, content_width, stamp_height, build_stamp_seed(receipt, dte))
-    #     cursor_y += stamp_height + 8
-    # 
-    #     resolution = f"Resolucion SII N° {emisor.get('resolucionNumero') or 80} del {emisor.get('resolucionFecha') or '2014-08-22'}"
-    #     cursor_y = draw_wrapped_text(
-    #         draw,
-    #         padding,
-    #         cursor_y,
-    #         resolution,
-    #         font_small,
-    #         content_width,
-    #         align='center',
-    #         line_gap=2
-    #     )
-    #     cursor_y += 4
+    if is_fiscal:
+        stamp_title = 'TIMBRE ELECTRONICO SII'
+        draw.text((padding, cursor_y), stamp_title, fill='black', font=font_small_bold)
+        stamp_title_box = draw.textbbox((padding, cursor_y), stamp_title, font=font_small_bold)
+        cursor_y += (stamp_title_box[3] - stamp_title_box[1]) + 6
+    
+        stamp_height = draw_real_pdf417(image, padding, cursor_y, content_width, dte.get('ted') or '')
+        cursor_y += stamp_height + 8
+    
+        resolution = f"Resolucion SII N° {emisor.get('resolucionNumero') or 80} del {emisor.get('resolucionFecha') or '2014-08-22'}"
+        cursor_y = draw_wrapped_text(
+            draw,
+            padding,
+            cursor_y,
+            resolution,
+            font_small,
+            content_width,
+            align='center',
+            line_gap=2
+        )
+        cursor_y += 4
 
     if footer:
         cursor_y += 10

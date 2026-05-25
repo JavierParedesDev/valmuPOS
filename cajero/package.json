@@ -1,6 +1,6 @@
 {
   "name": "cajero",
-  "version": "2.0.40",
+  "version": "2.0.41",
   "description": "Valmu Cajero desktop app",
   "main": "src/main/main.js",
   "scripts": {
@@ -12,7 +12,10 @@
   "author": "Valmu",
   "license": "ISC",
   "dependencies": {
-    "electron-updater": "^6.8.3"
+    "@xmldom/xmldom": "^0.9.10",
+    "electron-updater": "^6.8.3",
+    "node-forge": "^1.4.0",
+    "xml-crypto": "^6.1.2"
   },
   "devDependencies": {
     "electron": "^41.0.3",

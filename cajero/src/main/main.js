@@ -6,6 +6,8 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { createUpdateManager } = require('./updater/update-manager');
+const forge = require('node-forge');
+const siiDirect = require('./sii-direct');
 
 let mainWindow = null;
 let customerDisplayWindows = [];
@@ -458,7 +460,8 @@ function createMainWindow() {
         minWidth: 1180,
         minHeight: 760,
         backgroundColor: '#1c1410',
-        autoHideMenuBar: false,
+        autoHideMenuBar: true,
+        frame: false,
         title: 'Valmu Cajero',
         icon: getReceiptLogoPath(),
         webPreferences: {
@@ -513,6 +516,14 @@ function createMainWindow() {
         if (!app.isQuiting) {
             app.quit();
         }
+    });
+
+    mainWindow.on('enter-full-screen', () => {
+        mainWindow?.webContents?.send('window:fullscreen', true);
+    });
+    
+    mainWindow.on('leave-full-screen', () => {
+        mainWindow?.webContents?.send('window:fullscreen', false);
     });
 }
 
@@ -812,6 +823,10 @@ function compareVersions(left, right) {
 function registerIpcHandlers() {
     ensureSiiDataDir();
 
+    ipcMain.handle('window:minimize', () => { mainWindow?.minimize(); });
+    ipcMain.handle('window:maximize', () => { mainWindow?.isMaximized() ? mainWindow?.unmaximize() : mainWindow?.maximize(); });
+    ipcMain.handle('window:close', () => { mainWindow?.close(); });
+
     ipcMain.handle('app:get-version', async () => app.getVersion());
     ipcMain.handle('update:get-state', async () => updateManager?.getUpdateState?.() || null);
     ipcMain.handle('update:check', async () => updateManager?.checkForUpdates?.(true) || null);
@@ -1063,6 +1078,176 @@ function registerIpcHandlers() {
         } catch (error) {
             console.error('SII save xml error:', error);
             return { success: false, error: error?.message || 'sii_save_xml_failed' };
+        }
+    });
+
+    ipcMain.handle('sii:direct-generate-boleta-xml', async (_event, { emisor, receptor, detalles, folio, fechaEmis, config }) => {
+        try {
+            ensureSiiDataDir();
+            const certPath = path.join(siiDataDir, config.certFilename || 'certificado.pfx');
+            const cafPath = path.join(siiDataDir, 'CAF_39.xml');
+
+            if (!fsSync.existsSync(certPath)) {
+                throw new Error(`No se encontró el certificado digital en la ruta: ${certPath}`);
+            }
+            if (!fsSync.existsSync(cafPath)) {
+                throw new Error(`No se encontró el archivo CAF_39.xml en la ruta: ${cafPath}`);
+            }
+
+            const certData = siiDirect.parsePfx(certPath, config.certPassword);
+            const cafXmlContent = await fs.readFile(cafPath, 'utf8');
+
+            const certAsn1 = forge.asn1.fromDer(forge.util.decode64(certData.certBase64));
+            const forgeCert = forge.pki.certificateFromAsn1(certAsn1);
+            const publicKey = forgeCert.publicKey;
+            const modulusBase64 = Buffer.from(publicKey.n.toString(16), 'hex').toString('base64');
+            let exponentHex = publicKey.e.toString(16);
+            if (exponentHex.length % 2 !== 0) exponentHex = '0' + exponentHex;
+            const exponentBase64 = Buffer.from(exponentHex, 'hex').toString('base64');
+
+            const mntTotal = detalles.reduce((sum, item) => sum + Number(item.montoItem), 0);
+            const primerItemNombre = detalles[0]?.nombre || 'ITEM';
+
+            // Generate TED
+            const { tedXml } = siiDirect.generateTed({
+                emisorRut: emisor.rut,
+                tipoDte: 39,
+                folio: Number(folio),
+                fechaEmis,
+                receptorRut: receptor.rut,
+                receptorRznSoc: receptor.razonSocial,
+                montoTotal: mntTotal,
+                primerItemNombre,
+                cafXmlContent
+            });
+
+            // Generate Boleta XML
+            const documentId = `DTE_39_F${folio}`;
+            const unsignedXml = siiDirect.generateBoletaXml({
+                documentId,
+                folio: Number(folio),
+                fechaEmis,
+                emisor,
+                receptor,
+                detalles,
+                tedXml,
+                indicadorServicio: Number(config.indicadorServicio || 3)
+            });
+
+            // Sign DTE
+            const signedXml = siiDirect.signDte(
+                unsignedXml,
+                documentId,
+                certData.privateKeyPem,
+                certData.certBase64,
+                modulusBase64,
+                exponentBase64
+            );
+
+            // Save signed XML locally
+            const folderPath = ensureInvoiceFolder('boletas');
+            const targetPath = path.join(folderPath, `DTE_39_Folio_${folio}.xml`);
+            await fs.writeFile(targetPath, signedXml, 'utf8');
+
+            return { success: true, xml: signedXml, path: targetPath };
+        } catch (error) {
+            console.error('sii:direct-generate-boleta-xml error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('sii:direct-send-boleta-envelope', async (_event, { dtes, config }) => {
+        try {
+            ensureSiiDataDir();
+            const certPath = path.join(siiDataDir, config.certFilename || 'certificado.pfx');
+
+            if (!fsSync.existsSync(certPath)) {
+                throw new Error(`No se encontró el certificado digital en la ruta: ${certPath}`);
+            }
+
+            const certData = siiDirect.parsePfx(certPath, config.certPassword);
+            const certAsn1 = forge.asn1.fromDer(forge.util.decode64(certData.certBase64));
+            const forgeCert = forge.pki.certificateFromAsn1(certAsn1);
+            const publicKey = forgeCert.publicKey;
+            const modulusBase64 = Buffer.from(publicKey.n.toString(16), 'hex').toString('base64');
+            let exponentHex = publicKey.e.toString(16);
+            if (exponentHex.length % 2 !== 0) exponentHex = '0' + exponentHex;
+            const exponentBase64 = Buffer.from(exponentHex, 'hex').toString('base64');
+
+            const nowStr = new Date().toISOString().replace(/[-:T.]/g, '').substring(0, 14);
+            const setDteId = `ENVIOBOLETA_${nowStr}`;
+            
+            const dtesXmlList = dtes.map(d => d.xmlContent);
+
+            const unsignedEnvelope = siiDirect.generateEnvelopeXml({
+                setDteId,
+                rutEmisor: config.rutEmisor,
+                rutEnvia: config.rutEnvia || config.rutEmisor,
+                fechaResol: config.resolucionFecha || config.fechaResolucion || '2014-08-22',
+                nroResol: Number(config.resolucionNumero || config.numeroResolucion || 80),
+                dtesXmlList
+            });
+
+            const signedEnvelope = siiDirect.signEnvelope(
+                unsignedEnvelope,
+                setDteId,
+                certData.privateKeyPem,
+                certData.certBase64,
+                modulusBase64,
+                exponentBase64
+            );
+
+            // Save signed envelope XML locally
+            const folderPath = ensureInvoiceFolder('boletas');
+            const targetPath = path.join(folderPath, `ENVIO_BOLETAS_${Date.now()}.xml`);
+            await fs.writeFile(targetPath, signedEnvelope, 'utf8');
+
+            const ambiente = config.siiAmbiente || '2';
+            
+            let token;
+            let uploadResult;
+            try {
+                token = await siiDirect.getOrFetchSessionToken(certPath, config.certPassword, ambiente, false);
+                uploadResult = await siiDirect.uploadEnvelope({
+                    xmlContent: signedEnvelope,
+                    token,
+                    rutSender: config.rutEnvia || config.rutEmisor,
+                    rutCompany: config.rutEmisor,
+                    ambiente
+                });
+            } catch (firstError) {
+                console.warn('First upload attempt failed, retrying with fresh token...', firstError.message);
+                token = await siiDirect.getOrFetchSessionToken(certPath, config.certPassword, ambiente, true);
+                uploadResult = await siiDirect.uploadEnvelope({
+                    xmlContent: signedEnvelope,
+                    token,
+                    rutSender: config.rutEnvia || config.rutEmisor,
+                    rutCompany: config.rutEmisor,
+                    ambiente
+                });
+            }
+
+            return {
+                success: true,
+                trackId: uploadResult.trackId,
+                status: uploadResult.status,
+                responseText: uploadResult.responseText,
+                envelopePath: targetPath
+            };
+        } catch (error) {
+            console.error('sii:direct-send-boleta-envelope error:', error);
+            return { success: false, error: error.message };
+        }
+    });
+
+    ipcMain.handle('sii:check-connection', async (_event, { config }) => {
+        try {
+            const ambiente = config.siiAmbiente || '2';
+            const semilla = await siiDirect.getSemilla(ambiente);
+            return { success: true, semilla };
+        } catch (error) {
+            console.error('sii:check-connection error:', error);
+            return { success: false, error: error.message };
         }
     });
 }
