@@ -5,6 +5,8 @@ export const SESSION_KEYS = {
     selectedBranch: 'valmu_cajero_selected_branch',
     printerName: 'valmu_cajero_printer_name',
     printerPaper: 'valmu_cajero_printer_paper',
+    printerMargin: 'valmu_cajero_printer_margin',
+    printerStrictMode: 'valmu_cajero_printer_strict_mode',
     customerDisplayEnabled: 'valmu_cajero_customer_display_enabled',
     customerDisplayTarget: 'valmu_cajero_customer_display_target',
     releaseRepo: 'valmu_cajero_release_repo',

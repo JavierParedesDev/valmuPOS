@@ -140,8 +140,8 @@ async function renderProducts() {
             <h2><span class="icon">📦</span> Inventario de Productos</h2>
             <div class="btn-group">
                 <button class="btn btn-primary" onclick="openProductForm()">+ Nuevo Producto</button>
-                <button class="btn btn-ghost" onclick="openStockInboundForm()">📥 Ingreso</button>
-                <button class="btn btn-ghost" onclick="openTransferForm()">🔄 Traslado</button>
+                <button class="btn btn-ghost" onclick="adminNavigateToPage('inbound-create')">📥 Ingreso</button>
+                <button class="btn btn-ghost" onclick="adminNavigateToPage('transfer-create')">🔄 Traslado</button>
             </div>
         </div>
         <div class="glass-panel mt-4" style="padding: 1rem;">
@@ -232,8 +232,8 @@ async function renderWarehouseProducts() {
                 </p>
             </div>
             <div class="btn-group">
-                <button class="btn btn-primary" onclick="openStockInboundForm()">📥 Registrar ingreso</button>
-                <button class="btn btn-ghost" onclick="openTransferForm()">🔄 Trasladar stock</button>
+                <button class="btn btn-primary" onclick="adminNavigateToPage('inbound-create')">📥 Registrar ingreso</button>
+                <button class="btn btn-ghost" onclick="adminNavigateToPage('transfer-create')">🔄 Trasladar stock</button>
             </div>
         </div>
         <div class="glass-panel mt-4" style="padding: 1rem;">
@@ -630,7 +630,8 @@ function openProductFormByIndex(index, event) {
 function openStockInboundFormByIndex(index, event) {
     event?.stopPropagation?.();
     const product = window.allProducts[index];
-    openStockInboundForm(product);
+    window.inboundCreateInitialProduct = product;
+    adminNavigateToPage('inbound-create');
 }
 
 function previewProductByIndex(index, event) {
@@ -842,7 +843,8 @@ async function deleteProduct(id, event) {
     }
 }
 
-async function openStockInboundForm(initialProduct = null) {
+async function renderInboundCreateView() {
+    const contentArea = document.getElementById('content-area');
     const token = getAuthToken();
     const activeBranchId = getActiveBranchId();
     const activeBranchName = getActiveBranchName();
@@ -855,41 +857,100 @@ async function openStockInboundForm(initialProduct = null) {
         return;
     }
 
-    const selectedBranchId = activeBranchId || Number(branches[0]?.id_sucursal) || null;
-    const selectedBranchName = activeBranchName || branches.find((branch) => Number(branch.id_sucursal) === Number(selectedBranchId))?.nombreSucursal || branches[0]?.nombreSucursal || 'Sucursal seleccionada';
+    const defaultBranchId = activeBranchId || Number(branches[0]?.id_sucursal) || null;
+    const defaultBranchName = activeBranchName || branches.find((branch) => Number(branch.id_sucursal) === defaultBranchId)?.nombreSucursal || 'Sucursal destino';
+    let selectedBranchId = Number(defaultBranchId);
     const inboundBatchId = createMovementRequestId('INGRESO');
 
-    const content = `
-        <div class="form-group">
-            <label>Sucursal Activa</label>
-            <input type="text" class="form-control" value="${selectedBranchName}" disabled>
-        </div>
-        <div class="form-group">
-            <label>Numero de Factura / Guia</label>
-            <input type="text" id="mov-invoice" class="form-control" placeholder="Ej: FAC-1234">
-        </div>
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; margin-bottom:1rem;">
+    contentArea.innerHTML = `
+        <div class="action-bar" style="display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: white; padding: 1.5rem 2rem; border-radius: 16px; margin-bottom: 2rem; box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.3);">
             <div>
-                <strong style="display:block; color:var(--text-main);">Detalle de productos</strong>
-                <span class="text-muted" style="font-size:0.82rem;">Agrega varias lineas para registrar una factura completa.</span>
+                <h2 style="margin-bottom: 0.3rem; display: flex; align-items: center; gap: 0.75rem; color: white; font-size: 1.5rem;">
+                    <button class="btn btn-ghost" onclick="adminNavigateToPage('products')" title="Volver al inventario" style="color: white; background: rgba(255,255,255,0.2); border-radius: 50%; padding: 0.5rem 0.6rem;">
+                        <i class="bi bi-arrow-left" style="font-size: 1.2rem;"></i>
+                    </button>
+                    Ingreso de Mercadería (Compras)
+                </h2>
+                <p style="margin-top: 0; font-size: 0.95rem; color: rgba(255,255,255,0.8); margin-left: 3.2rem;">
+                    Registrando compra para <strong id="inb-branch-name" style="color: white; background: rgba(255,255,255,0.2); padding: 0.1rem 0.5rem; border-radius: 4px;">${defaultBranchName}</strong>
+                </p>
             </div>
-            <button type="button" class="btn btn-ghost btn-sm" id="mov-add-line-btn">+ Agregar producto</button>
+            <div style="display: flex; gap: 0.75rem; align-items: center;">
+                <button class="btn btn-ghost" onclick="adminNavigateToPage('products')" style="color: white; border: 1px solid rgba(255,255,255,0.4);">
+                    Cancelar
+                </button>
+                <button class="btn" id="save-inbound-btn" style="background: white; color: #4f46e5; font-weight: bold; border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <i class="bi bi-check2-circle"></i> Registrar ingreso
+                </button>
+            </div>
         </div>
-        <div id="mov-lines" style="display:grid; gap:0.9rem; max-height:50vh; overflow:auto; padding-right:0.25rem;"></div>
-        <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 1rem;">
-            El ingreso se acumula por producto y se registra en <strong>${selectedBranchName}</strong>.
-        </p>
+
+        <div style="display: grid; grid-template-columns: 1fr; gap: 1.5rem;">
+            <!-- Panel de Datos del Ingreso -->
+            <div class="glass-panel" style="padding: 1.5rem; background: white; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+                <h3 style="font-size: 1.1rem; font-weight: 600; color: #1e293b; margin-bottom: 1.2rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <i class="bi bi-file-earmark-text text-primary"></i> Datos del Documento
+                </h3>
+                <div style="display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
+                    <div class="form-group" style="margin: 0;">
+                        <label style="font-weight: 600; color: #475569; margin-bottom: 0.5rem; display: block; font-size: 0.9rem;">Sucursal Destino</label>
+                        <div class="input-with-icon" style="position: relative;">
+                            <i class="bi bi-shop" style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: #64748b; pointer-events: none; z-index: 2;"></i>
+                            <select id="inb-branch" class="form-control" ${isBodeguero() && activeBranchId ? 'disabled' : ''} style="appearance: none; -webkit-appearance: none; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0.75rem 2.5rem; font-weight: 600; font-size: 0.95rem; width: 100%; color: #1e293b; cursor: pointer; outline: none; transition: all 0.2s; position: relative;">
+                                ${branches.map((branch) => `
+                                    <option value="${branch.id_sucursal}" ${Number(branch.id_sucursal) === selectedBranchId ? 'selected' : ''}>
+                                        ${branch.nombreSucursal}
+                                    </option>
+                                `).join('')}
+                            </select>
+                            ${!(isBodeguero() && activeBranchId) ? '<i class="bi bi-chevron-down" style="position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); color: #64748b; pointer-events: none; z-index: 2;"></i>' : ''}
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="font-weight: 600; color: #475569; margin-bottom: 0.5rem; display: block; font-size: 0.9rem;">Número de Factura / Guía</label>
+                        <div class="input-with-icon" style="position: relative;">
+                            <i class="bi bi-receipt" style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: #64748b; pointer-events: none; z-index: 2;"></i>
+                            <input type="text" id="mov-invoice" class="form-control" placeholder="Ej: FAC-1234 o GUIA-987" style="padding-left: 2.5rem; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; font-weight: 600; font-size: 0.95rem; height: auto; padding-top: 0.75rem; padding-bottom: 0.75rem;">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel de Productos -->
+            <div class="glass-panel" style="padding: 1.5rem; background: white; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; min-height: 50vh;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e2e8f0;">
+                    <div>
+                        <h3 style="margin: 0; color: #1e293b; font-size: 1.2rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
+                            <i class="bi bi-box-seam text-primary"></i> Productos a ingresar
+                        </h3>
+                        <div class="text-muted" style="font-size:0.85rem; margin-top: 0.3rem;">Busca y agrega los ítems que ingresarán al inventario.</div>
+                    </div>
+                    <button type="button" class="btn btn-primary" id="mov-add-line-btn" style="border-radius: 8px; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <i class="bi bi-plus-lg"></i> Agregar línea
+                    </button>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 2.5rem minmax(200px, 3fr) minmax(120px, 1fr) 3rem; gap: 1rem; padding: 0.5rem 1rem; background: #f8fafc; border-radius: 8px; margin-bottom: 1rem; font-weight: 600; color: #475569; font-size: 0.85rem; border: 1px solid #e2e8f0;">
+                    <div style="text-align: center;">N°</div>
+                    <div>Producto</div>
+                    <div style="text-align: center;">Cant. Ingreso</div>
+                    <div></div>
+                </div>
+
+                <div id="mov-lines" style="display:grid; gap: 0.75rem; padding-bottom: 2rem;"></div>
+            </div>
+        </div>
     `;
 
-    showModal('Ingreso de Mercaderia (Compras)', content, async () => {
+    document.getElementById('save-inbound-btn').addEventListener('click', async () => {
         if (adminInboundSubmitInFlight) {
             return;
         }
 
-        const targetBranchId = Number(selectedBranchId);
+        const targetBranchId = parseInt(document.getElementById('inb-branch').value, 10);
         const invoiceNumber = document.getElementById('mov-invoice').value.trim();
         const lineRows = Array.from(document.querySelectorAll('.mov-line-row'));
-        const saveButton = document.getElementById('modal-save-btn');
+        const saveButton = document.getElementById('save-inbound-btn');
         const releaseInboundSubmit = () => {
             adminInboundSubmitInFlight = false;
             if (saveButton) {
@@ -905,7 +966,7 @@ async function openStockInboundForm(initialProduct = null) {
         }
 
         if (Number.isNaN(targetBranchId)) {
-            Swal.fire('Error', 'Debes seleccionar una sucursal valida.', 'error');
+            Swal.fire('Error', 'Debes seleccionar una sucursal válida.', 'error');
             releaseInboundSubmit();
             return;
         }
@@ -925,7 +986,7 @@ async function openStockInboundForm(initialProduct = null) {
 
         const invalidLine = parsedLines.find((line) => Number.isNaN(line.productId) || Number.isNaN(line.quantity) || line.quantity <= 0);
         if (invalidLine) {
-            Swal.fire('Error', 'Todas las lineas deben tener producto y cantidad valida.', 'error');
+            Swal.fire('Error', 'Todas las líneas deben tener producto y cantidad válida.', 'error');
             releaseInboundSubmit();
             return;
         }
@@ -970,22 +1031,36 @@ async function openStockInboundForm(initialProduct = null) {
             branchIds: [targetBranchId],
             productIds: aggregatedLines.map((line) => line.productId)
         });
-        closeModal();
-        loadAdminProductTable(document.getElementById('products-search')?.value || '', adminProductPagination.page);
+        adminNavigateToPage('products');
     });
 
-    document.getElementById('modal-save-btn').textContent = 'Registrar ingreso';
+    document.getElementById('inb-branch')?.addEventListener('change', (event) => {
+        selectedBranchId = Number(event.target.value);
+        const selectedBranch = branches.find((branch) => Number(branch.id_sucursal) === selectedBranchId);
+        const branchNameLabel = document.getElementById('inb-branch-name');
+        if (branchNameLabel) {
+            branchNameLabel.textContent = selectedBranch?.nombreSucursal || 'Sucursal destino';
+        }
+    });
+
     document.getElementById('mov-add-line-btn')?.addEventListener('click', () => {
         appendInboundLineRow();
     });
 
-    appendInboundLineRow(initialProduct);
-    if (!initialProduct) {
+    const initialProduct = window.inboundCreateInitialProduct || null;
+    window.inboundCreateInitialProduct = null;
+
+    if (initialProduct) {
+        appendInboundLineRow(initialProduct);
+    } else {
+        appendInboundLineRow();
         appendInboundLineRow();
     }
 }
+window.renderInboundCreateView = renderInboundCreateView;
 
-async function openTransferForm() {
+async function renderTransferCreateView() {
+    const contentArea = document.getElementById('content-area');
     const token = getAuthToken();
     const activeBranchId = getActiveBranchId();
     const activeBranchName = getActiveBranchName();
@@ -1004,35 +1079,89 @@ async function openTransferForm() {
     let inventoryMapPromise = fetchTransferInventoryMap(selectedSourceId, token);
     const transferBatchId = createMovementRequestId('TRASLADO');
 
-    const content = `
-        <div class="form-group">
-            <label>Sucursal de Origen</label>
-            <select id="tra-origin" class="form-control">
-                ${branches.map((branch) => `
-                    <option value="${branch.id_sucursal}" ${Number(branch.id_sucursal) === selectedSourceId ? 'selected' : ''}>
-                        ${branch.nombreSucursal}
-                    </option>
-                `).join('')}
-            </select>
-        </div>
-        <div class="form-group">
-            <label>Sucursal de Destino</label>
-            <select id="tra-dest" class="form-control"></select>
-        </div>
-        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">
-            El traslado mueve stock de <strong id="tra-origin-name">${defaultSourceName}</strong> hacia otra sucursal.
-        </p>
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; margin-bottom:0.85rem; flex-wrap:wrap;">
+    contentArea.innerHTML = `
+        <div class="action-bar" style="display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: white; padding: 1.5rem 2rem; border-radius: 16px; margin-bottom: 2rem; box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.3);">
             <div>
-                <strong style="color:var(--text-main);">Productos a trasladar</strong>
-                <div class="text-muted" style="font-size:0.8rem;">Agrega varios items y registralos en una sola pasada.</div>
+                <h2 style="margin-bottom: 0.3rem; display: flex; align-items: center; gap: 0.75rem; color: white; font-size: 1.5rem;">
+                    <button class="btn btn-ghost" onclick="adminNavigateToPage('transfers')" title="Volver al historial" style="color: white; background: rgba(255,255,255,0.2); border-radius: 50%; padding: 0.5rem 0.6rem;">
+                        <i class="bi bi-arrow-left" style="font-size: 1.2rem;"></i>
+                    </button>
+                    Nuevo Traslado
+                </h2>
+                <p style="margin-top: 0; font-size: 0.95rem; color: rgba(255,255,255,0.8); margin-left: 3.2rem;">
+                    Moviendo stock desde <strong id="tra-origin-name" style="color: white; background: rgba(255,255,255,0.2); padding: 0.1rem 0.5rem; border-radius: 4px;">${defaultSourceName}</strong>
+                </p>
             </div>
-            <button type="button" class="btn btn-ghost btn-sm" id="tra-add-line-btn">+ Agregar item</button>
+            <div style="display: flex; gap: 0.75rem; align-items: center;">
+                <button class="btn btn-ghost" onclick="adminNavigateToPage('transfers')" style="color: white; border: 1px solid rgba(255,255,255,0.4);">
+                    Cancelar
+                </button>
+                <button class="btn" id="save-transfer-btn" style="background: white; color: #4f46e5; font-weight: bold; border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <i class="bi bi-check2-circle"></i> Registrar traslados
+                </button>
+            </div>
         </div>
-        <div id="tra-lines" style="display:grid; gap:0.85rem;"></div>
+
+        <div style="display: grid; grid-template-columns: 1fr; gap: 1.5rem;">
+            <!-- Panel de Sucursales -->
+            <div class="glass-panel" style="padding: 1.5rem; background: white; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
+                <h3 style="font-size: 1.1rem; font-weight: 600; color: #1e293b; margin-bottom: 1.2rem; display: flex; align-items: center; gap: 0.5rem;">
+                    <i class="bi bi-geo-alt text-primary"></i> Datos de Origen y Destino
+                </h3>
+                <div style="display: grid; gap: 1.5rem; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));">
+                    <div class="form-group" style="margin: 0;">
+                        <label style="font-weight: 600; color: #475569; margin-bottom: 0.5rem; display: block; font-size: 0.9rem;">Sucursal de Origen</label>
+                        <div class="input-with-icon" style="position: relative;">
+                            <i class="bi bi-shop" style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: #64748b; pointer-events: none; z-index: 2;"></i>
+                            <select id="tra-origin" class="form-control" style="appearance: none; -webkit-appearance: none; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0.75rem 2.5rem; font-weight: 600; font-size: 0.95rem; width: 100%; color: #1e293b; cursor: pointer; outline: none; transition: all 0.2s; position: relative;">
+                                ${branches.map((branch) => `
+                                    <option value="${branch.id_sucursal}" ${Number(branch.id_sucursal) === selectedSourceId ? 'selected' : ''}>
+                                        ${branch.nombreSucursal}
+                                    </option>
+                                `).join('')}
+                            </select>
+                            <i class="bi bi-chevron-down" style="position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); color: #64748b; pointer-events: none; z-index: 2;"></i>
+                        </div>
+                    </div>
+                    <div class="form-group" style="margin: 0;">
+                        <label style="font-weight: 600; color: #475569; margin-bottom: 0.5rem; display: block; font-size: 0.9rem;">Sucursal de Destino</label>
+                        <div class="input-with-icon" style="position: relative;">
+                            <i class="bi bi-shop-window" style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: #64748b; pointer-events: none; z-index: 2;"></i>
+                            <select id="tra-dest" class="form-control" style="appearance: none; -webkit-appearance: none; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0.75rem 2.5rem; font-weight: 600; font-size: 0.95rem; width: 100%; color: #1e293b; cursor: pointer; outline: none; transition: all 0.2s; position: relative;"></select>
+                            <i class="bi bi-chevron-down" style="position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); color: #64748b; pointer-events: none; z-index: 2;"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Panel de Productos -->
+            <div class="glass-panel" style="padding: 1.5rem; background: white; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; min-height: 50vh;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #e2e8f0;">
+                    <div>
+                        <h3 style="margin: 0; color: #1e293b; font-size: 1.2rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
+                            <i class="bi bi-box-seam text-primary"></i> Productos a trasladar
+                        </h3>
+                        <div class="text-muted" style="font-size:0.85rem; margin-top: 0.3rem;">Busca y agrega los ítems que vas a mover entre las bodegas.</div>
+                    </div>
+                    <button type="button" class="btn btn-primary" id="tra-add-line-btn" style="border-radius: 8px; font-weight: 600; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+                        <i class="bi bi-plus-lg"></i> Agregar línea
+                    </button>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 2.5rem minmax(200px, 2.5fr) minmax(120px, 1.2fr) minmax(120px, 1fr) 3rem; gap: 1rem; padding: 0.5rem 1rem; background: #f8fafc; border-radius: 8px; margin-bottom: 1rem; font-weight: 600; color: #475569; font-size: 0.85rem; border: 1px solid #e2e8f0;">
+                    <div style="text-align: center;">N°</div>
+                    <div>Producto</div>
+                    <div style="text-align: center;">Stock Origen</div>
+                    <div style="text-align: center;">Cant. Traslado</div>
+                    <div></div>
+                </div>
+
+                <div id="tra-lines" style="display:grid; gap: 0.75rem; padding-bottom: 2rem;"></div>
+            </div>
+        </div>
     `;
 
-    showModal('Traslado entre Sucursales', content, async () => {
+    document.getElementById('save-transfer-btn').addEventListener('click', async () => {
         if (adminTransferSubmitInFlight) {
             return;
         }
@@ -1041,7 +1170,7 @@ async function openTransferForm() {
         const currentUser = getCurrentUser();
         const sourceId = parseInt(document.getElementById('tra-origin')?.value || '', 10);
         const destinationId = parseInt(document.getElementById('tra-dest').value, 10);
-        const saveButton = document.getElementById('modal-save-btn');
+        const saveButton = document.getElementById('save-transfer-btn');
         const sourceLabel = document.getElementById('tra-origin')?.selectedOptions?.[0]?.textContent?.trim() || `Sucursal #${sourceId}`;
         const releaseTransferSubmit = () => {
             adminTransferSubmitInFlight = false;
@@ -1193,11 +1322,10 @@ async function openTransferForm() {
             branchIds: [sourceId, destinationId],
             productIds: transferredProductIds
         });
-        closeModal();
-        loadAdminProductTable(document.getElementById('products-search')?.value || '', adminProductPagination.page);
+        adminNavigateToPage('transfers');
     });
 
-    document.getElementById('modal-save-btn').textContent = 'Registrar traslados';
+    document.getElementById('save-transfer-btn').textContent = 'Registrar traslados';
     syncTransferDestinationOptions(branches, selectedSourceId);
 
     document.getElementById('tra-origin')?.addEventListener('change', (event) => {
@@ -1219,6 +1347,7 @@ async function openTransferForm() {
 
     appendTransferLineRow(selectedSourceId, () => inventoryMapPromise);
 }
+window.renderTransferCreateView = renderTransferCreateView;
 
 function initAdminProductPicker({ searchInputId, resultsId, hiddenId, selectedLabelId, quantityInputId, stockInfoId, stockQtyId, sourceBranchId }) {
     const searchInput = document.getElementById(searchInputId);
@@ -1383,27 +1512,52 @@ function appendTransferLineRow(sourceBranchId, inventorySource, product = null) 
     const row = document.createElement('div');
     row.className = 'tra-line-row';
     row.dataset.rowId = String(rowId);
-    row.style.cssText = 'border:1px solid var(--line-soft); border-radius:16px; padding:1rem; background:rgba(255,255,255,0.75);';
+    row.style.cssText = 'background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 0.75rem 1rem; transition: all 0.2s; display: flex; align-items: center;';
+    
+    // Agregamos hover via event listeners o clase.
+    row.classList.add('tra-line-row-hover');
+
     row.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; margin-bottom:0.85rem;">
-            <strong style="color:var(--text-main);">Item ${rowId}</strong>
-            <button type="button" class="btn btn-ghost btn-sm tra-remove-line-btn">Quitar</button>
-        </div>
-        <div class="form-group" style="margin-bottom:0.8rem;">
-            <label>Buscar producto</label>
-            <input type="text" class="form-control tra-line-search" placeholder="Escribe nombre o codigo" autocomplete="off">
-            <input type="hidden" class="tra-line-product-id">
-        </div>
-        <div class="tra-line-results" style="display:grid; gap:0.45rem; margin-bottom:0.8rem;"></div>
-        <div class="text-muted tra-line-selected" style="margin-bottom:0.5rem;">Sin producto seleccionado</div>
-        <div class="tra-line-stock" style="display:none; margin-bottom:0.8rem; padding:0.75rem; background:#f0fdf4; border:1px solid #86efac; border-radius:0.5rem;">
-            <span style="font-size:0.85rem; color:#166534;">
-                Stock disponible: <strong class="tra-line-stock-qty">0</strong>
-            </span>
-        </div>
-        <div class="form-group" style="margin-bottom:0;">
-            <label>Cantidad a trasladar</label>
-            <input type="number" class="form-control tra-line-qty" placeholder="0" step="1" min="0">
+        <div style="display: grid; grid-template-columns: 2.5rem minmax(200px, 2.5fr) minmax(120px, 1.2fr) minmax(120px, 1fr) 3rem; gap: 1rem; align-items: center; width: 100%;">
+            <!-- Index -->
+            <div style="font-weight: 700; color: #94a3b8; font-size: 1.1rem; text-align: center; font-family: monospace;">
+                ${rowId}
+            </div>
+            
+            <!-- Search & Info -->
+            <div style="position: relative;">
+                <div style="position: relative;">
+                    <i class="bi bi-search" style="position: absolute; left: 0.8rem; top: 50%; transform: translateY(-50%); color: #94a3b8;"></i>
+                    <input type="text" class="form-control tra-line-search" placeholder="Escribe para buscar un producto..." autocomplete="off" style="padding-left: 2.2rem; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.9rem;">
+                    <input type="hidden" class="tra-line-product-id">
+                </div>
+                <div class="tra-line-results" style="display:grid; gap:0.25rem; margin-top:0.4rem; position: absolute; z-index: 50; width: 100%; background: white; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); max-height: 250px; overflow-y: auto;"></div>
+                <div class="tra-line-selected" style="margin-top:0.4rem; font-size:0.8rem; color:#64748b; font-weight:500; display:flex; align-items:center; gap:0.4rem; padding-left: 0.2rem;">
+                    <i class="bi bi-dash text-muted"></i> <span>Aún no hay producto seleccionado</span>
+                </div>
+            </div>
+
+            <!-- Stock -->
+            <div style="display: flex; justify-content: center;">
+                <div class="tra-line-stock-placeholder" style="font-size: 0.8rem; color: #94a3b8; text-align: center;">
+                    -
+                </div>
+                <div class="tra-line-stock" style="display:none; padding: 0.4rem 1rem; background: #f0fdf4; border: 1px solid #86efac; border-radius: 8px; text-align: center; width: 100%; max-width: 140px;">
+                    <strong class="tra-line-stock-qty" style="color: #166534; font-size: 1.05rem;">0</strong>
+                </div>
+            </div>
+
+            <!-- Quantity -->
+            <div style="display: flex; justify-content: center;">
+                <input type="number" class="form-control tra-line-qty" placeholder="0" step="1" min="0" style="text-align: center; font-weight: bold; font-size: 1.1rem; border: 1px solid #cbd5e1; background: #fff; width: 100%; max-width: 120px; border-radius: 8px;">
+            </div>
+
+            <!-- Remove -->
+            <div style="text-align: center;">
+                <button type="button" class="btn btn-ghost tra-remove-line-btn" style="color: #ef4444; padding: 0.5rem 0.6rem; border-radius: 8px; background: #fef2f2; border: 1px solid #fee2e2;" title="Quitar línea">
+                    <i class="bi bi-x-lg" style="font-size: 1rem;"></i>
+                </button>
+            </div>
         </div>
     `;
 
@@ -1433,6 +1587,9 @@ function bindTransferLineRow(row, sourceBranchId, inventorySource, product = nul
 
         stockQtySpan.textContent = formatTransferStockLabel(stock, weighted);
         stockInfoDiv.style.display = 'block';
+        if (row.querySelector('.tra-line-stock-placeholder')) {
+            row.querySelector('.tra-line-stock-placeholder').style.display = 'none';
+        }
 
         const labelSpan = stockQtySpan.parentElement;
         if (stock <= 0) {
@@ -1454,7 +1611,7 @@ function bindTransferLineRow(row, sourceBranchId, inventorySource, product = nul
         hiddenInput.value = selectedProduct.id_producto;
         searchInput.value = selectedProduct.codigoBarras || selectedProduct.nombreProducto || '';
         searchInput.dataset.pesable = weighted ? '1' : '0';
-        selectedLabel.textContent = `${selectedProduct.nombreProducto || 'Producto'} (${selectedProduct.codigoBarras || 'Sin codigo'})`;
+        selectedLabel.innerHTML = `<i class="bi bi-check-circle-fill text-success" style="font-size:1.1rem;"></i> <span style="color:#1e293b; font-weight:600;">${selectedProduct.nombreProducto || 'Producto'} <span style="color:#94a3b8; font-size:0.75rem; font-weight:normal; margin-left:0.4rem;">(${selectedProduct.codigoBarras || 'Sin codigo'})</span></span>`;
         results.innerHTML = '';
         lastMatches = [];
         updateProductQuantityStep(weighted, qtyInput);
@@ -1468,10 +1625,10 @@ function bindTransferLineRow(row, sourceBranchId, inventorySource, product = nul
             <button
                 type="button"
                 class="btn btn-ghost btn-sm"
-                style="justify-content:flex-start; text-align:left;"
+                style="justify-content:flex-start; text-align:left; background: #ffffff; border-bottom: 1px solid #f1f5f9; padding: 0.75rem 1rem; width: 100%; border-radius: 0;"
             >
-                <strong>${item.nombreProducto}</strong>
-                <span style="margin-left:0.5rem; color:var(--text-muted);">${item.codigoBarras || 'Sin codigo'}</span>
+                <div style="font-weight: 600; color: #1e293b; font-size: 0.9rem;">${item.nombreProducto}</div>
+                <div style="color:#64748b; font-size: 0.75rem; margin-top: 0.2rem;"><i class="bi bi-upc-scan"></i> ${item.codigoBarras || 'Sin codigo'}</div>
             </button>
         `).join('');
 
@@ -1590,22 +1747,40 @@ function appendInboundLineRow(product = null) {
     const row = document.createElement('div');
     row.className = 'mov-line-row';
     row.dataset.rowId = String(rowId);
-    row.style.cssText = 'border:1px solid var(--line-soft); border-radius:16px; padding:1rem; background:rgba(255,255,255,0.75);';
+    row.style.cssText = 'background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 0.75rem 1rem; transition: all 0.2s; display: flex; align-items: center;';
+    row.classList.add('tra-line-row-hover');
+
     row.innerHTML = `
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; margin-bottom:0.85rem;">
-            <strong style="color:var(--text-main);">Producto ${rowId}</strong>
-            <button type="button" class="btn btn-ghost btn-sm mov-remove-line-btn">Quitar</button>
-        </div>
-        <div class="form-group" style="margin-bottom:0.8rem;">
-            <label>Buscar producto</label>
-            <input type="text" class="form-control mov-line-search" placeholder="Escribe nombre o codigo" autocomplete="off">
-            <input type="hidden" class="mov-line-product-id">
-        </div>
-        <div class="mov-line-results" style="display:grid; gap:0.45rem; margin-bottom:0.8rem;"></div>
-        <div class="text-muted mov-line-selected" style="margin-bottom:0.8rem;">Sin producto seleccionado</div>
-        <div class="form-group" style="margin-bottom:0;">
-            <label>Cantidad a ingresar</label>
-            <input type="number" class="form-control mov-line-qty" placeholder="0" step="1" min="0">
+        <div style="display: grid; grid-template-columns: 2.5rem minmax(200px, 3fr) minmax(120px, 1fr) 3rem; gap: 1rem; align-items: center; width: 100%;">
+            <!-- Index -->
+            <div style="font-weight: 700; color: #94a3b8; font-size: 1.1rem; text-align: center; font-family: monospace;">
+                ${rowId}
+            </div>
+            
+            <!-- Search & Info -->
+            <div style="position: relative;">
+                <div style="position: relative;">
+                    <i class="bi bi-search" style="position: absolute; left: 0.8rem; top: 50%; transform: translateY(-50%); color: #94a3b8;"></i>
+                    <input type="text" class="form-control mov-line-search" placeholder="Escribe para buscar un producto..." autocomplete="off" style="padding-left: 2.2rem; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.9rem;">
+                    <input type="hidden" class="mov-line-product-id">
+                </div>
+                <div class="mov-line-results" style="display:grid; gap:0.25rem; margin-top:0.4rem; position: absolute; z-index: 50; width: 100%; background: white; border-radius: 8px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); max-height: 250px; overflow-y: auto;"></div>
+                <div class="mov-line-selected" style="margin-top:0.4rem; font-size:0.8rem; color:#64748b; font-weight:500; display:flex; align-items:center; gap:0.4rem; padding-left: 0.2rem;">
+                    <i class="bi bi-dash text-muted"></i> <span>Aún no hay producto seleccionado</span>
+                </div>
+            </div>
+
+            <!-- Quantity -->
+            <div style="display: flex; justify-content: center;">
+                <input type="number" class="form-control mov-line-qty" placeholder="0" step="1" min="0" style="text-align: center; font-weight: bold; font-size: 1.1rem; border: 1px solid #cbd5e1; background: #fff; width: 100%; max-width: 120px; border-radius: 8px;">
+            </div>
+
+            <!-- Remove -->
+            <div style="text-align: center;">
+                <button type="button" class="btn btn-ghost mov-remove-line-btn" style="color: #ef4444; padding: 0.5rem 0.6rem; border-radius: 8px; background: #fef2f2; border: 1px solid #fee2e2;" title="Quitar línea">
+                    <i class="bi bi-x-lg" style="font-size: 1rem;"></i>
+                </button>
+            </div>
         </div>
     `;
 
@@ -1626,13 +1801,14 @@ function bindInboundLineRow(row, product = null) {
     const selectProduct = (selectedProduct) => {
         if (!selectedProduct) return;
 
+        const weighted = isWeightedAdminProduct(selectedProduct.esPesable);
         hiddenInput.value = selectedProduct.id_producto;
         searchInput.value = selectedProduct.codigoBarras || selectedProduct.nombreProducto || '';
-        searchInput.dataset.pesable = isWeightedAdminProduct(selectedProduct.esPesable) ? '1' : '0';
-        selectedLabel.textContent = `${selectedProduct.nombreProducto || 'Producto'} (${selectedProduct.codigoBarras || 'Sin codigo'})`;
+        searchInput.dataset.pesable = weighted ? '1' : '0';
+        selectedLabel.innerHTML = `<i class="bi bi-check-circle-fill text-success" style="font-size:1.1rem;"></i> <span style="color:#1e293b; font-weight:600;">${selectedProduct.nombreProducto || 'Producto'} <span style="color:#94a3b8; font-size:0.75rem; font-weight:normal; margin-left:0.4rem;">(${selectedProduct.codigoBarras || 'Sin codigo'})</span></span>`;
         results.innerHTML = '';
         lastMatches = [];
-        updateProductQuantityStep(isWeightedAdminProduct(selectedProduct.esPesable), qtyInput);
+        updateProductQuantityStep(weighted, qtyInput);
         qtyInput.focus();
     };
 
@@ -1642,10 +1818,10 @@ function bindInboundLineRow(row, product = null) {
             <button
                 type="button"
                 class="btn btn-ghost btn-sm"
-                style="justify-content:flex-start; text-align:left;"
+                style="justify-content:flex-start; text-align:left; background: #ffffff; border-bottom: 1px solid #f1f5f9; padding: 0.75rem 1rem; width: 100%; border-radius: 0;"
             >
-                <strong>${item.nombreProducto}</strong>
-                <span style="margin-left:0.5rem; color:var(--text-muted);">${item.codigoBarras || 'Sin codigo'}</span>
+                <div style="font-weight: 600; color: #1e293b; font-size: 0.9rem;">${item.nombreProducto}</div>
+                <div style="color:#64748b; font-size: 0.75rem; margin-top: 0.2rem;"><i class="bi bi-upc-scan"></i> ${item.codigoBarras || 'Sin codigo'}</div>
             </button>
         `).join('');
 

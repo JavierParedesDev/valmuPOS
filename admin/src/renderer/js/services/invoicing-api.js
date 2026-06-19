@@ -214,12 +214,17 @@ window.ValmuInvoicingApi = (() => {
             ensureOk(response, 'No se pudo respaldar el XML del DTE');
             return unwrapData(response);
         },
-        updateDteStatus: async (idXml, estadoSii) => {
+        updateDteStatus: async (idXml, estadoSii, trackId = null) => {
             if (!idXml) {
                 throw new Error('Se requiere id_xml para actualizar el estado del DTE');
             }
 
-            const response = await safeRequest(`/dte/${idXml}/estado`, 'PUT', { estadoSii });
+            const body = { estadoSii };
+            if (trackId !== null) {
+                body.trackId = trackId;
+            }
+
+            const response = await safeRequest(`/dte/${idXml}/estado`, 'PUT', body);
             ensureOk(response, 'No se pudo actualizar el estado del DTE');
             return unwrapData(response);
         },
@@ -234,6 +239,7 @@ window.ValmuInvoicingApi = (() => {
             return xmlContent;
         },
         getSalesHistory: (limit) => safeRequest(`/ventas?limit=${limit || 100000}`),
+        getSaleDetails: (id) => safeRequest(`/ventas/${id}`),
         deleteXml: (id) => safeRequest(`/dte/${id}`, 'DELETE'),
         uploadManualXml: async (file) => {
             return new Promise((resolve, reject) => {

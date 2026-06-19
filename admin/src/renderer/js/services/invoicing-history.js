@@ -134,27 +134,27 @@ window.ValmuInvoicingHistory = {
         }, { total: 0, neto: 0, iva: 0, count: 0 });
 
         const gridHtml = `
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-4">
-                <div class="rounded-2xl border border-[#eadbcb] bg-white p-4 shadow-sm">
-                    <div class="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400 mb-2">Documentos</div>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                <div class="rounded-2xl border border-gray-150 bg-white p-5 shadow-sm">
+                    <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Documentos</div>
                     <div class="text-2xl font-black text-gray-900">${totals.count}</div>
                 </div>
-                <div class="rounded-2xl border border-[#eadbcb] bg-white p-4 shadow-sm">
-                    <div class="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400 mb-2">Neto XML</div>
+                <div class="rounded-2xl border border-gray-155 bg-white p-5 shadow-sm">
+                    <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">Neto XML</div>
                     <div class="text-xl font-black text-gray-900">${this.formatMoney(totals.neto)}</div>
                 </div>
-                <div class="rounded-2xl border border-[#eadbcb] bg-white p-4 shadow-sm">
-                    <div class="text-[10px] font-black uppercase tracking-[0.18em] text-gray-400 mb-2">IVA XML</div>
+                <div class="rounded-2xl border border-gray-155 bg-white p-5 shadow-sm">
+                    <div class="text-[10px] font-bold uppercase tracking-wider text-gray-400 mb-2">IVA XML</div>
                     <div class="text-xl font-black text-gray-900">${this.formatMoney(totals.iva)}</div>
                 </div>
-                <div class="rounded-2xl border border-orange-100 bg-orange-50 p-4 shadow-sm">
-                    <div class="text-[10px] font-black uppercase tracking-[0.18em] text-orange-600 mb-2">Total XML</div>
-                    <div class="text-xl font-black text-gray-900">${this.formatMoney(totals.total)}</div>
+                <div class="rounded-2xl border border-orange-100 bg-orange-50/50 p-5 shadow-sm">
+                    <div class="text-[10px] font-bold uppercase tracking-wider text-orange-600 mb-2">Total XML</div>
+                    <div class="text-xl font-black text-orange-600">${this.formatMoney(totals.total)}</div>
                 </div>
             </div>
 
-            <div class="overflow-x-auto rounded-[22px] border border-[#eadbcb] bg-white shadow-[0_18px_55px_rgba(78,44,20,0.07)]">
-                <div class="grid grid-cols-[100px_120px_minmax(210px,1.35fr)_110px_110px_120px_130px_160px] gap-3 bg-[#fff7ef] px-4 py-3 text-[10px] font-black uppercase tracking-[0.16em] text-[#806758] min-w-[1120px]">
+            <div class="overflow-x-auto rounded-3xl border border-gray-200 bg-white shadow-sm">
+                <div class="grid grid-cols-[100px_120px_minmax(200px,1.3fr)_90px_90px_100px_120px_240px] gap-3 bg-gray-50 px-4 py-4 text-[10px] font-bold uppercase tracking-wider text-gray-500 border-b border-gray-200 min-w-[1120px]">
                     <div>Fecha</div>
                     <div>Documento</div>
                     <div>Receptor</div>
@@ -164,7 +164,7 @@ window.ValmuInvoicingHistory = {
                     <div>Estado</div>
                     <div class="text-right">Acciones</div>
                 </div>
-                <div class="divide-y divide-[#f3e7dc] min-w-[1120px]">
+                <div class="divide-y divide-gray-100 min-w-[1120px]">
                 ${visibleItems.map((doc) => {
             let label = 'DTE';
             let icon = 'bi-file-earmark-text';
@@ -187,58 +187,78 @@ window.ValmuInvoicingHistory = {
             const customerRut = this.escapeHtml(doc.customerRut || '');
             const firstItem = this.escapeHtml(doc.firstItem || '');
             const syncBadge = isLocalOnly
-                ? '<span class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-amber-700 border border-amber-100"><i class="bi bi-laptop"></i> Local</span>'
-                : '<span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-[9px] font-black uppercase tracking-[0.12em] text-emerald-700 border border-emerald-100"><i class="bi bi-database-fill"></i> Servidor</span>';
+                ? '<span class="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-amber-700 border border-amber-100"><i class="bi bi-laptop"></i> Local</span>'
+                : '<span class="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-emerald-700 border border-emerald-100"><i class="bi bi-database-fill"></i> Servidor</span>';
 
             return `
-                        <div class="grid grid-cols-[100px_120px_minmax(210px,1.35fr)_110px_110px_120px_130px_160px] gap-3 items-center px-4 py-3 hover:bg-[#fffaf5] transition-colors">
-                            <div class="text-sm font-black text-gray-800">${this.formatDate(doc.date)}</div>
+                        <div class="grid grid-cols-[100px_120px_minmax(200px,1.3fr)_90px_90px_100px_120px_240px] gap-3 items-center px-4 py-3.5 hover:bg-gray-50/50 transition-colors border-b border-gray-100 last:border-0">
+                            <div class="text-sm font-semibold text-gray-900">${this.formatDate(doc.date)}</div>
                             <div>
-                                <div class="inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-[10px] font-black uppercase ${badgeClass}">
-                                    <i class="bi ${icon}"></i>
+                                <div class="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${badgeClass}">
+                                    <i class="bi ${icon} text-xs"></i>
                                     ${label}
                                 </div>
-                                <div class="mt-1 text-sm font-black text-gray-900">#${this.escapeHtml(doc.folio)}</div>
+                                <div class="text-xs font-bold text-gray-500 mt-1">N° ${doc.folio}</div>
                             </div>
                             <div class="min-w-0">
-                                <div class="truncate text-sm font-black text-gray-900">${customerLabel}</div>
-                                <div class="truncate text-xs font-bold text-gray-400">${customerRut}${firstItem ? ` · ${firstItem}` : ''}</div>
+                                <div class="text-sm font-bold text-gray-800 truncate">${customerLabel}</div>
+                                <div class="flex items-center gap-2 mt-1">
+                                    <span class="text-[10px] font-semibold text-gray-400">${customerRut}</span>
+                                    ${syncBadge}
+                                </div>
+                                ${firstItem ? `<div class="text-[11px] text-gray-400 truncate mt-0.5"><span class="font-medium text-gray-300">Ref:</span> ${firstItem}</div>` : ''}
                             </div>
-                            <div class="text-right text-sm font-black text-gray-700">${this.formatMoney(doc.neto)}</div>
-                            <div class="text-right text-sm font-black text-gray-700">${this.formatMoney(doc.iva)}</div>
-                            <div class="text-right text-base font-black text-gray-950">${this.formatMoney(doc.amount)}</div>
-                            <div class="flex flex-col items-start gap-1">
-                                <span class="inline-flex max-w-full items-center rounded-full border px-2 py-1 text-[9px] font-black uppercase tracking-[0.1em] ${statusClass}">
-                                    <span class="truncate">${this.escapeHtml(doc.status || 'GENERADO')}</span>
+                            <div class="text-right text-xs font-semibold text-gray-600">${this.formatMoney(doc.neto || 0)}</div>
+                            <div class="text-right text-xs font-semibold text-gray-600">${this.formatMoney(doc.iva || 0)}</div>
+                            <div class="text-right text-sm font-bold text-gray-900">${this.formatMoney(doc.amount || doc.total || 0)}</div>
+                            <div>
+                                <span class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${statusClass}">
+                                    ${statusNormalized === 'generado' ? 'Generado' : 
+                                      statusNormalized === 'fallo_generar' ? 'Fallo Generar' :
+                                      statusNormalized.includes('acept') ? 'Aceptado' : 
+                                      statusNormalized.includes('error') ? 'Error' : 
+                                      statusNormalized.includes('rechaz') ? 'Rechazado' : 
+                                      statusNormalized}
                                 </span>
-                                ${syncBadge}
                             </div>
-                            <div class="flex items-center justify-end gap-2">
+                            <div class="flex items-center justify-end gap-1.5">
                                 <button onclick="invoicePage.createPdfFromXmlWrapper('${this.escapeHtml(doc.type)}', '${this.escapeHtml(doc.folio)}', '${this.escapeHtml(doc.filename || '')}', '${this.escapeHtml(doc.id_xml || '')}')" 
-                                    class="h-9 w-9 rounded-xl bg-gray-900 text-white hover:bg-black transition-all" title="Ver PDF">
-                                    <i class="bi bi-file-pdf"></i>
+                                    class="h-8 w-8 flex items-center justify-center rounded-xl bg-gray-50 border border-gray-200 text-gray-700 hover:bg-red-50 hover:text-red-600 hover:border-red-100 transition-all active:scale-95" title="Ver PDF">
+                                    <i class="bi bi-file-pdf text-sm"></i>
                                 </button>
                                 <button onclick="invoicePage.downloadDteXml('${this.escapeHtml(doc.filename || '')}', '${this.escapeHtml(doc.folder || '')}', '${this.escapeHtml(doc.id_xml || '')}')" 
-                                    class="h-9 w-9 rounded-xl border border-gray-100 bg-white text-gray-500 hover:text-orange-600 transition-all" title="Descargar XML">
-                                    <i class="bi bi-code-slash"></i>
+                                    class="h-8 w-8 flex items-center justify-center rounded-xl bg-gray-50 border border-gray-200 text-gray-600 hover:bg-amber-50 hover:text-amber-600 hover:border-amber-100 transition-all active:scale-95" title="Descargar XML">
+                                    <i class="bi bi-code-slash text-sm"></i>
                                 </button>
                                 <button onclick="invoicePage.duplicateInvoice('${this.escapeHtml(doc.type)}', '${this.escapeHtml(doc.folio)}', '${this.escapeHtml(doc.filename || '')}', '${this.escapeHtml(doc.id_xml || '')}')" 
-                                    class="h-9 w-9 rounded-xl border border-gray-100 bg-white text-gray-400 hover:bg-blue-50 hover:text-blue-500 transition-all" title="Duplicar / Repetir Factura">
-                                    <i class="bi bi-copy"></i>
+                                    class="h-8 w-8 flex items-center justify-center rounded-xl bg-gray-55 border border-gray-200 text-gray-500 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-100 transition-all active:scale-95" title="Duplicar / Repetir Factura">
+                                    <i class="bi bi-copy text-sm"></i>
                                 </button>
                                 ${isLocalOnly ? `
                                     <button onclick="invoicePage.uploadLocalDteToServer('${this.escapeHtml(doc.type)}', '${this.escapeHtml(doc.folio)}', this)" 
-                                        class="h-9 w-9 rounded-xl bg-orange-600 text-white hover:bg-orange-700 transition-all" title="Sincronizar">
-                                        <i class="bi bi-cloud-arrow-up-fill"></i>
+                                        class="h-8 w-8 flex items-center justify-center rounded-xl bg-orange-50 border border-orange-200 text-orange-600 hover:bg-orange-600 hover:text-white transition-all active:scale-95" title="Sincronizar">
+                                        <i class="bi bi-cloud-arrow-up-fill text-sm"></i>
+                                    </button>
+                                ` : ''}
+                                ${statusNormalized === 'generado' ? `
+                                    <button onclick="invoicePage.sendGeneratedDteToSii('${this.escapeHtml(doc.type)}', '${this.escapeHtml(doc.folio)}', '${this.escapeHtml(doc.id_xml || '')}', this)" 
+                                        class="h-8 w-8 flex items-center justify-center rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-600 hover:bg-emerald-600 hover:text-white hover:border-emerald-600 transition-all shadow-sm active:scale-95" title="Enviar al SII">
+                                        <i class="bi bi-send-fill text-sm"></i>
+                                    </button>
+                                ` : ''}
+                                ${(statusNormalized.includes('fallo') || statusNormalized.includes('error')) && doc.id_venta ? `
+                                    <button onclick="invoicePage.loadFromSaleDetails('${this.escapeHtml(doc.id_venta)}', '${this.escapeHtml(doc.type)}', '${this.escapeHtml(doc.id_xml || '')}', this)" 
+                                        class="h-8 w-8 flex items-center justify-center rounded-xl bg-amber-50 border border-amber-200 text-amber-600 hover:bg-amber-600 hover:text-white hover:border-amber-600 transition-all shadow-sm active:scale-95" title="Regenerar y Completar Factura">
+                                        <i class="bi bi-arrow-repeat text-sm"></i>
                                     </button>
                                 ` : ''}
                                 <button onclick="invoicePage.querySiiStatus('${this.escapeHtml(doc.trackId || '')}', '${this.escapeHtml(doc.id_xml || '')}', '${btoa(JSON.stringify(doc).replace(/[\u007F-\uFFFF]/g, function(chr) { return '\\u' + ('0000' + chr.charCodeAt(0).toString(16)).substr(-4); }))}')" 
-                                    class="h-9 w-9 rounded-xl border border-blue-100 bg-blue-50 text-blue-500 hover:bg-blue-600 hover:text-white transition-all shadow-sm" title="Consultar Estado en el SII">
-                                    <i class="bi bi-search"></i>
+                                    class="h-8 w-8 flex items-center justify-center rounded-xl bg-blue-50 border border-blue-200 text-blue-600 hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all shadow-sm active:scale-95" title="Consultar Estado en el SII">
+                                    <i class="bi bi-search text-sm"></i>
                                 </button>
                                 <button onclick="invoicePage.handleDelete('${this.escapeHtml(doc.filename || '')}', '${this.escapeHtml(doc.id_xml || '')}')" 
-                                    class="h-9 w-9 rounded-xl border border-gray-100 bg-white text-gray-400 hover:bg-red-50 hover:text-red-500 transition-all" title="Eliminar">
-                                    <i class="bi bi-trash-fill"></i>
+                                    class="h-8 w-8 flex items-center justify-center rounded-xl bg-gray-50 border border-gray-200 text-gray-400 hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all active:scale-95" title="Eliminar">
+                                    <i class="bi bi-trash-fill text-sm"></i>
                                 </button>
                             </div>
                         </div>
@@ -410,6 +430,7 @@ window.ValmuInvoicingHistory = {
 
             processedMap.set(key, {
                 id_xml: xmlRecord.id_xml || null, trackId: xmlRecord.trackId || null,
+                id_venta: xmlRecord.id_venta || sale?.id_venta || sale?.id || null,
                 filename: xmlRecord.filename || `DTE_${type}_Folio_${folio}.xml`,
                 pdfName: local?.pdf?.name || null,
                 pdfPath: local?.pdf?.path || null,

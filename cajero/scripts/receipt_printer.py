@@ -175,9 +175,10 @@ def draw_fake_pdf417(draw, left, top, width, height, seed):
 def build_stock_picking_image(payload):
     receipt = payload.get('receipt') or {}
     printer_paper = str(payload.get('printerPaper') or '80mm').strip().lower()
-    width_px = 464 if printer_paper == '58mm' else 640
+    left_margin = int(payload.get('printerMargin') or 0)
+    width_px = 384 if printer_paper == '58mm' else 576
     is_small_paper = printer_paper == '58mm'
-    padding = 16 if is_small_paper else 22
+    padding = 28 if is_small_paper else 36
     gap = 10 if is_small_paper else 14
     content_width = width_px - (padding * 2)
 
@@ -284,6 +285,12 @@ def build_stock_picking_image(payload):
 
     cursor_y += padding + (28 if is_small_paper else 42)
     final_image = image.crop((0, 0, width_px, max(cursor_y, 220)))
+    
+    if left_margin != 0:
+        shifted = Image.new('RGB', (width_px, final_image.height), 'white')
+        shifted.paste(final_image, (left_margin, 0))
+        final_image = shifted
+        
     final_image = final_image.convert('L')
     final_image = final_image.point(lambda pixel: 0 if pixel < 190 else 255, mode='1')
     return final_image
@@ -294,10 +301,12 @@ def build_receipt_image(payload):
     emisor = receipt.get('emisor') or {}
     dte = receipt.get('dte') or {}
     printer_paper = str(payload.get('printerPaper') or '80mm').strip().lower()
+    left_margin = int(payload.get('printerMargin') or 0)
     logo_path = payload.get('logoPath')
-    width_px = 464 if printer_paper == '58mm' else 640
+    width_px = 384 if printer_paper == '58mm' else 576
     is_small_paper = printer_paper == '58mm'
-    padding = 14 if is_small_paper else 18
+    padding = 28 if is_small_paper else 36
+    content_width = width_px - (padding * 2)
     gap = 8 if is_small_paper else 10
 
     font_brand = load_font(36 if is_small_paper else 40, bold=True)
@@ -662,37 +671,77 @@ def build_receipt_image(payload):
         )
         cursor_y += padding + (36 if is_small_paper else 54)
     else:
-        cursor_y += padding + (36 if is_small_paper else 54)
-
-    final_image = image.crop((0, 0, width_px, cursor_y))
+        cursor_y += padding + (24 if is_small_paper else 32)
+    final_image = image.crop((0, 0, width_px, max(cursor_y, 220)))
+    
+    if left_margin != 0:
+        shifted = Image.new('RGB', (width_px, final_image.height), 'white')
+        shifted.paste(final_image, (left_margin, 0))
+        final_image = shifted
+        
     final_image = final_image.convert('L')
     final_image = final_image.point(lambda pixel: 0 if pixel < 190 else 255, mode='1')
     return final_image
 
 
-def print_image(printer_name, image):
-    hdc = win32ui.CreateDC()
-    hdc.CreatePrinterDC(printer_name)
-    
-    # Get paper capabilities
+def print_image(printer_name, image, strict_mode=False):
+    """
+    Spools the given PIL Image to the Windows printer using raw win32print/win32ui.
+    It preserves the physical 80mm/58mm aspect ratio scaling by default,
+    and supports a strict mode to avoid dynamically overriding paper dimensions.
+    """
+    import win32gui
+
+    try:
+        hprinter = win32print.OpenPrinter(printer_name)
+    except Exception as e:
+        print(f"Error opening printer: {e}")
+        return
+
+    try:
+        devmode = win32print.GetPrinter(hprinter, 2)["pDevMode"]
+    except Exception:
+        devmode = None
+
+    if devmode:
+        if not strict_mode:
+            temp_hdc = win32gui.CreateDC("WINSPOOL", printer_name, None)
+            hdc_temp = win32ui.CreateDCFromHandle(temp_hdc)
+            dpi_x = hdc_temp.GetDeviceCaps(win32con.LOGPIXELSX)
+            dpi_y = hdc_temp.GetDeviceCaps(win32con.LOGPIXELSY)
+            horzres = hdc_temp.GetDeviceCaps(win32con.HORZRES)
+            hdc_temp.DeleteDC()
+
+            scale_ratio = horzres / image.width
+            scaled_height = int(image.height * scale_ratio)
+            length_mm = (scaled_height / dpi_y) * 25.4
+            
+            # Add 10mm margin to ensure it doesn't clip
+            devmode.PaperLength = int((length_mm + 10) * 10)
+            if getattr(devmode, 'PaperWidth', 0) <= 0:
+                devmode.PaperWidth = int((horzres / dpi_x) * 254)
+                
+            devmode.PaperSize = 256
+            devmode.Fields |= win32con.DM_PAPERLENGTH | win32con.DM_PAPERWIDTH | win32con.DM_PAPERSIZE
+            
+        hdc_handle = win32gui.CreateDC("WINSPOOL", printer_name, devmode)
+        hdc = win32ui.CreateDCFromHandle(hdc_handle)
+    else:
+        hdc = win32ui.CreateDC()
+        hdc.CreatePrinterDC(printer_name)
+
     printable_width = hdc.GetDeviceCaps(win32con.HORZRES)
-    printable_height = hdc.GetDeviceCaps(win32con.VERTRES)
-    
-    # Calculate global scale (ratio to fit width)
     scale_ratio = printable_width / image.width
     
-    # Start Document
     hdc.StartDoc('Valmu Cajero Receipt')
+    hdc.StartPage()
     
-    # We print in chunks to avoid GDI/buffer limits and the "black block" issue
-    # We use printable_height as our chunk reference to stay within driver limits per page
     y_offset = 0
+    scaled_y_offset = 0
+    safe_chunk_height = 2000
+    
     while y_offset < image.height:
-        # Calculate source chunk height
-        # We want the chunk to be exactly printable_height high when scaled
-        source_chunk_height = int(printable_height / scale_ratio)
-        
-        # Ensure we don't go out of bounds
+        source_chunk_height = safe_chunk_height
         if y_offset + source_chunk_height > image.height:
             source_chunk_height = image.height - y_offset
             
@@ -701,22 +750,19 @@ def print_image(printer_name, image):
         if source_chunk_height <= 0 or current_scaled_height <= 0:
             break
             
-        # Extract and resize chunk
         chunk = image.crop((0, y_offset, image.width, y_offset + source_chunk_height))
-        resized_chunk = chunk.resize((printable_width, current_scaled_height), Image.Resampling.NEAREST)
+        resized_chunk = chunk.resize((printable_width, current_scaled_height), Image.Resampling.LANCZOS)
         
-        # Convert to DIB for drawing
         dib = ImageWin.Dib(resized_chunk)
-        
-        # Print page chunk
-        hdc.StartPage()
-        dib.draw(hdc.GetHandleOutput(), (0, 0, printable_width, current_scaled_height))
-        hdc.EndPage()
+        dib.draw(hdc.GetHandleOutput(), (0, scaled_y_offset, printable_width, scaled_y_offset + current_scaled_height))
         
         y_offset += source_chunk_height
+        scaled_y_offset += current_scaled_height
 
+    hdc.EndPage()
     hdc.EndDoc()
     hdc.DeleteDC()
+    win32print.ClosePrinter(hprinter)
 
 
 def list_installed_printers():
@@ -769,8 +815,9 @@ def main():
 
     try:
         receipt = payload.get('receipt') or {}
+        strict_mode = str(payload.get('printerStrictMode', '')).lower() == 'true'
         image = build_stock_picking_image(payload) if receipt.get('isStockPicking') else build_receipt_image(payload)
-        print_image(printer_name, image)
+        print_image(printer_name, image, strict_mode=strict_mode)
         print(json.dumps({
             'ok': True,
             'printerName': printer_name,

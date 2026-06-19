@@ -13,76 +13,88 @@ async function renderMermas() {
     const bodegueroMode = isBodeguero() && activeBranchId;
 
     contentArea.innerHTML = `
-        <div class="action-bar mb-6">
+        <div class="action-bar" style="display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: white; padding: 1.5rem 2rem; border-radius: 16px; margin-bottom: 2rem; box-shadow: 0 10px 15px -3px rgba(79, 70, 229, 0.3); flex-wrap: wrap; gap: 1rem;">
             <div>
-                <h2>Mermas</h2>
-                <p class="text-muted" style="margin-top:0.35rem;">
-                    ${bodegueroMode ? `Registro operativo de perdidas para ${activeBranchName || 'tu sucursal'}.` : 'Control de perdidas, roturas y ajustes de inventario.'}
+                <h2 style="margin-bottom: 0.3rem; display: flex; align-items: center; gap: 0.75rem; color: white; font-size: 1.5rem;">
+                    <i class="bi bi-trash" style="background: rgba(255,255,255,0.2); padding: 0.5rem; border-radius: 12px; font-size: 1.2rem;"></i> 
+                    Gestión de Mermas
+                </h2>
+                <p style="margin-top: 0; font-size: 0.95rem; color: rgba(255,255,255,0.8); margin-left: 3.2rem;">
+                    ${bodegueroMode ? `Registro operativo de pérdidas para ${activeBranchName || 'tu sucursal'}.` : 'Control de pérdidas, roturas y ajustes de inventario.'}
                 </p>
             </div>
-            <div style="display:flex; gap:0.75rem; align-items:end; flex-wrap:wrap;">
-                <div id="mermas-branch-container" class="${bodegueroMode ? 'hidden' : ''}" style="min-width:280px;">
-                    <div class="form-group" style="margin:0;">
-                        <label>Sucursal</label>
-                        <select id="mermas-branch-select" class="form-control" onchange="mermasCambiarSucursal(this.value)">
-                            <option value="">Desconectado...</option>
-                        </select>
-                    </div>
+            <div style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap;">
+                <div id="mermas-branch-container" class="${bodegueroMode ? 'hidden' : ''}" style="min-width:280px; position: relative;">
+                    <i class="bi bi-shop" style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: white; pointer-events: none; z-index: 2;"></i>
+                    <select id="mermas-branch-select" class="form-control" onchange="mermasCambiarSucursal(this.value)" style="appearance: none; -webkit-appearance: none; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); border-radius: 10px; padding: 0.6rem 2.5rem; font-weight: 600; color: white; cursor: pointer; outline: none; width: 100%;">
+                        <option value="" style="color: #1e293b;">Desconectado...</option>
+                    </select>
+                    <i class="bi bi-chevron-down" style="position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); color: white; pointer-events: none; z-index: 2;"></i>
                 </div>
-                <button class="btn btn-primary" type="button" onclick="mermasAccionPrincipal()">+ Registrar merma</button>
+                <button class="btn" type="button" onclick="mermasAccionPrincipal()" style="background: white; color: #4f46e5; font-weight: bold; border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); padding: 0.65rem 1.25rem;">
+                    <i class="bi bi-plus-lg"></i> Registrar merma
+                </button>
             </div>
         </div>
 
-        <div id="mermas-empty-state" class="glass-panel" style="padding:2rem; text-align:center;">
-            <h3 style="font-size:1.2rem; font-weight:800; color:var(--text-main); margin-bottom:0.75rem;">Sucursal no seleccionada</h3>
-            <p class="text-muted">${bodegueroMode ? 'Estamos preparando el inventario de tu sucursal para comenzar el registro de mermas.' : 'Selecciona una sucursal para cargar el inventario y el historial de mermas.'}</p>
+        <div id="mermas-empty-state" class="glass-panel" style="padding:3rem; text-align:center; background: white; border-radius: 16px; border: 1px dashed #cbd5e1;">
+            <i class="bi bi-shop text-muted" style="font-size: 3rem; margin-bottom: 1rem; display: block;"></i>
+            <h3 style="font-size:1.2rem; font-weight:800; color: #1e293b; margin-bottom:0.75rem;">Sucursal no seleccionada</h3>
+            <p class="text-muted" style="max-width: 400px; margin: 0 auto;">${bodegueroMode ? 'Estamos preparando el inventario de tu sucursal para comenzar el registro de mermas.' : 'Selecciona una sucursal en el menú superior para cargar el inventario y el historial de mermas.'}</p>
         </div>
 
         <div id="mermas-main-area" class="hidden">
-            <div id="mermas-alerts-panel" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:1rem; margin-bottom:1.25rem;"></div>
+            <div id="mermas-alerts-panel" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:1.5rem; margin-bottom:1.5rem;"></div>
 
-            <div class="glass-panel" style="padding:1rem; margin-bottom:1.25rem;">
+            <div class="glass-panel" style="padding:1.5rem; margin-bottom:1.5rem; background: white; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0;">
                 <div class="form-group" style="margin:0;">
-                    <label>Buscar producto</label>
-                    <input type="text" id="mermas-search" class="form-control" placeholder="Nombre o codigo de barras" oninput="mermasFiltrar()">
+                    <label style="font-weight: 600; color: #475569; margin-bottom: 0.5rem; display: block;">Buscar producto para dar de baja</label>
+                    <div style="position: relative;">
+                        <i class="bi bi-search" style="position: absolute; left: 1rem; top: 50%; transform: translateY(-50%); color: #94a3b8;"></i>
+                        <input type="text" id="mermas-search" class="form-control" placeholder="Escribe el nombre o escanea el código de barras..." oninput="mermasFiltrar()" style="padding-left: 2.5rem; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px;">
+                    </div>
                 </div>
-                <p class="text-muted" style="margin-top:0.75rem; font-size:0.85rem;">Busca un producto y registra la merma directamente desde esta tabla.</p>
             </div>
 
-            <div class="glass-panel" style="margin-bottom:1.25rem;">
-                <div class="table-shell">
-                    <table class="data-table">
-                        <thead>
+            <div class="glass-panel" style="margin-bottom:1.5rem; background: white; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; overflow: hidden;">
+                <div style="padding: 1rem 1.5rem; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
+                    <h3 style="margin: 0; font-size: 1rem; font-weight: 600; color: #1e293b;">Inventario Actual</h3>
+                </div>
+                <div class="table-responsive" style="max-height: 40vh; overflow-y: auto;">
+                    <table class="data-table w-full" style="border: none; width: 100%; border-collapse: collapse;">
+                        <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 10; border-bottom: 1px solid #e2e8f0;">
                             <tr>
-                                <th>Producto</th>
-                                <th>Stock actual</th>
-                                <th style="text-align:right;">Operacion</th>
+                                <th class="text-left" style="padding: 1rem 1.5rem; color: #64748b; font-weight: 600; font-size: 0.85rem;">Producto</th>
+                                <th class="text-center" style="padding: 1rem; color: #64748b; font-weight: 600; font-size: 0.85rem;">Stock actual</th>
+                                <th class="text-right" style="padding: 1rem 1.5rem; color: #64748b; font-weight: 600; font-size: 0.85rem;">Operación</th>
                             </tr>
                         </thead>
                         <tbody id="mermas-list">
-                            <tr><td colspan="3" class="text-center py-10 text-gray-400">Esperando parametros de busqueda...</td></tr>
+                            <tr><td colspan="3" class="text-center py-10 text-gray-400">Esperando parámetros de búsqueda...</td></tr>
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            <div class="glass-panel">
-                <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; padding:1rem 1rem 0.75rem 1rem; flex-wrap:wrap;">
+            <div class="glass-panel" style="background: white; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; overflow: hidden;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:0.75rem; padding: 1.5rem 1.5rem 1rem 1.5rem; flex-wrap:wrap; border-bottom: 1px solid #e2e8f0; background: #f8fafc;">
                     <div>
-                        <h3 style="font-size:1rem; font-weight:800; color:var(--text-main);">Historial de Mermas</h3>
-                        <p class="text-muted" style="font-size:0.85rem; margin-top:0.25rem;">Ultimos movimientos registrados en la sucursal seleccionada.</p>
+                        <h3 style="font-size:1.1rem; font-weight:600; color:#1e293b; margin: 0; display: flex; align-items: center; gap: 0.5rem;">
+                            <i class="bi bi-clock-history text-primary"></i> Historial de Mermas
+                        </h3>
+                        <p class="text-muted" style="font-size:0.85rem; margin-top:0.3rem; margin-bottom: 0;">Últimos movimientos registrados en la sucursal.</p>
                     </div>
-                    <div id="mermas-history-summary" class="text-muted" style="font-size:0.8rem;">Sin datos cargados</div>
+                    <div id="mermas-history-summary" class="badge badge-info" style="font-size: 0.8rem; background: #e0f2fe; color: #0284c7; padding: 4px 10px; border-radius: 12px; font-weight: 600;">Sin datos cargados</div>
                 </div>
-                <div class="table-shell">
-                    <table class="data-table">
-                        <thead>
+                <div class="table-responsive" style="max-height: 40vh; overflow-y: auto;">
+                    <table class="data-table w-full" style="border: none; width: 100%; border-collapse: collapse;">
+                        <thead style="position: sticky; top: 0; background: #f8fafc; z-index: 10; border-bottom: 1px solid #e2e8f0;">
                             <tr>
-                                <th>Fecha</th>
-                                <th>Producto</th>
-                                <th>Motivo</th>
-                                <th>Responsable</th>
-                                <th style="text-align:right;">Cantidad</th>
+                                <th class="text-left" style="padding: 1rem 1.5rem; color: #64748b; font-weight: 600; font-size: 0.85rem;">Fecha</th>
+                                <th class="text-left" style="padding: 1rem; color: #64748b; font-weight: 600; font-size: 0.85rem;">Producto</th>
+                                <th class="text-left" style="padding: 1rem; color: #64748b; font-weight: 600; font-size: 0.85rem;">Motivo</th>
+                                <th class="text-left" style="padding: 1rem; color: #64748b; font-weight: 600; font-size: 0.85rem;">Responsable</th>
+                                <th class="text-right" style="padding: 1rem 1.5rem; color: #64748b; font-weight: 600; font-size: 0.85rem;">Cantidad</th>
                             </tr>
                         </thead>
                         <tbody id="mermas-history-list">
@@ -113,8 +125,8 @@ async function mermasCargarSucursales() {
             : branches;
         const select = document.getElementById('mermas-branch-select');
         if (select) {
-            select.innerHTML = '<option value="">Seleccionar sucursal...</option>' +
-                availableBranches.map((branch) => `<option value="${branch.id_sucursal}">${branch.nombreSucursal}</option>`).join('');
+            select.innerHTML = '<option value="" style="color: #1e293b;">Seleccionar sucursal...</option>' +
+                availableBranches.map((branch) => `<option value="${branch.id_sucursal}" style="color: #1e293b;">${branch.nombreSucursal}</option>`).join('');
 
             if (isBodeguero() && assignedBranchId) {
                 select.value = String(assignedBranchId);
@@ -184,21 +196,21 @@ function mermasActualizarAlertas() {
     const historyCount = Array.isArray(mermasState.history) ? mermasState.history.length : 0;
 
     alertsPanel.innerHTML = `
-        <div class="glass-panel" style="padding:1rem;">
-            <div class="text-muted" style="font-size:0.78rem; text-transform:uppercase; letter-spacing:0.08em;">Productos criticos</div>
-            <div style="font-size:2rem; font-weight:800; color:#dc2626; margin-top:0.35rem;">${criticalProducts.length}</div>
-            <div class="text-muted" style="font-size:0.85rem; margin-top:0.35rem;">Bajo el umbral de ${threshold} unidades.</div>
-            <button class="btn btn-ghost btn-sm" style="margin-top:0.85rem;" onclick="mermasVerAlertas()">Ver listado</button>
+        <div class="glass-panel" style="padding:1.5rem; background: white; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; border-left: 4px solid #ef4444;">
+            <div class="text-muted" style="font-size:0.75rem; text-transform:uppercase; font-weight:bold; letter-spacing:0.05em; color: #64748b;">Productos críticos</div>
+            <div style="font-size:2.2rem; font-weight:800; color:#ef4444; margin-top:0.3rem;">${criticalProducts.length}</div>
+            <div class="text-muted" style="font-size:0.85rem; margin-top:0.2rem; color: #94a3b8;">Bajo el umbral de ${threshold} unidades.</div>
+            <button class="btn btn-ghost btn-sm" style="margin-top:0.85rem; background: #fef2f2; color: #ef4444; border: 1px solid #fee2e2; border-radius: 8px;" onclick="mermasVerAlertas()">Ver listado</button>
         </div>
-        <div class="glass-panel" style="padding:1rem;">
-            <div class="text-muted" style="font-size:0.78rem; text-transform:uppercase; letter-spacing:0.08em;">Inventario cargado</div>
-            <div style="font-size:2rem; font-weight:800; color:var(--text-main); margin-top:0.35rem;">${totalProducts.toLocaleString('es-CL')}</div>
-            <div class="text-muted" style="font-size:0.85rem; margin-top:0.35rem;">Productos disponibles para revision.</div>
+        <div class="glass-panel" style="padding:1.5rem; background: white; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; border-left: 4px solid #3b82f6;">
+            <div class="text-muted" style="font-size:0.75rem; text-transform:uppercase; font-weight:bold; letter-spacing:0.05em; color: #64748b;">Inventario cargado</div>
+            <div style="font-size:2.2rem; font-weight:800; color:#1e293b; margin-top:0.3rem;">${totalProducts.toLocaleString('es-CL')}</div>
+            <div class="text-muted" style="font-size:0.85rem; margin-top:0.2rem; color: #94a3b8;">Productos disponibles para revisión.</div>
         </div>
-        <div class="glass-panel" style="padding:1rem;">
-            <div class="text-muted" style="font-size:0.78rem; text-transform:uppercase; letter-spacing:0.08em;">Historial</div>
-            <div style="font-size:2rem; font-weight:800; color:var(--text-main); margin-top:0.35rem;">${historyCount.toLocaleString('es-CL')}</div>
-            <div class="text-muted" style="font-size:0.85rem; margin-top:0.35rem;">Movimientos registrados en esta sucursal.</div>
+        <div class="glass-panel" style="padding:1.5rem; background: white; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; border-left: 4px solid #10b981;">
+            <div class="text-muted" style="font-size:0.75rem; text-transform:uppercase; font-weight:bold; letter-spacing:0.05em; color: #64748b;">Historial</div>
+            <div style="font-size:2.2rem; font-weight:800; color:#1e293b; margin-top:0.3rem;">${historyCount.toLocaleString('es-CL')}</div>
+            <div class="text-muted" style="font-size:0.85rem; margin-top:0.2rem; color: #94a3b8;">Movimientos registrados en esta sucursal.</div>
         </div>
     `;
 }
@@ -274,18 +286,22 @@ function mermasRenderList(list) {
             : `${Math.round(stock).toLocaleString('es-CL')} un.`;
 
         return `
-            <tr>
-                <td>
-                    <div style="font-weight:800; color:var(--text-main);">${product.nombreProducto || 'Producto sin nombre'}</div>
-                    <div class="text-muted" style="font-size:0.78rem; margin-top:0.2rem;">${product.codigoBarras || 'Sin codigo'}${isCritical ? ' | Critico' : ''}</div>
+            <tr class="table-row-hover" style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;">
+                <td style="padding: 1rem 1.5rem;">
+                    <div style="font-weight:600; color:#0f172a; font-size: 0.95rem;">${product.nombreProducto || 'Producto sin nombre'}</div>
+                    <div class="text-muted" style="font-size:0.75rem; margin-top:0.2rem; color: #64748b;">
+                        <i class="bi bi-upc-scan"></i> ${product.codigoBarras || 'Sin codigo'} ${isCritical ? '<span style="color:#ef4444; margin-left:0.5rem; font-weight:bold;">¡CRÍTICO!</span>' : ''}
+                    </div>
                 </td>
-                <td>
-                    <span style="display:inline-flex; padding:0.35rem 0.7rem; border-radius:999px; background:${isCritical ? '#fef2f2' : '#f0fdf4'}; color:${isCritical ? '#b91c1c' : '#166534'}; font-weight:800;">
+                <td class="text-center" style="padding: 1rem;">
+                    <span style="display:inline-flex; padding:0.3rem 0.6rem; border-radius:8px; background:${isCritical ? '#fef2f2' : '#f0fdf4'}; color:${isCritical ? '#b91c1c' : '#166534'}; font-weight:700; border: 1px solid ${isCritical ? '#fee2e2' : '#dcfce7'}; font-size: 0.9rem;">
                         ${stockLabel}
                     </span>
                 </td>
-                <td style="text-align:right;">
-                    <button class="btn btn-primary btn-sm" onclick="mermasAbrirAjuste(${product.id_producto})">Registrar merma</button>
+                <td style="text-align:right; padding: 1rem 1.5rem;">
+                    <button class="btn btn-sm" onclick="mermasAbrirAjuste(${product.id_producto})" style="background: #e0e7ff; color: #4f46e5; border: none; font-weight: 600; border-radius: 8px; padding: 0.4rem 0.8rem;">
+                        <i class="bi bi-dash-circle"></i> Registrar
+                    </button>
                 </td>
             </tr>
         `;
@@ -351,15 +367,19 @@ function mermasRenderHistory() {
             : '0';
 
         return `
-            <tr>
-                <td>${mermasFormatHistoryDate(item?.fechaMov)}</td>
-                <td>
-                    <div style="font-weight:800; color:var(--text-main);">${item?.nombreProducto || 'Producto sin nombre'}</div>
-                    <div class="text-muted" style="font-size:0.78rem; margin-top:0.2rem;">${item?.codigoBarras || 'Sin codigo'}</div>
+            <tr class="table-row-hover" style="border-bottom: 1px solid #f1f5f9; transition: background 0.2s;">
+                <td style="padding: 1rem 1.5rem; font-size: 0.85rem; color: #64748b;">${mermasFormatHistoryDate(item?.fechaMov)}</td>
+                <td style="padding: 1rem;">
+                    <div style="font-weight:600; color:#0f172a; font-size: 0.9rem;">${item?.nombreProducto || 'Producto sin nombre'}</div>
+                    <div class="text-muted" style="font-size:0.75rem; margin-top:0.2rem; color: #94a3b8;"><i class="bi bi-upc-scan"></i> ${item?.codigoBarras || 'Sin codigo'}</div>
                 </td>
-                <td>${mermasNormalizeReasonLabel(item?.tipoMovimiento || item?.comprobanteMov)}</td>
-                <td>${item?.usuarioResponsable || 'Sistema'}</td>
-                <td style="text-align:right; color:#b91c1c; font-weight:800;">-${quantityLabel}</td>
+                <td style="padding: 1rem;">
+                    <span style="background: #f1f5f9; color: #475569; padding: 0.2rem 0.5rem; border-radius: 6px; font-size: 0.8rem; font-weight: 500; border: 1px solid #e2e8f0;">
+                        ${mermasNormalizeReasonLabel(item?.tipoMovimiento || item?.comprobanteMov)}
+                    </span>
+                </td>
+                <td style="padding: 1rem; font-size: 0.85rem; color: #475569;">${item?.usuarioResponsable || 'Sistema'}</td>
+                <td style="text-align:right; color:#ef4444; font-weight:700; padding: 1rem 1.5rem; font-size: 1.05rem;">-${quantityLabel}</td>
             </tr>
         `;
     }).join('');
@@ -375,27 +395,30 @@ function mermasAbrirAjuste(productId) {
         : Math.round(currentQty).toLocaleString('es-CL');
 
     const content = `
-        <div style="display:grid; gap:1rem;">
-            <div class="glass-panel" style="padding:1rem;">
-                <div class="text-muted" style="font-size:0.78rem; text-transform:uppercase; letter-spacing:0.08em;">Producto seleccionado</div>
-                <div style="font-size:1.1rem; font-weight:800; color:var(--text-main); margin-top:0.35rem;">${product.nombreProducto}</div>
-                <div class="text-muted" style="margin-top:0.35rem;">Stock actual: <strong>${formattedCurrent} ${isWeightedWastageProduct(product.esPesable) ? 'Kg' : 'un.'}</strong></div>
+        <div style="display:grid; gap:1.25rem;">
+            <div class="glass-panel" style="padding:1.25rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; box-shadow: none;">
+                <div class="text-muted" style="font-size:0.75rem; text-transform:uppercase; letter-spacing:0.08em; font-weight:600; color: #64748b;">Producto seleccionado</div>
+                <div style="font-size:1.15rem; font-weight:800; color:#1e293b; margin-top:0.35rem;">${product.nombreProducto}</div>
+                <div style="margin-top:0.5rem; font-size: 0.9rem; color: #475569;">Stock actual: <strong style="color: #1e293b; font-weight: 700;">${formattedCurrent} ${isWeightedWastageProduct(product.esPesable) ? 'Kg' : 'un.'}</strong></div>
             </div>
 
             <div class="form-group" style="margin:0;">
-                <label>Cantidad a restar</label>
-                <input type="number" id="merma-lost-qty" class="form-control" placeholder="${isWeightedWastageProduct(product.esPesable) ? '0.000' : '0'}" step="${isWeightedWastageProduct(product.esPesable) ? '0.001' : '1'}" min="0">
-                <div id="merma-preview-remain" class="text-muted" style="margin-top:0.5rem;">Restante: -</div>
+                <label style="font-weight: 600; color: #475569; margin-bottom: 0.5rem; display: block; font-size: 0.9rem;">Cantidad a restar</label>
+                <input type="number" id="merma-lost-qty" class="form-control" placeholder="${isWeightedWastageProduct(product.esPesable) ? '0.000' : '0'}" step="${isWeightedWastageProduct(product.esPesable) ? '0.001' : '1'}" min="0" style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0.75rem 1rem; font-weight: 600; font-size: 0.95rem; height: auto;">
+                <div id="merma-preview-remain" class="text-muted" style="margin-top:0.5rem; font-size: 0.85rem; font-weight: 500;">Restante: -</div>
             </div>
 
             <div class="form-group" style="margin:0;">
-                <label>Motivo</label>
-                <select id="merma-reason" class="form-control">
-                    <option value="MERMA_ROTURA">Rotura o dano de empaque/producto</option>
-                    <option value="MERMA_VENCIMIENTO">Producto vencido</option>
-                    <option value="MERMA_ROBO">Robo, hurto o extravio</option>
-                    <option value="OTRO">Diferencia de inventario</option>
-                </select>
+                <label style="font-weight: 600; color: #475569; margin-bottom: 0.5rem; display: block; font-size: 0.9rem;">Motivo</label>
+                <div style="position: relative;">
+                    <select id="merma-reason" class="form-control" style="appearance: none; -webkit-appearance: none; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 10px; padding: 0.75rem 2.5rem 0.75rem 1rem; font-weight: 600; font-size: 0.95rem; width: 100%; color: #1e293b; cursor: pointer; outline: none; transition: all 0.2s; position: relative;">
+                        <option value="MERMA_ROTURA">Rotura o daño de empaque/producto</option>
+                        <option value="MERMA_VENCIMIENTO">Producto vencido</option>
+                        <option value="MERMA_ROBO">Robo, hurto o extravío</option>
+                        <option value="OTRO">Diferencia de inventario</option>
+                    </select>
+                    <i class="bi bi-chevron-down" style="position: absolute; right: 1rem; top: 50%; transform: translateY(-50%); color: #64748b; pointer-events: none; z-index: 2;"></i>
+                </div>
             </div>
         </div>
     `;

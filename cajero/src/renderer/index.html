@@ -534,6 +534,45 @@
                                     <option value="80mm">Ticket 80mm</option>
                                     <option value="58mm">Ticket 58mm</option>
                                 </select>
+
+                                <div class="printer-margin-visualizer" style="margin-top: 1.5rem; background: #f8fafc; padding: 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+                                        <label class="input-label" for="printer-margin-slider" style="margin: 0;">Ajuste de margen izquierdo</label>
+                                        <span id="printer-margin-value-display" style="font-size: 0.85rem; font-weight: 700; color: #3b82f6; background: rgba(59,130,246,0.1); padding: 0.2rem 0.5rem; border-radius: 4px;">0 px</span>
+                                    </div>
+                                    <input type="range" id="printer-margin-slider" min="-100" max="100" value="0" style="width: 100%; cursor: pointer;">
+                                    
+                                    <div style="display: flex; justify-content: center; margin-top: 1rem;">
+                                        <!-- Paper representation -->
+                                        <div style="width: 160px; height: 120px; background: white; border: 1px solid #cbd5e1; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); position: relative; overflow: hidden; display: flex; flex-direction: column;">
+                                            <div style="height: 12px; border-bottom: 1px dashed #cbd5e1; background: #f1f5f9; display: flex; align-items: center; justify-content: center;"><span style="font-size: 0.4rem; color: #94a3b8;">Corte del papel</span></div>
+                                            <!-- Printable content area that moves -->
+                                            <div id="printer-visual-content" style="flex: 1; padding: 10px 8px; transition: padding-left 0.1s ease;">
+                                                <div style="width: 60%; height: 8px; background: #1e293b; margin-bottom: 8px; border-radius: 2px;"></div>
+                                                <div style="width: 80%; height: 4px; background: #94a3b8; margin-bottom: 4px; border-radius: 1px;"></div>
+                                                <div style="width: 75%; height: 4px; background: #94a3b8; margin-bottom: 12px; border-radius: 1px;"></div>
+                                                
+                                                <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                                                    <div style="width: 40%; height: 4px; background: #64748b; border-radius: 1px;"></div>
+                                                    <div style="width: 20%; height: 4px; background: #64748b; border-radius: 1px;"></div>
+                                                </div>
+                                                <div style="display: flex; justify-content: space-between;">
+                                                    <div style="width: 50%; height: 4px; background: #64748b; border-radius: 1px;"></div>
+                                                    <div style="width: 15%; height: 4px; background: #64748b; border-radius: 1px;"></div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <p style="font-size: 0.75rem; color: #64748b; margin-top: 0.8rem; text-align: center;">Mueve el deslizador para ver cómo se desplazará el contenido en el papel físico.</p>
+                                </div>
+
+                                <input type="hidden" id="printer-margin-input" value="0">
+
+                                <label style="display: flex; align-items: center; gap: 0.5rem; margin-top: 1.5rem; cursor: pointer; background: #fff1f2; padding: 0.8rem; border-radius: 6px; border: 1px solid #ffe4e6;">
+                                    <input type="checkbox" id="printer-strict-mode-checkbox">
+                                    <span style="font-size: 0.85rem; font-weight: 600; color: #e11d48;">Activar compatibilidad estricta (Desactiva largo dinámico. Marca esto si la impresora imprime gigante)</span>
+                                </label>
+
                                 <div
                                     style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-top: 1rem;">
                                     <button class="secondary-btn" id="save-printer-settings-btn" type="button">Guardar
@@ -902,60 +941,21 @@
                                 }
                             </style>
 
-                            <article class="settings-card envelope-settings-card">
-                                <div class="envelope-settings-header">
-                                    <div>
-                                        <span class="header-kicker">Sobre de Boletas</span>
-                                        <h3>Configuración de Envío Automático</h3>
-                                    </div>
-                                    <div class="caf-status-badge" id="boleta-envelope-status">Sin pendientes</div>
-                                </div>
-                                
-                                <div class="envelope-stats-row">
-                                    <span>Boletas pendientes en el sobre:</span>
-                                    <strong id="boleta-envelope-count-label">0 boletas</strong>
-                                </div>
-
-                                <!-- Hidden fields to keep logic intact -->
-                                <div style="display: none;">
-                                    <select id="sii-boleta-env-mode">
-                                        <option value="time" selected>Solo Tiempo</option>
-                                    </select>
-                                    <input id="sii-boleta-env-limit" type="number" value="999">
-                                </div>
-
-                                <div style="margin-bottom: 1rem;">
-                                    <label class="input-label" for="sii-boleta-env-minutes">Enviar sobre automáticamente cada (Minutos)</label>
-                                    <input class="input-control" id="sii-boleta-env-minutes" type="number" min="1" placeholder="60">
-                                </div>
-
-                                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.8rem; margin-top: 1.5rem;">
-                                    <button class="primary-btn" id="save-boleta-env-settings-btn" type="button">Guardar configuración</button>
-                                    <button class="secondary-btn" id="force-boleta-envelope-btn" type="button">Forzar envío del sobre ahora</button>
-                                </div>
-                            </article>
-
-                            <article class="settings-card" style="padding: 1.5rem;">
+                                            <article class="settings-card" style="padding: 1.5rem;">
                                 <div class="dte-queue-header">
                                     <div class="dte-queue-title">
-                                        <span class="header-kicker">Conexión Directa SII</span>
-                                        <h3>Boletas Pendientes de Envío</h3>
+                                        <span class="header-kicker">SII - Envío Directo</span>
+                                        <h3>Boletas Pendientes en el Sobre Actual</h3>
                                     </div>
-                                    <div id="simpleapi-status-card" class="api-status-card status-offline">
-                                        <span id="simpleapi-status-dot" style="width: 8px; height: 8px; border-radius: 50%; display: inline-block; transition: all 0.3s ease;"></span>
-                                        <span id="simpleapi-status-text" style="transition: all 0.3s ease;">Verificando SII...</span>
-                                    </div>
+                                    <div id="boleta-envelope-status" class="caf-status-badge">Sin pendientes</div>
                                 </div>
 
                                 <div class="dte-queue-actions">
-                                    <button class="btn-check-conn" id="simpleapi-check-status-btn" type="button">
-                                        <i class="bi bi-arrow-repeat"></i> Verificar Conexión
+                                    <button class="primary-btn" id="force-boleta-envelope-btn" type="button" style="display: inline-flex; align-items: center; gap: 0.5rem;">
+                                        <i class="bi bi-cloud-arrow-up"></i> Enviar Sobre al SII
                                     </button>
-                                    <button class="btn-retry-all" id="dte-queue-retry-all-btn" type="button">
-                                        <i class="bi bi-cloud-arrow-up"></i> Reintentar Envío de Todo
-                                    </button>
-                                    <button class="btn-clear-queue" id="dte-queue-clear-btn" type="button">
-                                        <i class="bi bi-trash"></i> Limpiar Cola
+                                    <button class="btn-clear-queue" id="dte-queue-clear-btn" type="button" style="display: inline-flex; align-items: center; gap: 0.5rem; background: rgba(239, 68, 68, 0.05); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.1); padding: 0.6rem 1rem; border-radius: 8px; cursor: pointer;">
+                                        <i class="bi bi-trash"></i> Vaciar Sobre
                                     </button>
                                 </div>
 
@@ -963,18 +963,15 @@
                                     <table class="dte-queue-table">
                                         <thead>
                                             <tr>
-                                                <th>ID Venta</th>
                                                 <th>Tipo Doc</th>
                                                 <th>Folio</th>
-                                                <th>Monto</th>
-                                                <th>Fecha</th>
-                                                <th style="text-align: right;">Acción</th>
+                                                <th>Fecha Emisión</th>
                                             </tr>
                                         </thead>
                                         <tbody id="dte-queue-table-body">
                                             <tr>
-                                                <td colspan="6" style="padding: 2.5rem; text-align: center; color: var(--text-soft); font-weight: 500;">
-                                                    No hay boletas pendientes de envío.
+                                                <td colspan="3" style="padding: 2.5rem; text-align: center; color: var(--text-soft); font-weight: 500;">
+                                                    Cargando boletas...
                                                 </td>
                                             </tr>
                                         </tbody>

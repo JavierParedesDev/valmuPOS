@@ -375,7 +375,7 @@ async function renderDashboard() {
                         <h3 class="text-base font-bold">Registrar Ingreso</h3>
                         <p class="text-xs text-white/70 mt-1">Carga factura y suma stock</p>
                     </button>
-                    <button class="group bg-gradient-to-br from-purple-500 to-violet-600 rounded-2xl p-5 text-left text-white shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all" onclick="openTransferForm()">
+                    <button class="group bg-gradient-to-br from-purple-500 to-violet-600 rounded-2xl p-5 text-left text-white shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all" onclick="adminNavigateToPage('transfer-create')">
                         <div class="flex items-center justify-between mb-3">
                             <div class="h-10 w-10 rounded-xl bg-white/20 flex items-center justify-center text-xl">
                                 <i class="bi bi-arrow-left-right"></i>
@@ -501,72 +501,26 @@ async function renderDashboard() {
                 dashboardRefreshTimer = null;
             }
         }, DASHBOARD_LIVE_REFRESH_MS);
-
-        return;
+        return;
     }
 
-    // Vista Admin (Diseño Moderno)
+    // Vista Admin (Diseño Orientado a Datos)
     contentArea.innerHTML = `
-        <div class="dashboard-v2-container flex flex-col gap-8" style="padding: 0.5rem 0;">
+        <div class="dashboard-v2-container flex flex-col gap-6" style="padding: 0.5rem 0;">
             
-            <!-- ⭐ HERO SECTION (Propaganda) -->
-            <div class="relative overflow-hidden rounded-3xl bg-gradient-to-br from-orange-600 via-orange-500 to-red-500 p-8 text-white shadow-xl">
-                <!-- Abstract patterns -->
-                <div class="absolute top-0 right-0 -mr-20 -mt-20 h-64 w-64 rounded-full bg-white/10 blur-3xl"></div>
-                <div class="absolute bottom-0 left-0 -ml-10 -mb-10 h-40 w-40 rounded-full bg-black/5 blur-2xl"></div>
-                
-                <div class="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
-                    <div class="flex-1 text-center md:text-left">
-                        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-[10px] font-black uppercase tracking-widest mb-4">
-                            <span class="flex h-2 w-2 rounded-full bg-white animate-pulse"></span>
-                            Sistema Activo v2.1.3
-                        </div>
-                        <h2 class="text-4xl md:text-5xl font-black mb-4 leading-[1.1] tracking-tight">Potencia tu Negocio con <span class="text-orange-100">Valmu</span></h2>
-                        <p class="text-orange-50 text-lg mb-8 max-w-lg opacity-90 font-medium leading-snug">Gestiona inventario, ventas y publicidad desde un solo lugar. Haz crecer tu marca con herramientas de nivel industrial.</p>
-                        
-                        <div class="flex flex-wrap items-center justify-center md:justify-start gap-4">
-                            <button onclick="window.adminNavigateToPage('advertising')" class="px-8 py-3.5 bg-white text-orange-600 rounded-2xl font-black text-sm shadow-2xl hover:scale-105 active:scale-95 transition-all flex items-center gap-2">
-                                <i class="bi bi-megaphone-fill"></i> Crear Publicidad
-                            </button>
-                            <button onclick="window.adminNavigateToPage('finances')" class="px-8 py-3.5 bg-black/20 backdrop-blur-md border border-white/30 text-white rounded-2xl font-black text-sm hover:bg-black/30 transition-all">
-                                Explorar Finanzas
-                            </button>
-                        </div>
-                    </div>
+            <!-- Encabezado Limpio -->
+            <div class="flex items-center justify-between mb-2">
+                <div>
+                    <h2 class="text-3xl font-black text-gray-900 tracking-tight">Resumen General</h2>
+                    <p class="text-gray-500 text-sm mt-1">Indicadores clave de rendimiento en tiempo real.</p>
                 </div>
-            </div>
-
-            <!-- 📖 GUÍA DEL ECOSISTEMA (Como se hace) -->
-            <div class="animate-fade-in mb-4">
-                <div class="flex items-center gap-3 mb-6">
-                    <div class="h-8 w-1 bg-orange-600 rounded-full"></div>
-                    <h3 class="text-xl font-black text-gray-900 tracking-tight">¿Cómo funciona el ecosistema Valmu?</h3>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <!-- Paso 1 -->
-                    <div class="group bg-white rounded-3xl p-6 border border-gray-100 shadow-sm hover:shadow-md hover:border-orange-100 transition-all">
-                        <div class="h-12 w-12 rounded-2xl bg-orange-50 text-orange-600 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
-                            <i class="bi bi-pc-display"></i>
-                        </div>
-                        <h4 class="font-black text-gray-900 mb-2">1. Gestión Admin</h4>
-                        <p class="text-gray-500 text-xs leading-relaxed">Cargas tus productos, ajustas stock e imágenes. Todo sincronizado en la nube para tus sucursales.</p>
-                    </div>
-                    <!-- Paso 2 -->
-                    <div class="group bg-white rounded-3xl p-6 border border-gray-100 shadow-sm hover:shadow-md hover:border-blue-100 transition-all">
-                        <div class="h-12 w-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
-                            <i class="bi bi-cart4"></i>
-                        </div>
-                        <h4 class="font-black text-gray-900 mb-2">2. Punto de Venta</h4>
-                        <p class="text-gray-500 text-xs leading-relaxed">Tus cajeros usan la App Cajero para vender rápido. Emite boletas SII y gestiona el flujo de caja diario.</p>
-                    </div>
-                    <!-- Paso 3 -->
-                    <div class="group bg-white rounded-3xl p-6 border border-gray-100 shadow-sm hover:shadow-md hover:border-purple-100 transition-all">
-                        <div class="h-12 w-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center text-2xl mb-4 group-hover:scale-110 transition-transform">
-                            <i class="bi bi-aspect-ratio"></i>
-                        </div>
-                        <h4 class="font-black text-gray-900 mb-2">3. Pantalla Cliente</h4>
-                        <p class="text-gray-500 text-xs leading-relaxed">Impulsa ventas mostrando tus mejores imágenes y el detalle de compra al cliente en tiempo real.</p>
-                    </div>
+                <div class="flex gap-2">
+                    <button onclick="window.adminNavigateToPage('advertising')" class="btn btn-ghost btn-sm text-orange-600 border-orange-100 hover:bg-orange-50 hover:border-orange-200">
+                        <i class="bi bi-megaphone"></i> Nueva Publicidad
+                    </button>
+                    <button onclick="window.adminNavigateToPage('finances')" class="btn btn-primary btn-sm">
+                        <i class="bi bi-coin"></i> Finanzas
+                    </button>
                 </div>
             </div>
 

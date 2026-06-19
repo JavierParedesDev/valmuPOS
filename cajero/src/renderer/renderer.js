@@ -573,21 +573,7 @@ function bindSettings() {
     document.getElementById('save-boleta-env-settings-btn')?.addEventListener('click', saveBoletaEnvelopeSettings);
     document.getElementById('upload-caf39-btn')?.addEventListener('click', () => uploadCafFile({ type: 39 }));
     document.getElementById('upload-caf33-btn')?.addEventListener('click', () => uploadCafFile({ type: 33 }));
-    document.getElementById('force-boleta-envelope-btn')?.addEventListener('click', async () => {
-        if (!boletaEnvelopeState.items.length) {
-            setSiiSettingsStatus('No hay boletas pendientes para enviar.');
-            return;
-        }
 
-        try {
-            await forceSendPendingBoletaEnvelope({
-                reason: 'Envio forzado desde ajustes',
-                notifyUser: true
-            });
-        } catch (_error) {
-            // El mensaje ya se reporta dentro del flujo de envio.
-        }
-    });
 
     bindSettingsTabs();
 }
@@ -4693,6 +4679,8 @@ Firma: ________________________
     await window.cajeroAPI.printReceipt({
         printerName,
         printerPaper,
+        printerMargin: getSessionValue(SESSION_KEYS.printerMargin) || 0,
+        printerStrictMode: getSessionValue(SESSION_KEYS.printerStrictMode) === 'true',
         receipt: {
             preview,
             documentType: 'RETIRO DE CAJA',
@@ -5020,6 +5008,8 @@ Firma Cajero: __________________
     await window.cajeroAPI.printReceipt({
         printerName,
         printerPaper,
+        printerMargin: getSessionValue(SESSION_KEYS.printerMargin) || 0,
+        printerStrictMode: getSessionValue(SESSION_KEYS.printerStrictMode) === 'true',
         receipt: {
             preview: summaryText,
             documentType: 'CIERRE DE CAJA',
@@ -5031,6 +5021,8 @@ Firma Cajero: __________________
 function setLoginStatus(message) {
     setLoginStatusView(message);
 }
+
+
 
 function hydrateSettingsForm() {
     const settings = getSettingsSnapshot({
@@ -5047,6 +5039,36 @@ function hydrateSettingsForm() {
 
     if (printerPaperSelect) {
         printerPaperSelect.value = settings.printerPaper;
+    }
+
+    const printerMarginInput = document.getElementById('printer-margin-input');
+    const printerMarginSlider = document.getElementById('printer-margin-slider');
+    const printerMarginValueDisplay = document.getElementById('printer-margin-value-display');
+    const printerVisualContent = document.getElementById('printer-visual-content');
+    const printerStrictModeCheckbox = document.getElementById('printer-strict-mode-checkbox');
+
+    if (printerMarginInput) {
+        printerMarginInput.value = settings.printerMargin;
+    }
+    
+    if (printerMarginSlider && printerMarginValueDisplay && printerVisualContent && printerMarginInput) {
+        // Inicializar el slider
+        const initialMargin = Number(settings.printerMargin) || 0;
+        printerMarginSlider.value = initialMargin;
+        printerMarginValueDisplay.textContent = `${initialMargin} px`;
+        printerVisualContent.style.transform = `translateX(${initialMargin * 0.3}px)`;
+
+        // Event listener
+        printerMarginSlider.addEventListener('input', (e) => {
+            const val = e.target.value;
+            printerMarginInput.value = val;
+            printerMarginValueDisplay.textContent = `${val} px`;
+            printerVisualContent.style.transform = `translateX(${val * 0.3}px)`;
+        });
+    }
+
+    if (printerStrictModeCheckbox) {
+        printerStrictModeCheckbox.checked = settings.printerStrictMode;
     }
 
     if (customerDisplayEnabledInput) {
@@ -5524,28 +5546,79 @@ async function sendBoletaEnvelopeBatch({ batch, config, reason = 'manual' }) {
     if (!config.certFilename) throw new Error('Falta certificado digital en Ajustes > SII.');
     if (!config.certPassword) throw new Error('Falta contrasena del certificado en Ajustes > SII.');
     if (!config.rutEmisor) throw new Error('Falta RUT emisor en Ajustes > SII.');
+    if (!config.apiKey) throw new Error('Falta API Key de Simple API en Ajustes > SII.');
 
-    const result = await window.cajeroAPI.directSendBoletaEnvelope({
-        dtes: batch.items,
-        config
-    });
+    const token = await getSimpleApiToken(config.apiKey);
+    const certBase64 = await window.cajeroAPI.readLocalCert(config.certFilename || 'certificado.pfx');
+    if (!certBase64) throw new Error('No se pudo leer el archivo de certificado local.');
+    const certBlob = b64toBlob(certBase64, 'application/x-pkcs12');
+    const rutEnvia = config.rutEnvia || config.rutEmisor;
 
-    if (!result || !result.success) {
-        throw new Error(result?.error || 'Error enviando sobre de boletas directo al SII.');
-    }
-
-    const sendPayload = {
-        TrackId: result.trackId,
-        status: result.status,
-        responseText: result.responseText
+    const wrapPayload = {
+        Certificado: { Rut: rutEnvia, Password: config.certPassword },
+        Tipo: 2,
+        Ambiente: config.siiAmbiente === '2' ? 1 : 0,
+        Caratula: {
+            RutEnvia: rutEnvia, RutEmisor: config.rutEmisor, RutReceptor: '60803000-K',
+            NumeroResolucion: Number(config.resolucionNumero || 80),
+            FechaResolucion: config.resolucionFecha || '2014-08-22'
+        },
+        certificado: { rut: rutEnvia, password: config.certPassword },
+        tipo: 2,
+        ambiente: config.siiAmbiente === '2' ? 1 : 0,
+        caratula: {
+            rutEnvia: rutEnvia, rutEmisor: config.rutEmisor, rutReceptor: '60803000-K',
+            numeroResolucion: Number(config.resolucionNumero || 80),
+            fechaResolucion: config.resolucionFecha || '2014-08-22'
+        }
     };
 
-    addAuditEntry({
-        type: 'success',
-        title: 'Sobre de boletas enviado',
-        detail: `${batch.items.length} boleta${batch.items.length === 1 ? '' : 's'} enviadas al SII${sendPayload.TrackId ? ` · Track ID ${sendPayload.TrackId}` : ''}${reason ? ` · ${reason}` : ''}.`
-    });
+    const wrapFormData = new FormData();
+    wrapFormData.append('input', JSON.stringify(wrapPayload));
+    wrapFormData.append('files', certBlob, 'certificado.pfx');
+    for (const item of batch.items) {
+        wrapFormData.append('files', new Blob([item.xmlContent], { type: 'text/xml' }), 'dte_' + item.folio + '.xml');
+    }
 
+    const wrapResponse = await fetch('https://api.simpleapi.cl/api/v1/envio/generar', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: wrapFormData
+    });
+    const wrapBuffer = await wrapResponse.arrayBuffer();
+    if (!wrapResponse.ok) throw new Error('Error generando sobre SII (SimpleAPI): ' + new TextDecoder('utf-8').decode(wrapBuffer));
+
+    const sendFormData = new FormData();
+    sendFormData.append('input', JSON.stringify({
+        Tipo: 2,
+        Ambiente: config.siiAmbiente === '2' ? 1 : 0,
+        RutCompany: config.rutEmisor,
+        RutEmpresa: config.rutEmisor,
+        RutEmisor: config.rutEmisor,
+        RutEnvia: rutEnvia,
+        Certificado: { Rut: rutEnvia, Password: config.certPassword },
+        Caratula: { RutEnvia: rutEnvia, RutEmisor: config.rutEmisor },
+        tipo: 2,
+        ambiente: config.siiAmbiente === '2' ? 1 : 0,
+        rutCompany: config.rutEmisor,
+        rutEmpresa: config.rutEmisor,
+        rutEmisor: config.rutEmisor,
+        rutEnvia: rutEnvia,
+        certificado: { rut: rutEnvia, password: config.certPassword },
+        caratula: { rutEnvia: rutEnvia, rutEmisor: config.rutEmisor }
+    }));
+    sendFormData.append('files', certBlob, 'certificado.pfx');
+    sendFormData.append('files', new Blob([wrapBuffer], { type: 'text/xml' }), 'envio.xml');
+
+    const sendResponse = await fetch('https://api.simpleapi.cl/api/v1/envio/enviar', {
+        method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: sendFormData
+    });
+    const sendText = await sendResponse.text();
+    if (!sendResponse.ok) throw new Error('Error enviando al SII (SimpleAPI): ' + sendText);
+
+    let sendPayload = null;
+    try { sendPayload = JSON.parse(sendText); } catch (_) { sendPayload = null; }
+    if (!sendPayload || (!sendPayload.TrackId && !sendPayload.trackId)) throw new Error('No se recibio Track ID del SII. Respuesta: ' + sendText);
+
+    addAuditEntry({ type: 'success', title: 'Sobre enviado (SimpleAPI)', detail: batch.items.length + ' boletas enviadas al SII - Track ID ' + (sendPayload.TrackId || sendPayload.trackId) });
     return sendPayload;
 }
 
@@ -5872,59 +5945,28 @@ async function generateAndSendDte({ cart, customer, documentType, snapshot }) {
     try {
         let xmlContentString;
         let bufferDte;
-        if (isBoleta) {
-            const emisor = {
-                rut: config.rutEmisor,
-                razonSocial: config.razonSocial,
-                giro: config.giro,
-                direccion: config.direccion,
-                comuna: config.comuna,
-                ciudad: config.ciudad
-            };
-            const mappedDetalles = items.map((item) => ({
-                nombre: item.name,
-                descripcion: item.name,
-                quantity: item.quantity,
-                unidadMedida: 'un',
-                precio: Number(item.unitPrice.toFixed(4)),
-                montoItem: item.lineTotal
-            }));
-            const directResult = await window.cajeroAPI.directGenerateBoletaXml({
-                emisor,
-                receptor: receiver,
-                detalles: mappedDetalles,
-                folio,
-                fechaEmis: new Date().toISOString().slice(0, 10),
-                config
-            });
-            if (!directResult || !directResult.success) {
-                throw new Error(`Error generando boleta nativa: ${directResult?.error}`);
-            }
-            xmlContentString = directResult.xml;
-        } else {
-            const token = await getSimpleApiToken(config.apiKey);
-            const generateResponse = await fetchWithTimeout('https://api.simpleapi.cl/api/v1/dte/generar', {
-                method: 'POST',
-                headers: { Authorization: `Bearer ${token}` },
-                body: formData,
-                timeout: 20000
-            });
+        const token = await getSimpleApiToken(config.apiKey);
+        const generateResponse = await fetchWithTimeout('https://api.simpleapi.cl/api/v1/dte/generar', {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: formData,
+            timeout: 20000
+        });
 
-            const generateClone = generateResponse.clone();
-            const generateText = await generateResponse.text();
-            if (!generateResponse.ok) {
-                throw new Error(`Error generando DTE (${generateResponse.status}): ${generateText}`);
-            }
-
-            bufferDte = await generateClone.arrayBuffer();
-            xmlContentString = new TextDecoder('utf-8').decode(bufferDte);
-
-            await window.cajeroAPI.saveXml({
-                filename: `DTE_${tipoDte}_Folio_${folio}.xml`,
-                data: xmlContentString,
-                folder: tipoDte === 39 ? 'boletas' : 'facturas'
-            });
+        const generateClone = generateResponse.clone();
+        const generateText = await generateResponse.text();
+        if (!generateResponse.ok) {
+            throw new Error(`Error generando DTE (${generateResponse.status}): ${generateText}`);
         }
+
+        bufferDte = await generateClone.arrayBuffer();
+        xmlContentString = new TextDecoder('utf-8').decode(bufferDte);
+
+        await window.cajeroAPI.saveXml({
+            filename: `DTE_${tipoDte}_Folio_${folio}.xml`,
+            data: xmlContentString,
+            folder: tipoDte === 39 ? 'boletas' : 'facturas'
+        });
 
         if (isBoleta) {
             const shouldFlushPreviousBatch = boletaEnvelopeMode !== 'count'
@@ -6142,18 +6184,40 @@ async function loadPrinterOptions() {
     }
 }
 
+function showToast(message, isError = false) {
+    let toast = document.getElementById('global-toast');
+    if (!toast) {
+        toast = document.createElement('div');
+        toast.id = 'global-toast';
+        toast.className = 'toast-notification';
+        document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.style.backgroundColor = isError ? '#ef4444' : '#1e293b';
+    toast.classList.add('show');
+    
+    if (window.toastTimeout) clearTimeout(window.toastTimeout);
+    window.toastTimeout = setTimeout(() => {
+        toast.classList.remove('show');
+    }, 3000);
+}
+
 async function testPrinter() {
     if (typeof window.cajeroAPI?.printReceipt !== 'function') {
-        setBackendStatus('El servicio de impresión no está disponible.');
+        showToast('El servicio de impresión no está disponible.', true);
         return;
     }
 
     const printerSelect = document.getElementById('printer-select');
     const paperSelect = document.getElementById('printer-paper-select');
+    const printerMarginInput = document.getElementById('printer-margin-input');
+    const printerStrictModeCheckbox = document.getElementById('printer-strict-mode-checkbox');
 
     const payload = {
         printerName: printerSelect?.value || 'Predeterminada del sistema',
         printerPaper: paperSelect?.value || '80mm',
+        printerMargin: printerMarginInput?.value || 0,
+        printerStrictMode: printerStrictModeCheckbox?.checked || false,
         receipt: {
             documentType: 'Ticket de Prueba',
             dateLabel: new Date().toLocaleString(),
@@ -6180,11 +6244,14 @@ async function testPrinter() {
         }
     };
 
+    showToast('Imprimiendo de prueba...');
     setBackendStatus('Enviando ticket de prueba...');
     const result = await window.cajeroAPI.printReceipt(payload);
     if (result && result.ok) {
+        showToast(`Impresión exitosa en ${result.printerName || 'impresora'}`);
         setBackendStatus(`Prueba exitosa en ${result.printerName || 'impresora'}`);
     } else {
+        showToast(`Error: ${result?.error || 'Desconocido'}`, true);
         setBackendStatus(`Error en prueba: ${result?.error || 'Desconocido'}`);
     }
 }
@@ -6192,10 +6259,14 @@ async function testPrinter() {
 function savePrinterSettings() {
     const printerSelect = document.getElementById('printer-select');
     const printerPaperSelect = document.getElementById('printer-paper-select');
+    const printerMarginInput = document.getElementById('printer-margin-input');
+    const printerStrictModeCheckbox = document.getElementById('printer-strict-mode-checkbox');
     const statusLabel = document.getElementById('backend-status');
     const settings = savePrinterSettingsSnapshot({
         printerName: printerSelect?.value,
         printerPaper: printerPaperSelect?.value,
+        printerMargin: printerMarginInput?.value,
+        printerStrictMode: printerStrictModeCheckbox?.checked,
         setSessionValue,
         sessionKeys: SESSION_KEYS
     });
@@ -6203,6 +6274,8 @@ function savePrinterSettings() {
     if (statusLabel) {
         statusLabel.textContent = `Impresora guardada: ${settings.printerName}`;
     }
+    
+    showToast('Configuración guardada exitosamente');
 }
 
 function updateCustomerDisplayStatusLabel(message) {
@@ -6941,8 +7014,33 @@ function handleDispatchCarrierChange(event) {
 }
 
 function handleDispatchSearchInput(event) {
-    dispatchState.searchQuery = String(event.target?.value || '').trim();
-    renderDispatchSection();
+    const term = String(event.target?.value || '').trim();
+    dispatchState.searchQuery = term;
+
+    if (!term) {
+        clearAutoScanTimer();
+        renderDispatchSearchResults([]);
+        return;
+    }
+
+    void ensureFreshCatalogForSearch().then((refreshed) => {
+        if (!refreshed) {
+            return;
+        }
+
+        const activeInput = document.getElementById('dispatch-search-input');
+        const activeTerm = String(activeInput?.value || '').trim();
+        if (!activeTerm || activeTerm !== term) {
+            return;
+        }
+
+        renderDispatchSearchResults(filterDispatchProducts(catalogState.products, activeTerm, normalizeCatalogText).slice(0, 6));
+        renderCatalogStatus();
+    });
+
+    scheduleAutoScan(term, event.target);
+
+    renderDispatchSearchResults(filterDispatchProducts(catalogState.products, term, normalizeCatalogText).slice(0, 6));
 }
 
 function addFirstDispatchSearchResult() {
@@ -7747,36 +7845,6 @@ async function processQueuedDte(queueItem) {
 
     let xmlContentString;
     let bufferDte;
-    if (isBoleta) {
-        const emisor = {
-            rut: config.rutEmisor,
-            razonSocial: config.razonSocial,
-            giro: config.giro,
-            direccion: config.direccion,
-            comuna: config.comuna,
-            ciudad: config.ciudad
-        };
-        const mappedDetalles = items.map((item) => ({
-            nombre: item.name,
-            descripcion: item.name,
-            quantity: item.quantity,
-            unidadMedida: 'un',
-            precio: Number(item.unitPrice.toFixed(4)),
-            montoItem: item.lineTotal
-        }));
-        const directResult = await window.cajeroAPI.directGenerateBoletaXml({
-            emisor,
-            receptor: receiver,
-            detalles: mappedDetalles,
-            folio: queueItem.folio,
-            fechaEmis: new Date(queueItem.createdAt).toISOString().slice(0, 10),
-            config
-        });
-        if (!directResult || !directResult.success) {
-            throw new Error(`Error generando boleta nativa en cola: ${directResult?.error}`);
-        }
-        xmlContentString = directResult.xml;
-    } else {
         const token = await getSimpleApiToken(config.apiKey);
         const generateResponse = await fetchWithTimeout('https://api.simpleapi.cl/api/v1/dte/generar', {
             method: 'POST',
@@ -7799,7 +7867,6 @@ async function processQueuedDte(queueItem) {
             data: xmlContentString,
             folder: queueItem.tipoDte === 39 ? 'boletas' : 'facturas'
         });
-    }
 
     if (queueItem.saleId) {
         await requestBackendJson({
@@ -7825,16 +7892,21 @@ async function processQueuedDte(queueItem) {
     } else {
         const rutEnvia = config.rutEnvia || config.rutEmisor;
         const wrapPayload = {
-            Certificado: {
-                Rut: rutEnvia,
-                Password: config.certPassword
-            },
+            Certificado: { Rut: rutEnvia, Password: config.certPassword },
+            Tipo: 1,
+            Ambiente: config.siiAmbiente === '2' ? 1 : 0,
             Caratula: {
-                RutEnvia: rutEnvia,
-                RutEmisor: config.rutEmisor,
-                RutReceptor: '60803000-K',
+                RutEnvia: rutEnvia, RutEmisor: config.rutEmisor, RutReceptor: '60803000-K',
                 NumeroResolucion: Number(config.resolucionNumero || DEFAULT_SII_EMISOR.resolucionNumero),
                 FechaResolucion: config.resolucionFecha || DEFAULT_SII_EMISOR.resolucionFecha
+            },
+            certificado: { rut: rutEnvia, password: config.certPassword },
+            tipo: 1,
+            ambiente: config.siiAmbiente === '2' ? 1 : 0,
+            caratula: {
+                rutEnvia: rutEnvia, rutEmisor: config.rutEmisor, rutReceptor: '60803000-K',
+                numeroResolucion: Number(config.resolucionNumero || DEFAULT_SII_EMISOR.resolucionNumero),
+                fechaResolucion: config.resolucionFecha || DEFAULT_SII_EMISOR.resolucionFecha
             }
         };
 
@@ -7855,10 +7927,20 @@ async function processQueuedDte(queueItem) {
             sendFormData.append('input', JSON.stringify({
                 Tipo: 1,
                 Ambiente: config.siiAmbiente === '2' ? 1 : 0,
-                Certificado: {
-                    Rut: rutEnvia,
-                    Password: config.certPassword
-                }
+                RutCompany: config.rutEmisor,
+                RutEmpresa: config.rutEmisor,
+                RutEmisor: config.rutEmisor,
+                RutEnvia: rutEnvia,
+                Certificado: { Rut: rutEnvia, Password: config.certPassword },
+                Caratula: { RutEnvia: rutEnvia, RutEmisor: config.rutEmisor },
+                tipo: 1,
+                ambiente: config.siiAmbiente === '2' ? 1 : 0,
+                rutCompany: config.rutEmisor,
+                rutEmpresa: config.rutEmisor,
+                rutEmisor: config.rutEmisor,
+                rutEnvia: rutEnvia,
+                certificado: { rut: rutEnvia, password: config.certPassword },
+                caratula: { rutEnvia: rutEnvia, rutEmisor: config.rutEmisor }
             }));
             sendFormData.append('files', certBlob, 'certificado.pfx');
             sendFormData.append('files', new Blob([wrapBuffer], { type: 'text/xml' }), 'envio.xml');
@@ -7889,6 +7971,18 @@ async function processQueuedDte(queueItem) {
             }
         }
     }
+
+    // Call /api/folios/marcar-usado endpoint to synchronize database control folio
+    console.log(`[Reconciliation] Synchronizing folio usage for DTE ${queueItem.tipoDte} Folio ${queueItem.folio} with backend...`);
+    await requestBackendJson({
+        endpoint: '/folios/marcar-usado',
+        method: 'POST',
+        body: {
+            tipoDte: Number(queueItem.tipoDte),
+            folio: Number(queueItem.folio)
+        }
+    });
+    console.log(`[Reconciliation] Successfully marked folio ${queueItem.folio} as used in remote database.`);
 }
 
 async function checkSimpleApiStatus() {
@@ -7940,13 +8034,13 @@ function renderDteQueueView() {
     const body = document.getElementById('dte-queue-table-body');
     if (!body) return;
 
-    const queue = getDteQueue();
+    const queue = boletaEnvelopeState.items || [];
 
     if (!queue.length) {
         body.innerHTML = `
             <tr>
-                <td colspan="6" style="padding: 2.5rem; text-align: center; color: var(--text-soft); font-weight: 500;">
-                    No hay boletas pendientes de envío.
+                <td colspan="3" style="padding: 2.5rem; text-align: center; color: var(--text-soft); font-weight: 500;">
+                    No hay boletas pendientes en el sobre.
                 </td>
             </tr>
         `;
@@ -7958,23 +8052,13 @@ function renderDteQueueView() {
         const tipoLabel = isBoleta
             ? `<span class="dte-type-badge type-boleta"><i class="bi bi-receipt"></i> Boleta</span>`
             : `<span class="dte-type-badge type-factura"><i class="bi bi-file-earmark-text"></i> Factura</span>`;
-        const formattedTotal = item.payload?.snapshot?.total 
-            ? `$${formatCurrency(item.payload.snapshot.total)}`
-            : 'N/A';
-        const dateLabel = formatDateTime(item.createdAt);
+        const dateLabel = item.fechaEmis || new Date().toLocaleDateString('es-CL');
 
         return `
             <tr>
-                <td><span class="sale-id-badge">#${item.saleId || 'Sin ID'}</span></td>
                 <td>${tipoLabel}</td>
                 <td><strong>${item.folio}</strong></td>
-                <td><span class="dte-amount">${formattedTotal}</span></td>
                 <td style="color: var(--text-soft); font-weight: 500;">${dateLabel}</td>
-                <td style="text-align: right;">
-                    <button class="btn-action-retry" onclick="processQueueItemManual('${item.id}')">
-                        <i class="bi bi-play-fill"></i> Reintentar
-                    </button>
-                </td>
             </tr>
         `;
     }).join('');
@@ -8011,7 +8095,7 @@ window.processQueueItemManual = async function(id) {
 };
 
 function startDteQueueWorker() {
-    const INTERVAL_MS = 15 * 60 * 1000; // Revisar cada 15 minutos
+    const INTERVAL_MS = 15 * 60 * 1000;
     setTimeout(processDteQueueBackground, 15 * 1000);
     setInterval(processDteQueueBackground, INTERVAL_MS);
 
@@ -8025,17 +8109,15 @@ async function processDteQueueBackground() {
     const queue = getDteQueue();
     if (!queue.length) return;
 
-    console.log(`[DTE Queue Worker] Starting processing of ${queue.length} pending DTEs.`);
-    
     const isOnline = await checkSimpleApiStatus();
     if (!isOnline) {
-        console.log('[DTE Queue Worker] SII is offline. Postponing queue processing.');
         return;
     }
 
+    console.log(`[DTE Queue Worker] Starting processing of ${queue.length} pending DTEs.`);
     for (const item of queue) {
         try {
-            console.log(`[DTE Queue Worker] Processing Folio ${item.folio} (Sale #${item.saleId}).`);
+            console.log(`[DTE Queue Worker] Processing Folio ${item.folio} (Sale #${item.saleId || 'N/A'}).`);
             await processQueuedDte(item);
             lastSimpleApiSuccess = true;
             void checkSimpleApiStatus();
@@ -8043,8 +8125,7 @@ async function processDteQueueBackground() {
             let currentQueue = getDteQueue();
             currentQueue = currentQueue.filter(x => x.id !== item.id);
             saveDteQueue(currentQueue);
-            
-            console.log(`[DTE Queue Worker] Folio ${item.folio} processed successfully.`);
+            console.log(`[DTE Queue Worker] Folio ${item.folio} processed and reconciled successfully.`);
         } catch (error) {
             lastSimpleApiSuccess = false;
             void checkSimpleApiStatus();
@@ -8053,9 +8134,7 @@ async function processDteQueueBackground() {
         }
     }
     
-    // Si se procesaron boletas, despachar el sobre inmediatamente
     if (boletaEnvelopeState && boletaEnvelopeState.items.length > 0) {
-        console.log(`[DTE Queue Worker] Flushing boleta envelope with ${boletaEnvelopeState.items.length} recovered items.`);
         try {
             await forceSendPendingBoletaEnvelope({ reason: 'Reconexión automática (Offline Queue)', notifyUser: false });
         } catch (e) {
@@ -8069,46 +8148,40 @@ async function processDteQueueBackground() {
 }
 
 function bindDteQueueSettings() {
-    const checkBtn = document.getElementById('simpleapi-check-status-btn');
-    const retryAllBtn = document.getElementById('dte-queue-retry-all-btn');
+    const forceSendBtn = document.getElementById('force-boleta-envelope-btn');
     const clearBtn = document.getElementById('dte-queue-clear-btn');
 
-    if (checkBtn) {
-        checkBtn.addEventListener('click', async () => {
-            showNotification({ type: 'info', message: 'Verificando estado de la conexión al SII...' });
-            lastSimpleApiSuccess = true;
-            await checkSimpleApiStatus();
-        });
-    }
-
-    if (retryAllBtn) {
-        retryAllBtn.addEventListener('click', async () => {
-            const queue = getDteQueue();
-            if (!queue.length) {
-                showNotification({ type: 'info', message: 'No hay boletas en cola.' });
+    if (forceSendBtn) {
+        forceSendBtn.addEventListener('click', async () => {
+            if (!boletaEnvelopeState.items.length) {
+                showNotification({ type: 'info', message: 'No hay boletas en el sobre para enviar.' });
                 return;
             }
-            showNotification({ type: 'info', message: 'Reintentando enviar todas las boletas de la cola...' });
-            retryAllBtn.disabled = true;
-            retryAllBtn.textContent = 'Procesando...';
+            showNotification({ type: 'info', message: 'Enviando sobre de boletas al SII...' });
+            forceSendBtn.disabled = true;
+            forceSendBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Enviando...';
             try {
-                await processDteQueueBackground();
-                showNotification({ type: 'success', message: 'Procesamiento de cola finalizado.' });
+                await forceSendPendingBoletaEnvelope({ reason: 'manual', notifyUser: true });
+                showNotification({ type: 'success', message: 'Sobre de boletas enviado correctamente.' });
             } catch (err) {
-                showNotification({ type: 'error', message: 'Hubo un error al reintentar: ' + err.message });
+                showNotification({ type: 'error', message: 'Hubo un error al enviar el sobre: ' + err.message });
             } finally {
-                retryAllBtn.disabled = false;
-                retryAllBtn.textContent = 'Reintentar Envío de Todo';
+                forceSendBtn.disabled = false;
+                forceSendBtn.innerHTML = '<i class="bi bi-cloud-arrow-up"></i> Enviar Sobre al SII';
+                renderDteQueueView();
             }
         });
     }
 
     if (clearBtn) {
         clearBtn.addEventListener('click', () => {
-            if (confirm('¿Está seguro de que desea limpiar la cola de DTEs pendientes? Esto eliminará los registros de reenvío automático.')) {
-                saveDteQueue([]);
+            if (confirm('¿Está seguro de que desea vaciar las boletas del sobre? Estas boletas NO se enviarán al SII.')) {
+                boletaEnvelopeState.items = [];
+                boletaEnvelopeState.startedAt = null;
+                persistPendingBoletaEnvelopeState();
                 renderDteQueueView();
-                showNotification({ type: 'info', message: 'Cola de DTEs limpiada.' });
+                updateBoletaEnvelopeStatusUI();
+                showNotification({ type: 'info', message: 'Sobre vaciado correctamente.' });
             }
         });
     }

@@ -2,6 +2,8 @@ export function getSettingsSnapshot({ getSessionValue, sessionKeys }) {
     return {
         printerName: getSessionValue(sessionKeys.printerName) || 'Impresora termica 80mm',
         printerPaper: getSessionValue(sessionKeys.printerPaper) || '80mm',
+        printerMargin: getSessionValue(sessionKeys.printerMargin) || '0',
+        printerStrictMode: getSessionValue(sessionKeys.printerStrictMode) === 'true',
         customerDisplayEnabled: getSessionValue(sessionKeys.customerDisplayEnabled) === 'true',
         customerDisplayTarget: getSessionValue(sessionKeys.customerDisplayTarget) || '',
         releaseRepo: getSessionValue(sessionKeys.releaseRepo) || 'JavierParedesDev/valmuPOS'
@@ -11,18 +13,26 @@ export function getSettingsSnapshot({ getSessionValue, sessionKeys }) {
 export function savePrinterSettingsSnapshot({
     printerName,
     printerPaper,
+    printerMargin,
+    printerStrictMode,
     setSessionValue,
     sessionKeys
 }) {
     const normalizedPrinterName = printerName || 'Impresora termica 80mm';
     const normalizedPrinterPaper = printerPaper || '80mm';
+    const normalizedMargin = printerMargin || '0';
+    const normalizedStrictMode = Boolean(printerStrictMode);
 
     setSessionValue(sessionKeys.printerName, normalizedPrinterName);
     setSessionValue(sessionKeys.printerPaper, normalizedPrinterPaper);
+    setSessionValue(sessionKeys.printerMargin, normalizedMargin);
+    setSessionValue(sessionKeys.printerStrictMode, String(normalizedStrictMode));
 
     return {
         printerName: normalizedPrinterName,
-        printerPaper: normalizedPrinterPaper
+        printerPaper: normalizedPrinterPaper,
+        printerMargin: normalizedMargin,
+        printerStrictMode: normalizedStrictMode
     };
 }
 

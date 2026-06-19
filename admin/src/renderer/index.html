@@ -48,8 +48,7 @@
                 <div class="sidebar-header">
                     <img src="assets/logo.png" alt="Valmu Logo" class="brand-logo">
                     <div class="brand-copy">
-                        <span class="brand-overline">Valmu Ecosystem</span>
-                        <h2 class="brand-name">Admin</h2>
+                        <h2 class="brand-name">Valmu</h2>
                     </div>
                 </div>
             </div>
@@ -57,11 +56,11 @@
             <nav class="sidebar-nav">
                 <span class="sidebar-section-label">General</span>
                 <a href="#" class="nav-item active" data-page="dashboard">
-                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-grid-1x2-fill"></i></span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-grid-1x2"></i></span>
                     <span class="nav-label">Dashboard</span>
                 </a>
                 <a href="#" class="nav-item" data-page="users">
-                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-people-fill"></i></span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-people"></i></span>
                     <span class="nav-label">Usuarios</span>
                 </a>
                 <a href="#" class="nav-item" data-page="customers">
@@ -70,11 +69,11 @@
                 </a>
                 <span class="sidebar-section-label">Catalogo</span>
                 <a href="#" class="nav-item" data-page="products">
-                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-box-seam-fill"></i></span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-box-seam"></i></span>
                     <span class="nav-label">Productos</span>
                 </a>
                 <a href="#" class="nav-item" data-page="categories">
-                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-folder-fill"></i></span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-folder"></i></span>
                     <span class="nav-label">Categorias</span>
                 </a>
                 <a href="#" class="nav-item" data-page="suppliers">
@@ -83,7 +82,7 @@
                 </a>
                 <span class="sidebar-section-label">Operacion</span>
                 <a href="#" class="nav-item" data-page="advertising">
-                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-megaphone-fill"></i></span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-megaphone"></i></span>
                     <span class="nav-label">Publicidad Cliente</span>
                 </a>
                 <a href="#" class="nav-item" data-page="wastage">
@@ -102,18 +101,25 @@
                     <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-truck"></i></span>
                     <span class="nav-label">Despachos</span>
                 </a>
+                <a href="#" class="nav-item" data-page="transfers">
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-truck-front"></i></span>
+                    <span class="nav-label">Historial Traslados</span>
+                </a>
                 <a href="#" class="nav-item" data-page="branches">
-                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-geo-alt-fill"></i></span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-geo-alt"></i></span>
                     <span class="nav-label">Sucursales</span>
                 </a>
             </nav>
 
             <div class="sidebar-footer">
                 <a href="#" class="sidebar-settings-link" data-page="settings">
-                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-gear-fill"></i></span>
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-gear"></i></span>
                     <span class="nav-label">Configuracion</span>
                 </a>
-                <button class="btn-logout">Cerrar sesion</button>
+                <a href="#" class="btn-logout sidebar-settings-link" id="btn-logout" style="color: #9ca3af;">
+                    <span class="nav-icon-badge" aria-hidden="true"><i class="bi bi-box-arrow-right"></i></span>
+                    <span class="nav-label">Cerrar sesion</span>
+                </a>
                 <div class="sidebar-meta-text" id="sidebar-app-version">v-</div>
             </div>
         </aside>
@@ -151,6 +157,7 @@
     <script src="js/views/categories.js"></script>
     <script src="js/views/suppliers.js"></script>
     <script src="js/views/products.js"></script>
+    <script src="js/views/transfers.js"></script>
     <script src="js/views/branches.js"></script>
     <script src="js/views/wastage.js"></script>
     <script src="js/views/users.js"></script>

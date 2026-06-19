@@ -1,7 +1,12 @@
+import { SESSION_KEYS } from '../state/store.js';
+import { getSessionValue } from './session-service.js';
+
 export async function printReceiptRecord({
     record,
     printerName,
     printerPaper,
+    printerMargin,
+    printerStrictMode,
     printReceipt
 }) {
     if (!record) {
@@ -12,9 +17,14 @@ export async function printReceiptRecord({
         throw new Error('La impresion no esta disponible en este equipo.');
     }
 
+    const finalMargin = printerMargin !== undefined ? printerMargin : (getSessionValue(SESSION_KEYS.printerMargin) || 0);
+    const finalStrictMode = printerStrictMode !== undefined ? printerStrictMode : (getSessionValue(SESSION_KEYS.printerStrictMode) === 'true');
+
     const result = await printReceipt({
         printerName,
         printerPaper,
+        printerMargin: finalMargin,
+        printerStrictMode: finalStrictMode,
         receipt: {
             saleId: record.saleId,
             date: record.date,

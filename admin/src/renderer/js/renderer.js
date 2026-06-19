@@ -3,16 +3,17 @@ let updateStateCleanup = null;
 let lastUpdateStatus = null;
 const ROLE_CONFIGS = {
     1: {
-        allowedPages: ['dashboard', 'users', 'customers', 'products', 'categories', 'suppliers', 'advertising', 'wastage', 'finances', 'invoicing', 'dispatches', 'branches', 'settings', 'logistics'],
+        allowedPages: ['dashboard', 'users', 'customers', 'products', 'categories', 'suppliers', 'advertising', 'wastage', 'finances', 'invoicing', 'dispatches', 'transfers', 'transfer-create', 'inbound-create', 'branches', 'settings', 'logistics'],
         defaultPage: 'dashboard'
     },
     3: {
-        allowedPages: ['dashboard', 'products', 'branches', 'wastage', 'settings'],
+        allowedPages: ['dashboard', 'products', 'transfers', 'transfer-create', 'inbound-create', 'branches', 'wastage', 'settings'],
         defaultPage: 'dashboard',
         brandName: 'Bodega',
         navLabels: {
             dashboard: 'Resumen Bodega',
             products: 'Ingreso de Stock',
+            transfers: 'Historial Traslados',
             branches: 'Inventario',
             wastage: 'Mermas',
             settings: 'Configuracion'
@@ -195,11 +196,12 @@ function applyRolePermissions() {
         allowedPages = ['dashboard']; // Solo dashboard por seguridad
     }
 
-    const navItems = document.querySelectorAll('.nav-item, .sidebar-settings-link');
+    const navItems = document.querySelectorAll('.nav-item, .sidebar-settings-link, .sidebar-action-link');
 
     navItems.forEach((item) => {
         const page = item.dataset.page;
-        if (!allowedPages.includes(page)) {
+        // Solo ocultamos si hay data-page y no esta permitido
+        if (page && !allowedPages.includes(page)) {
             item.style.display = 'none';
         }
     });

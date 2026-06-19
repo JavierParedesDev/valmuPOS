@@ -407,7 +407,8 @@ async function runPythonReceiptPrint(payload) {
                 command,
                 args,
                 {
-                    windowsHide: true
+                    windowsHide: true,
+                    timeout: 15000
                 },
                 async (error, stdout, stderr) => {
                     const rawResult = {

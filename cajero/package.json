@@ -1,6 +1,6 @@
 {
   "name": "cajero",
-  "version": "2.0.41",
+  "version": "2.0.51",
   "description": "Valmu Cajero desktop app",
   "main": "src/main/main.js",
   "scripts": {

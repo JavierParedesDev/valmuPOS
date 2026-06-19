@@ -83,23 +83,16 @@ class InvoicesPage {
         const content = await this.renderContent();
 
         this.container.innerHTML = `
-            <div class="h-full flex flex-col pt-4">
-                <div class="flex items-center justify-between mb-8 px-8">
-                    <h2 class="text-3xl font-black text-gray-900 tracking-tighter uppercase">Facturacion</h2>
-                    <button class="bg-white border-2 border-gray-100 px-6 py-2 rounded-2xl text-[10px] font-black text-gray-400 hover:border-orange-500 hover:text-orange-600 transition-all shadow-sm uppercase tracking-widest" onclick="window.electronAPI.toggleFullscreen()">
-                        Pantalla completa
-                    </button>
+            <div class="h-full flex flex-col pt-2">
+                <div class="flex flex-wrap gap-2 mb-6">
+                    <button data-tab="create" class="tab-btn min-w-[150px] px-5 py-3 rounded-2xl border-2 font-black text-[10px] uppercase tracking-widest transition-all duration-200 ${this.activeTab === 'create' ? 'bg-orange-600 border-orange-600 text-white shadow-md shadow-orange-100' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-200'}">Factura Electrónica</button>
+                    <button data-tab="note" class="tab-btn min-w-[150px] px-5 py-3 rounded-2xl border-2 font-black text-[10px] uppercase tracking-widest transition-all duration-200 ${this.activeTab === 'note' ? 'bg-orange-600 border-orange-600 text-white shadow-md shadow-orange-100' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-200'}">Nota de Crédito</button>
+                    <button data-tab="debit" class="tab-btn min-w-[150px] px-5 py-3 rounded-2xl border-2 font-black text-[10px] uppercase tracking-widest transition-all duration-200 ${this.activeTab === 'debit' ? 'bg-orange-600 border-orange-600 text-white shadow-md shadow-orange-100' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-200'}">Nota de Débito</button>
+                    <button data-tab="history" class="tab-btn min-w-[150px] px-5 py-3 rounded-2xl border-2 font-black text-[10px] uppercase tracking-widest transition-all duration-200 ${this.activeTab === 'history' ? 'bg-orange-600 border-orange-600 text-white shadow-md shadow-orange-100' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-200'}">Historial</button>
+                    <button data-tab="config" class="tab-btn min-w-[150px] px-5 py-3 rounded-2xl border-2 font-black text-[10px] uppercase tracking-widest transition-all duration-200 ${this.activeTab === 'config' ? 'bg-orange-600 border-orange-600 text-white shadow-md shadow-orange-100' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-200'}">Configuración</button>
                 </div>
 
-                <div class="flex flex-wrap gap-2 px-8 mb-8">
-                    <button data-tab="create" class="tab-btn min-w-[160px] px-6 py-4 rounded-xl border-2 font-black text-[10px] uppercase tracking-widest transition-all ${this.activeTab === 'create' ? 'bg-orange-600 border-orange-600 text-white shadow-lg shadow-orange-100' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-200'}">Factura Electrónica</button>
-                    <button data-tab="note" class="tab-btn min-w-[160px] px-6 py-4 rounded-xl border-2 font-black text-[10px] uppercase tracking-widest transition-all ${this.activeTab === 'note' ? 'bg-orange-600 border-orange-600 text-white shadow-lg shadow-orange-100' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-200'}">Nota de Crédito</button>
-                    <button data-tab="debit" class="tab-btn min-w-[160px] px-6 py-4 rounded-xl border-2 font-black text-[10px] uppercase tracking-widest transition-all ${this.activeTab === 'debit' ? 'bg-orange-600 border-orange-600 text-white shadow-lg shadow-orange-100' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-200'}">Nota de Débito</button>
-                    <button data-tab="history" class="tab-btn min-w-[160px] px-6 py-4 rounded-xl border-2 font-black text-[10px] uppercase tracking-widest transition-all ${this.activeTab === 'history' ? 'bg-orange-600 border-orange-600 text-white shadow-lg shadow-orange-100' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-200'}">Historial</button>
-                    <button data-tab="config" class="tab-btn min-w-[160px] px-6 py-4 rounded-xl border-2 font-black text-[10px] uppercase tracking-widest transition-all ${this.activeTab === 'config' ? 'bg-orange-600 border-orange-600 text-white shadow-lg shadow-orange-100' : 'bg-white border-gray-100 text-gray-400 hover:border-gray-200'}">Configuración</button>
-                </div>
-
-                <div id="invoice-view-area" class="flex-1 overflow-y-auto px-8 no-scrollbar scroll-smooth">
+                <div id="invoice-view-area" class="flex-1 overflow-y-auto no-scrollbar scroll-smooth">
                     ${content}
                 </div>
             </div>
@@ -978,6 +971,221 @@ class InvoicesPage {
             if (btnElement) {
                 btnElement.disabled = false;
                 btnElement.innerHTML = '<i class="fas fa-cloud-upload-alt mr-1"></i> Subir';
+            }
+        }
+    }
+
+    async sendGeneratedDteToSii(type, folio, idXml, btnElement) {
+        if (!type || !folio) {
+            return Toast.show('Documento inválido', 'error');
+        }
+
+        const originalHtml = btnElement ? btnElement.innerHTML : '';
+        if (btnElement) {
+            btnElement.disabled = true;
+            btnElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        }
+
+        try {
+            // 1. Obtener la configuración de SII
+            await this.loadConfig(); // Carga this.currentConfig
+            const local = {
+                ...JSON.parse(localStorage.getItem('sii_config') || '{}'),
+                ...((await window.electronAPI?.getSiiConfig?.()) || {})
+            };
+            localStorage.setItem('sii_config', JSON.stringify(local));
+            const config = {
+                ...local,
+                rutEmisor: local.rutEmisor || DEFAULT_EMISOR.rut
+            };
+
+            const { apiKey, rutEmisor } = config;
+
+            if (!apiKey || !rutEmisor) {
+                throw new Error('Falta configuración del SII (API Key o RUT Emisor)');
+            }
+
+            // 2. Descargar el XML del servidor o leer localmente
+            let xmlContent = null;
+            if (idXml && idXml !== 'null' && idXml !== 'undefined' && idXml !== '') {
+                try {
+                    xmlContent = await api.downloadXml(idXml);
+                } catch (err) {
+                    console.warn('Error al descargar XML del servidor, intentando local:', err);
+                }
+            }
+
+            if (!xmlContent) {
+                // Buscar localmente
+                const doc = (this.historyData || []).find(
+                    (d) => String(d.type) === String(type) && String(d.folio) === String(folio)
+                );
+                if (doc && doc.filename && doc.folder) {
+                    xmlContent = await window.electronAPI.readLocalText(`${doc.folder}/${doc.filename}`);
+                }
+            }
+
+            if (!xmlContent) {
+                throw new Error('No se pudo encontrar el archivo XML local ni remoto.');
+            }
+
+            // 3. Generar token
+            const token = await this.getBearerToken();
+            if (!token) {
+                throw new Error('No se pudo obtener el token de autenticación.');
+            }
+
+            // 4. Leer el certificado
+            const certBase64Data = await window.electronAPI.readLocalCert('certificado.pfx');
+            if (!certBase64Data) {
+                throw new Error('Falta Certificado Digital (no instalado)');
+            }
+            const certBlob = window.ValmuInvoicingUtils.b64toBlob(certBase64Data);
+
+            // 5. Enviar usando transport
+            const sendResult = await window.ValmuInvoicingTransport.sendDTE({
+                dteXmlContent: xmlContent,
+                config,
+                tipoDTE: Number(type),
+                token,
+                certBlob,
+                toast: Toast
+            });
+
+            if (window.ValmuInvoicingTransport.isSuccessfulSiiSend(sendResult)) {
+                const trackId = window.ValmuInvoicingTransport.getSiiTrackId(sendResult);
+                if (idXml && idXml !== 'null' && idXml !== 'undefined' && idXml !== '') {
+                    await api.updateDteStatus(idXml, 'ENVIADO_SII', trackId);
+                } else {
+                    // Si no estaba en el servidor, subirlo ahora
+                    await api.uploadXml(type, folio, xmlContent, {
+                        trackId,
+                        estadoSii: 'ENVIADO_SII'
+                    });
+                }
+                Toast.show('Factura enviada al SII exitosamente', 'success');
+                this.historyData = null;
+                await this.fetchHistory();
+            } else {
+                throw new Error('La API del SII rechazó o devolvió un formato inesperado.');
+            }
+
+        } catch (error) {
+            console.error('[Send Generated DTE Error]:', error);
+            const userMsg = window.ValmuInvoicingTransport.cleanSiiErrorMessage(error);
+            Swal.fire({
+                title: 'Error de Envío',
+                text: userMsg,
+                icon: 'error',
+                confirmButtonColor: '#ef4444'
+            });
+        } finally {
+            if (btnElement) {
+                btnElement.disabled = false;
+                btnElement.innerHTML = originalHtml;
+            }
+        }
+    }
+
+    async loadFromSaleDetails(saleId, type, idXml, btnElement) {
+        if (!saleId) {
+            return Toast.show('ID de venta inválido', 'error');
+        }
+
+        const originalHtml = btnElement ? btnElement.innerHTML : '';
+        if (btnElement) {
+            btnElement.disabled = true;
+            btnElement.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+        }
+
+        try {
+            Toast.show('Obteniendo detalles de la venta...', 'info');
+            const sale = await api.getSaleDetails(saleId);
+            if (!sale || !sale.cabecera) {
+                throw new Error('No se pudieron obtener los datos de la venta');
+            }
+
+            // Cambiar a la pestaña de creación
+            this.activeTab = 'create';
+            await this.updateUI();
+
+            // Esperar un instante para que el DOM esté listo
+            await new Promise((resolve) => setTimeout(resolve, 300));
+
+            // Rellenar Receptor
+            const cab = sale.cabecera;
+            const fields = {
+                'rut-recep': cab.rut_cliente,
+                'rzn-recep': cab.nombreCliente || 'PARTICULAR',
+                'dir-recep': cab.direccion_cliente || '',
+                'cmna-recep': cab.comuna_cliente || '',
+                'giro-recep': cab.giro_cliente || 'PARTICULAR',
+                'ciudad-recep': cab.ciudad_cliente || cab.comuna_cliente || ''
+            };
+
+            for (const [suffix, value] of Object.entries(fields)) {
+                const el = document.getElementById(`dte-${suffix}`);
+                if (el) {
+                    el.value = value || '';
+                }
+            }
+
+            // Rellenar tipo de DTE
+            const tipoSelect = document.getElementById('dte-tipo');
+            if (tipoSelect && type) {
+                tipoSelect.value = String(type);
+            }
+
+            // Rellenar Productos
+            const container = document.getElementById('invoice-items-container');
+            if (container && Array.isArray(sale.productos) && sale.productos.length > 0) {
+                // Eliminar filas existentes
+                container.innerHTML = '';
+
+                for (let i = 0; i < sale.productos.length; i++) {
+                    const prod = sale.productos[i];
+                    const btnAdd = document.getElementById('btn-add-line');
+                    if (btnAdd) {
+                        btnAdd.click();
+                    }
+
+                    const targetRow = container.lastElementChild;
+                    if (targetRow) {
+                        targetRow.querySelector('.item-nombre').value = prod.nombreProducto || '';
+                        targetRow.querySelector('.item-qty').value = prod.cantidadVenta || 1;
+                        
+                        // Los precios de venta de la base de datos están en bruto (con IVA). 
+                        // El formulario de factura manual asume precio NETO.
+                        const precioNeto = Math.round(Number(prod.precioVenta || 0) / 1.19);
+                        targetRow.querySelector('.item-price').value = precioNeto;
+
+                        const qtyInput = targetRow.querySelector('.item-qty');
+                        if (typeof this.calcLine === 'function') {
+                            this.calcLine(qtyInput);
+                        }
+                    }
+                }
+            }
+
+            // Eliminar registro DTE fallido anterior si idXml existe
+            if (idXml && idXml !== 'null' && idXml !== 'undefined' && idXml !== '') {
+                try {
+                    await api.deleteXml(idXml);
+                    console.log(`DTE fallido anterior (${idXml}) eliminado de la base de datos.`);
+                } catch (delErr) {
+                    console.warn('Error al eliminar DTE fallido anterior:', delErr);
+                }
+            }
+
+            Toast.show('Venta cargada correctamente. Lista para emitir.', 'success');
+
+        } catch (error) {
+            console.error('[Load Sale Details Error]:', error);
+            Toast.show(`Error al cargar datos: ${error.message}`, 'error');
+        } finally {
+            if (btnElement) {
+                btnElement.disabled = false;
+                btnElement.innerHTML = originalHtml;
             }
         }
     }
