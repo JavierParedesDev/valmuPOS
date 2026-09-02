@@ -4,3 +4,7 @@ dist/
 coverage/
 *.log
 /almipos/
+
+# Certificado SII, contrasenas y respaldos de DTE (datos reales, nunca al repo)
+sii_data/
+*.pfx

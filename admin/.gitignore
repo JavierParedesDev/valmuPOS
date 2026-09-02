@@ -5,8 +5,8 @@ coverage/
 *.log
 
 
-# Private certificates and keys
-sii_data/*.pfx
+# Certificado SII, contrasenas y respaldos de DTE (datos reales, nunca al repo)
+sii_data/
 *.pfx
 
 # Ignored release artifacts (installers and blockmaps)
